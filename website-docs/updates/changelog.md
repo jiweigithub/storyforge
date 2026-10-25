@@ -2,6 +2,23 @@
 
 本页按用户可感知的变化整理功能更新、修复和操作改进。版本信息见[版本与兼容说明](/updates/compatibility)。
 
+## 2026-10-23 · 大型运行合同的保存与恢复
+
+运行资料较多时，合法的运行合同可完整保存、修订，并在刷新或完整备份恢复后继续读取，不再被较小的事件记录限制误拒绝。超出记录容量仍会明确拒绝；不会截断上下文快照，也不改变模型调用预算、候选采纳、权限或过期检查。遇到容量错误时保留原作品与备份，不手工删除合同字段。依据：[PR #185](https://github.com/yuanbw2025/storyforge/pull/185)；操作见[备份与恢复](/guides/backup-restore)。
+
+## 2026-10-22 · 章纲恢复与文风统计操作指引
+
+补齐[精细章纲中断后的检查和重试步骤](/features/longform/writing#精细章纲中断后怎样继续)，以及文风画像[样本统计“未记录”的含义与保存方式](/features/longform/style-learning#sample-statistics-not-recorded)。[开发记录](/updates/development-status)同步本轮全部分支和工作区的核对结果，列出已合并、草稿 PR、本地未推送及未提交开发。
+
+## 2026-10-21 · 精细章纲、文风画像与细纲编辑
+
+- 精细章纲分块生成保留前序候选的完整原文快照，修复候选截断后缺少 exact snapshot 导致中断的问题。处理错误后，可从原入口明确重试。
+- 文风画像缺少样本字数时显示“未记录”，页面继续支持阅读和手工修改；已有零值与正常统计保持真实显示。
+- 场景细纲即时保留手工输入，改善中文组合输入中断、中途删字后光标跳到末尾及保存回读问题。
+- 官网与应用内反馈统一关联仓库 Issue，公开排查、修复与发行进展；私人反馈只提炼必要的脱敏技术摘要。
+
+操作见[大纲、细纲与正文](/features/longform/writing)。依据：[PR #141](https://github.com/yuanbw2025/storyforge/pull/141)、[PR #171](https://github.com/yuanbw2025/storyforge/pull/171)；问题跟进见 [Issue #183](https://github.com/yuanbw2025/storyforge/issues/183)。
+
 ## 2026-10-20 · 系统文规划、全章评审与范围修订
 
 [PR #141](https://github.com/yuanbw2025/storyforge/pull/141) 已合入主干 `1b96e80a`。

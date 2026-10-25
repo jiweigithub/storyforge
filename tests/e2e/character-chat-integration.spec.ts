@@ -95,6 +95,17 @@ test('S2 role settings reach the frozen production brief through the real confir
     const brief = await page.evaluate(async () => { const load = new Function('p', 'return import(p)'); const db = (await load('/storyforge/src/lib/db/schema.ts')).db; const id = Number(new URLSearchParams(location.search).get('production')); const row = await db.productProductionBriefs.where('[productionId+revision]').equals([id, 1]).first(); if (!row) throw new Error('已保存的 Brief revision 未进入持久化投影'); return JSON.parse(row.briefJson); });
     expect(brief.characterChat.characters[0]).toMatchObject({ initialTrust: 24, privateKnowledge: '信封内的暗号只有林舟知道' });
     expect(brief.intent.playerRole).toBe('守灯人');
+    const sourcePlan = await page.evaluate(async () => {
+        const load = new Function('p', 'return import(p)');
+        const db = (await load('/storyforge/src/lib/db/schema.ts')).db;
+        const id = Number(new URLSearchParams(location.search).get('production'));
+        const row = await db.productProductionBriefs.where('[productionId+revision]').equals([id, 1]).first();
+        return (await load('/storyforge/src/lib/product-production/source-contracts.ts')).parseProductProductionSourcePlanV1(row);
+    });
+    expect(sourcePlan.version).toBe(2);
+    expect(sourcePlan.compiler.compilerId).toBe('storyforge.character-interaction.world-compiler');
+    expect(sourcePlan.exact.authorResourceKeys).toEqual([...brief.source.selection.resourceKeys].sort());
+    expect(sourcePlan.exact.resources.every((item: { minimumDepth: string }) => item.minimumDepth === 'original')).toBe(true);
     await page.screenshot({ path: info.outputPath('chat-confirmed-production.png') });
 });
 

@@ -11,6 +11,8 @@
  * 治理依据:docs/DATA-GOVERNANCE.md。
  */
 import { db } from '../db/schema'
+import { NARRATIVE_SOURCE_FKS_V1 } from '../types/narrative-domain'
+import type { NarrativeDomainFieldsV1 } from '../types/narrative-domain'
 import type { DomainOwnershipSpec, TableSpec, WorkspaceMemoryClassificationV1 } from './types'
 import { parseSystemFictionElementsV1 } from '../prose/system-fiction-contract'
 import { normalizeDetailedScenes } from '../types/detailed-outline'
@@ -46,6 +48,22 @@ const RESOURCE_IDENTITY = (
   label,
   descriptorMode,
 })
+
+const NARRATIVE_METADATA_FIELDS_V1 = [
+  'narrativeTimeV1', 'narrativeEvidenceV1', 'narrativeVisibilityV1',
+  'narrativeModalityV1', 'narrativeDependenciesV1', 'narrativeAuthorityV1',
+] as const
+
+function NARRATIVE_PROJECTOR_V1(
+  kind: NonNullable<NonNullable<TableSpec['worldSemantic']>['projector']>['kind'],
+  sourceFields: readonly string[],
+  provenanceField: string,
+  fields: readonly (keyof NarrativeDomainFieldsV1)[],
+) {
+  return { projector: { version: 1 as const, kind, sourceFields, provenanceField,
+    annotationFields: [...NARRATIVE_METADATA_FIELDS_V1, ...fields] },
+    publishPolicy: 'reviewed-narrative-v1' as const }
+}
 
 type ProjectTableRegistration = Omit<TableSpec, 'memoryClassification'> & {
   memoryClassification?: WorkspaceMemoryClassificationV1
@@ -626,7 +644,10 @@ const PROJECT_TABLE_REGISTRATIONS: ProjectTableRegistration[] = [
   { table: db.worldRevisions, name: 'worldRevisions', owner: 'project', exportable: true, exportIdField: true,
     domainOwner: { allowed: ['world'], defaultOwner: 'world', locator: { kind: 'field', owner: 'world', field: 'worldId' } },
     tree: { parentField: 'parentRevisionId' },
-    refs: [{ kind: 'simple', field: 'id', target: 'worldReleases[revisionId]', onDelete: 'keep' }],
+    refs: [
+      { kind: 'simple', field: 'id', target: 'worldReleases[revisionId]', onDelete: 'keep' },
+      { kind: 'simple', field: 'id', target: 'worldDerivations[targetRevisionId]', onDelete: 'setNull' },
+    ],
     exportRemap: [
       { field: 'worldId', remapVia: 'worlds', exportAs: '_worldExportId', onUnmapped: 'require' },
       { field: 'parentRevisionId', remapVia: 'worldRevisions', selfTree: true, exportAs: '_parentExportId' },
@@ -635,12 +656,20 @@ const PROJECT_TABLE_REGISTRATIONS: ProjectTableRegistration[] = [
 
   { table: db.worldReleases, name: 'worldReleases', owner: 'project', exportable: true, exportIdField: true,
     domainOwner: { allowed: ['world'], defaultOwner: 'world', locator: { kind: 'field', owner: 'world', field: 'worldId' } },
-    refs: [{ kind: 'simple', field: 'id', target: 'productReleases[worldReleaseId]', onDelete: 'setNull' }],
+    refs: [
+      { kind: 'simple', field: 'id', target: 'productReleases[worldReleaseId]', onDelete: 'setNull' },
+      { kind: 'simple', field: 'id', target: 'worldNarrativeIndexCaches[releaseId]', onDelete: 'cascade' },
+      { kind: 'simple', field: 'id', target: 'worldDerivations[targetReleaseId]', onDelete: 'setNull' },
+    ],
     exportRemap: [
       { field: 'worldId', remapVia: 'worlds', exportAs: '_worldExportId', onUnmapped: 'require' },
       { field: 'revisionId', remapVia: 'worldRevisions', exportAs: '_revisionExportId', onUnmapped: 'require' },
     ],
     note: 'WORLD-2E 不可变发布版本；运行实例只绑定该记录或显式草稿快照' },
+
+  { table: db.worldNarrativeIndexCaches, name: 'worldNarrativeIndexCaches', owner: 'project', exportable: false,
+    domainOwner: { allowed: ['world'], defaultOwner: 'world', locator: { kind: 'field', owner: 'world', field: 'worldId' } },
+    note: 'NW-2A 可删除重建的冻结世界索引缓存；绑定 release FK，不导出、不成为世界语义或 AI 写目标；删除只清缓存' },
 
   { table: db.worldDerivations, name: 'worldDerivations', owner: 'project', exportable: true, exportIdField: true,
     domainOwner: { allowed: ['world'], defaultOwner: 'world', locator: { kind: 'field', owner: 'world', field: 'worldId' } },
@@ -650,7 +679,7 @@ const PROJECT_TABLE_REGISTRATIONS: ProjectTableRegistration[] = [
       { field: 'targetReleaseId', remapVia: 'worldReleases', exportAs: '_targetReleaseExportId' },
     ],
     defaults: { targetRevisionId: null, targetReleaseId: null },
-    note: 'ARCH-01 长篇/短篇显式派生世界的不可变来源、范围与 hash；源作品只以便携身份引用' },
+    note: 'ARCH-01 长短篇派生及 NW-2A 世界包复制的不可变来源；可选 narrativeLineageJson 使用独立版本与 hash，绑定新 World namespace，不是 AI 写目标；源仅以便携身份引用，删除本地修订/发布清空 locator 并保留来源回执' },
 
   // ───────────────────── 世界观/设定(world-scoped 多)─────────────────────
   { table: db.worldviews, name: 'worldviews', owner: 'project', worldScoped: true,
@@ -745,7 +774,7 @@ const PROJECT_TABLE_REGISTRATIONS: ProjectTableRegistration[] = [
   { table: db.historicalTimelineEvents, name: 'historicalTimelineEvents', owner: 'project',
     refs: [{ kind: 'simple', field: 'id', target: 'extensionRecords[historyEventId]', onDelete: 'setNull' }],
     resourceIdentity: RESOURCE_IDENTITY('historical-event', 'fact', '历史事件'),
-    worldSemantic: { version: 1, area: 'foundation', resourceKind: 'historical-event', canonPolicy: 'authoritative-table' },
+    worldSemantic: { version: 1, area: 'foundation', resourceKind: 'historical-event', canonPolicy: 'authoritative-table', ...NARRATIVE_PROJECTOR_V1('event', ['title', 'description', 'date', 'year'], 'description', ['narrativeEventV1']) },
     domainOwner: WORLD_DOMAIN_OWNER,
     worldScoped: true, exportable: true,
     exportRemap: [{ field: 'worldGroupId', remapVia: 'worldGroups', exportAs: '_worldGroupExportId' }] },
@@ -758,8 +787,8 @@ const PROJECT_TABLE_REGISTRATIONS: ProjectTableRegistration[] = [
     exportRemap: [{ field: 'worldGroupId', remapVia: 'worldGroups', exportAs: '_worldGroupExportId' }] },
 
   { table: db.importantLocations, name: 'importantLocations', owner: 'project',
-    resourceIdentity: RESOURCE_IDENTITY('location', 'location', '重要地点'),
-    worldSemantic: { version: 1, area: 'entities', resourceKind: 'location', canonPolicy: 'authoritative-table' },
+    resourceIdentity: { ...RESOURCE_IDENTITY('location', 'location', '重要地点'), narrativeEntityType: 'location' },
+    worldSemantic: { version: 1, area: 'entities', resourceKind: 'location', canonPolicy: 'authoritative-table', ...NARRATIVE_PROJECTOR_V1('entity', ['name'], 'name', ['narrativeAliasesV1']) },
     domainOwner: WORLD_DOMAIN_OWNER,
     exportable: true, tree: { parentField: 'parentId' }, exportIdField: true,
     refs: [
@@ -779,8 +808,8 @@ const PROJECT_TABLE_REGISTRATIONS: ProjectTableRegistration[] = [
 
   // ───────────────────── 角色 ─────────────────────
   { table: db.characters, name: 'characters', owner: 'project', homeWorldScoped: true,
-    resourceIdentity: RESOURCE_IDENTITY('character', 'character', '角色', 'registered-fields'),
-    worldSemantic: { version: 1, area: 'characters', resourceKind: 'character', canonPolicy: 'authoritative-table' },
+    resourceIdentity: { ...RESOURCE_IDENTITY('character', 'character', '角色', 'registered-fields'), narrativeEntityType: 'character' },
+    worldSemantic: { version: 1, area: 'characters', resourceKind: 'character', canonPolicy: 'authoritative-table', ...NARRATIVE_PROJECTOR_V1('entity', ['name'], 'name', ['narrativeAliasesV1']) },
     domainOwner: WORLD_DOMAIN_OWNER,
     exportable: true,
     defaults: { narrativeStatus: 'active' },
@@ -806,7 +835,7 @@ const PROJECT_TABLE_REGISTRATIONS: ProjectTableRegistration[] = [
 
   { table: db.characterRelations, name: 'characterRelations', owner: 'project',
     resourceIdentity: RESOURCE_IDENTITY('character-relation', 'character-relation', '角色关系'),
-    worldSemantic: { version: 1, area: 'relations', resourceKind: 'character-relation', canonPolicy: 'authoritative-table' },
+    worldSemantic: { version: 1, area: 'relations', resourceKind: 'character-relation', canonPolicy: 'authoritative-table', ...NARRATIVE_PROJECTOR_V1('relation', ['fromCharacterId', 'toCharacterId', 'relationType', 'label', 'description', 'isBidirectional'], 'description', ['narrativeRelationV1']) },
     domainOwner: WORLD_DOMAIN_OWNER,
     exportable: true,
     exportRemap: [
@@ -838,7 +867,7 @@ const PROJECT_TABLE_REGISTRATIONS: ProjectTableRegistration[] = [
 
   { table: db.chapters, name: 'chapters', owner: 'project', exportable: true,
     resourceIdentity: RESOURCE_IDENTITY('chapter', 'chapter', '章节'),
-    worldSemantic: { version: 1, area: 'manuscript', resourceKind: 'chapter', canonPolicy: 'authoritative-table' },
+    worldSemantic: { version: 1, area: 'manuscript', resourceKind: 'chapter', canonPolicy: 'authoritative-table', ...NARRATIVE_PROJECTOR_V1('disclosure', ['content', 'outlineNodeId'], 'content', ['narrativeDisclosuresV1']) },
     domainOwner: WORK_DOMAIN_OWNER,
     workspaceProjection: {
       version: 1, classification: 'editable', documentKind: 'chapter', mapper: 'chapter-markdown-v1',
@@ -885,13 +914,13 @@ const PROJECT_TABLE_REGISTRATIONS: ProjectTableRegistration[] = [
   // ───────────────────── 下游产物 / 工具 ─────────────────────
   { table: db.foreshadows, name: 'foreshadows', owner: 'project', exportable: true,
     resourceIdentity: RESOURCE_IDENTITY('foreshadow', 'foreshadow', '伏笔'),
-    worldSemantic: { version: 1, area: 'story', resourceKind: 'foreshadow', canonPolicy: 'authoritative-table' },
+    worldSemantic: { version: 1, area: 'story', resourceKind: 'foreshadow', canonPolicy: 'authoritative-table', ...NARRATIVE_PROJECTOR_V1('development', ['name', 'description', 'status', 'plantChapterId', 'resolveChapterId'], 'description', ['narrativeDevelopmentsV1']) },
     domainOwner: WORLD_OR_WORK_DOMAIN_OWNER,
     note: '可跨世界;plant/resolveChapterId 为软引用(删章不强删)' },
 
   { table: db.storyArcs, name: 'storyArcs', owner: 'project', exportable: true,
     resourceIdentity: RESOURCE_IDENTITY('story-arc', 'story-arc', '故事线'),
-    worldSemantic: { version: 1, area: 'storylines', resourceKind: 'story-arc', canonPolicy: 'authoritative-table' },
+    worldSemantic: { version: 1, area: 'storylines', resourceKind: 'story-arc', canonPolicy: 'authoritative-table', ...NARRATIVE_PROJECTOR_V1('development', ['name', 'description', 'stages', 'status'], 'description', ['narrativeDevelopmentsV1']) },
     domainOwner: WORLD_OR_WORK_DOMAIN_OWNER,
     exportIdField: true,
     refs: [
@@ -1030,7 +1059,7 @@ const PROJECT_TABLE_REGISTRATIONS: ProjectTableRegistration[] = [
 
   { table: db.storylineProgress, name: 'storylineProgress', owner: 'project',
     resourceIdentity: RESOURCE_IDENTITY('storyline-progress', 'storyline-progress', '故事线进度'),
-    worldSemantic: { version: 1, area: 'storylines', resourceKind: 'storyline-progress', canonPolicy: 'authoritative-table' },
+    worldSemantic: { version: 1, area: 'storylines', resourceKind: 'storyline-progress', canonPolicy: 'authoritative-table', ...NARRATIVE_PROJECTOR_V1('development', ['arcId', 'currentStageId', 'progressNote', 'status', 'lastActiveChapterId', 'evidenceQuote'], 'progressNote', ['narrativeDevelopmentsV1']) },
     domainOwner: WORK_DOMAIN_OWNER,
     exportable: true,
     defaults: { status: 'dormant', involvedEntities: '[]' },
@@ -1070,7 +1099,7 @@ const PROJECT_TABLE_REGISTRATIONS: ProjectTableRegistration[] = [
 
   { table: db.storyTimelineEvents, name: 'storyTimelineEvents', owner: 'project', exportable: true,
     resourceIdentity: RESOURCE_IDENTITY('story-timeline-event', 'fact', '故事年表'),
-    worldSemantic: { version: 1, area: 'story', resourceKind: 'story-timeline-event', canonPolicy: 'authoritative-table' },
+    worldSemantic: { version: 1, area: 'story', resourceKind: 'story-timeline-event', canonPolicy: 'authoritative-table', ...NARRATIVE_PROJECTOR_V1('event', ['title', 'description', 'storyTime', 'chapterId'], 'description', ['narrativeEventV1']) },
     domainOwner: WORK_DOMAIN_OWNER,
     exportRemap: [{ field: 'chapterId', remapVia: 'chapters', exportAs: '_chapterExportId' }] },
 
@@ -1110,8 +1139,8 @@ const PROJECT_TABLE_REGISTRATIONS: ProjectTableRegistration[] = [
     note: '分类 schema 属于当前 World 根，具体词条再按 worldGroupId 隔离' },
 
   { table: db.codexEntries, name: 'codexEntries', owner: 'project', worldScoped: true,
-    resourceIdentity: RESOURCE_IDENTITY('codex-entry', 'codex-entry', '设定词条'),
-    worldSemantic: { version: 1, area: 'entities', resourceKind: 'codex-entry', canonPolicy: 'authoritative-table' },
+    resourceIdentity: { ...RESOURCE_IDENTITY('codex-entry', 'codex-entry', '设定词条'), narrativeEntityType: 'codex-entry' },
+    worldSemantic: { version: 1, area: 'entities', resourceKind: 'codex-entry', canonPolicy: 'authoritative-table', ...NARRATIVE_PROJECTOR_V1('entity', ['name'], 'name', ['narrativeAliasesV1']) },
     domainOwner: WORLD_DOMAIN_OWNER,
     exportable: true,
     refs: [
@@ -1348,7 +1377,7 @@ const PROJECT_TABLE_REGISTRATIONS: ProjectTableRegistration[] = [
   //   调 fact-ledger/lifecycle.ts 清 source/valid chapter FK 并降级待复核。绝不自动改写相邻时序。
   { table: db.temporalFacts, name: 'temporalFacts', owner: 'project', worldScoped: true,
     resourceIdentity: RESOURCE_IDENTITY('temporal-fact', 'fact', '时序事实'),
-    worldSemantic: { version: 1, area: 'story', resourceKind: 'temporal-fact', canonPolicy: 'confirmed-rows-only', statusField: 'status', confirmedStatusValues: ['confirmed'] },
+    worldSemantic: { version: 1, area: 'story', resourceKind: 'temporal-fact', canonPolicy: 'confirmed-rows-only', statusField: 'status', confirmedStatusValues: ['confirmed'], ...NARRATIVE_PROJECTOR_V1('assertion', ['characterId', 'locationId', 'storyArcId', 'subjectWorldGroupId', 'codexEntryId', 'objectCharacterId', 'objectLocationId', 'objectCodexEntryId', 'predicate', 'factKind', 'value', 'sourceType', 'sourceChapterId', 'sourceWorldviewId', 'sourcePowerSystemId', 'sourceCultivationSystemId', 'sourceStoryCoreId', 'sourceCharacterId', 'sourceField', 'sourceFingerprint', 'sourceQuote', 'validFromChapterId', 'validToChapterId', 'status', 'locked', 'supersedesFactId'], 'value', ['narrativeAssertionV1', 'narrativeRuleV1']) },
     domainOwner: WORK_DOMAIN_OWNER,
     exportable: true, exportIdField: true,
     defaults: { status: 'candidate', locked: false },
@@ -1380,7 +1409,7 @@ const PROJECT_TABLE_REGISTRATIONS: ProjectTableRegistration[] = [
   // 项目/世界生命周期与导出导入由本注册表派生。
   { table: db.knowledgeLedger, name: 'knowledgeLedger', owner: 'project', worldScoped: true,
     resourceIdentity: RESOURCE_IDENTITY('knowledge-event', 'fact', '角色认知'),
-    worldSemantic: { version: 1, area: 'relations', resourceKind: 'knowledge-event', canonPolicy: 'confirmed-rows-only', statusField: 'status', confirmedStatusValues: ['confirmed'] },
+    worldSemantic: { version: 1, area: 'relations', resourceKind: 'knowledge-event', canonPolicy: 'confirmed-rows-only', statusField: 'status', confirmedStatusValues: ['confirmed'], ...NARRATIVE_PROJECTOR_V1('epistemic-event', ['characterId', 'knowledgeKey', 'statement', 'factId', 'action', 'belief', 'sourceType', 'sourceChapterId', 'sourceQuote', 'status'], 'statement', ['narrativeEpistemicV1']) },
     domainOwner: WORK_DOMAIN_OWNER,
     exportable: true,
     defaults: { status: 'candidate' },
@@ -1410,8 +1439,8 @@ const PROJECT_TABLE_REGISTRATIONS: ProjectTableRegistration[] = [
 
   // ───────────────────── 多世界 ─────────────────────
   { table: db.worldGroups, name: 'worldGroups', owner: 'project', exportable: true,
-    resourceIdentity: RESOURCE_IDENTITY('world-group', 'world', '世界'),
-    worldSemantic: { version: 1, area: 'multi-world', resourceKind: 'world-group', canonPolicy: 'authoritative-table' },
+    resourceIdentity: { ...RESOURCE_IDENTITY('world-group', 'world', '世界'), narrativeEntityType: 'world-group' },
+    worldSemantic: { version: 1, area: 'multi-world', resourceKind: 'world-group', canonPolicy: 'authoritative-table', ...NARRATIVE_PROJECTOR_V1('entity', ['name', 'description'], 'name', ['narrativeAliasesV1', 'narrativeChronologyV1']) },
     domainOwner: WORLD_DOMAIN_OWNER,
     exportIdField: true, exportOrderBy: 'order',
     note: '导出用 _exportId(导出序)重映射;按 order 排序保证序稳定' },
@@ -2199,6 +2228,18 @@ function classifyWorkspaceMemory(spec: ProjectTableRegistration): WorkspaceMemor
 export const PROJECT_TABLES: TableSpec[] = PROJECT_TABLE_REGISTRATIONS.map(spec => ({
   ...spec,
   memoryClassification: classifyWorkspaceMemory(spec),
+  // Annotation fields are declared once above. Every field receives the same
+  // typed portable/deletion policy; no consumer keeps a second table list.
+  ...(spec.worldSemantic?.projector ? {
+    refs: [...(spec.refs ?? []), ...spec.worldSemantic.projector.annotationFields.map(field => ({
+      kind: 'narrative-source-refs-v1' as const, field,
+      targetTables: Object.values(NARRATIVE_SOURCE_FKS_V1).map(target => target.table),
+      onDelete: 'tombstone' as const,
+    }))],
+    exportRefRemap: [...(spec.exportRefRemap ?? []), ...spec.worldSemantic.projector.annotationFields.map(field => ({
+      kind: 'narrative-source-refs-v1' as const, field, exportAs: `_${field}Portable`,
+    }))],
+  } : {}),
 }))
 
 /** 按表名快速查找 */

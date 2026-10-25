@@ -1,3 +1,4 @@
+import type { NarrativeDomainMetadataV1, NarrativeDomainFieldsV1 } from './narrative-domain'
 /**
  * NS-4 · 双层事实记忆 — 时序事实账本数据模型。
  *
@@ -83,7 +84,9 @@ export interface FactPredicateSpec {
  * 时序事实（§14.3）。时序以 chapterId 为稳定身份，绝不缓存 order
  * —— 章节可拖动重排 → order 不稳定 → 只存 chapterId，比较"截止第 N 章"时按当前 order 实时解析。
  */
-export interface TemporalFact {
+type TemporalFactNarrativeFieldsV1 = NarrativeDomainMetadataV1 & Pick<NarrativeDomainFieldsV1, 'narrativeAssertionV1' | 'narrativeRuleV1'>
+
+export interface TemporalFact extends TemporalFactNarrativeFieldsV1 {
   id?: number
   projectId: number
   workId?: number | null

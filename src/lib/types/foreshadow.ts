@@ -1,3 +1,4 @@
+import type { NarrativeDomainMetadataV1, NarrativeDomainFieldsV1 } from './narrative-domain'
 import type { RagDocumentMetadata } from './rag-library'
 
 /** 伏笔状态 */
@@ -21,7 +22,9 @@ export type ForeshadowType =
   | 'callback'      // 回调伏笔
 
 /** 伏笔 */
-export interface Foreshadow extends RagDocumentMetadata {
+type ForeshadowNarrativeFieldsV1 = NarrativeDomainMetadataV1 & Pick<NarrativeDomainFieldsV1, 'narrativeDevelopmentsV1'>
+
+export interface Foreshadow extends RagDocumentMetadata, ForeshadowNarrativeFieldsV1 {
   id?: number
   projectId: number
   name: string               // 伏笔名称

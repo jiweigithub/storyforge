@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { db } from '../../src/lib/db/schema'
 import { seedAvgReadingPreview } from '../helpers/avg-reading-fixture'
+import { seedAvgNativeRelease } from '../helpers/avg-native-fixture'
+import type { ProductRuntimeSession } from '../../src/lib/types'
 import { createProductRuntimeInstance } from '../../src/lib/product/runtime-instances'
 import { branchProductRuntimeSession, commitNarrativeChoice, createPreviewProductRuntimeSession, deleteProductRuntimeSession,
   readProductRuntimeState, readProductRuntimeStateVersion } from '../../src/lib/product/runtime-core'
@@ -11,13 +13,26 @@ async function start() {
   const source = await seedAvgReadingPreview({ voices: [] })
   const parent = await createProductRuntimeInstance({ scope: source.scope, kind: 'avg', title: '原存档',
     productSource: { kind: 'build', productBuildId: source.buildId, expectedPreviewHash: source.preview.previewHash } })
+  return { ...source, ...await branchAfterInspect(parent) }
+}
+
+async function branchAfterInspect(parent: ProductRuntimeSession) {
   const base = async () => { const b = await readProductRuntimeStateVersion(parent.id!); return {
     sessionId: parent.id!, baseSequence: b.sequence, baseStateHash: b.stateHash, commandId: crypto.randomUUID() } }
   await reachAvgPresentationBeat({ ...await base(), beatKey: 'line.desk' })
   await commitNarrativeChoice({ ...await base(), choiceKey: 'inspect' })
   const through = (await readProductRuntimeStateVersion(parent.id!)).sequence
   const child = await branchProductRuntimeSession({ parentSessionId: parent.id!, throughSequence: through, title: '派生存档' })
-  return { ...source, parent, child, through }
+  return { parent, child, through }
+}
+
+/** Actual SourcePlan V1 release, so these migration tests cannot accidentally
+ * disguise a damaged current V3 envelope as a historical save. */
+async function startLegacy() {
+  const source = await seedAvgNativeRelease()
+  const parent = await createProductRuntimeInstance({ scope: source.scope, kind: 'avg', title: '旧协议原存档',
+    productSource: { kind: 'release', productReleaseId: source.id } })
+  return { ...source, ...await branchAfterInspect(parent) }
 }
 
 describe('native AVG portable detached branch provenance', () => {
@@ -46,7 +61,7 @@ describe('native AVG portable detached branch provenance', () => {
   })
 
   it('materializes legacy native branch evidence from the real parent prefix atomically before deletion', async () => {
-    const s = await start(), canon = JSON.parse(s.child.canonSnapshotJson), before = await readProductRuntimeState(s.child.id!)
+    const s = await startLegacy(), canon = JSON.parse(s.child.canonSnapshotJson), before = await readProductRuntimeState(s.child.id!)
     delete canon.avgBranchOrigin
     await db.productRuntimeSessions.update(s.child.id!, { canonSnapshotJson: JSON.stringify(canon) })
     expect(await readProductRuntimeState(s.child.id!)).toEqual(before)
@@ -81,7 +96,7 @@ describe('native AVG portable detached branch provenance', () => {
   })
 
   it('refuses a legacy branch with a mismatching parent prefix, and keeps both saves', async () => {
-    const s = await start(), canon = JSON.parse(s.child.canonSnapshotJson)
+    const s = await startLegacy(), canon = JSON.parse(s.child.canonSnapshotJson)
     delete canon.avgBranchOrigin
     await db.productRuntimeSessions.update(s.child.id!, { canonSnapshotJson: JSON.stringify(canon), parentThroughSequence: 0 })
     await expect(deleteProductRuntimeSession(s.parent.id!)).rejects.toThrow(/无法重建/)
@@ -90,7 +105,7 @@ describe('native AVG portable detached branch provenance', () => {
   })
 
   it('rolls back a valid legacy repair when another child has a corrupt receipt', async () => {
-    const s = await start(), canon = JSON.parse(s.child.canonSnapshotJson)
+    const s = await startLegacy(), canon = JSON.parse(s.child.canonSnapshotJson)
     delete canon.avgBranchOrigin
     const legacyJson = JSON.stringify(canon)
     await db.productRuntimeSessions.update(s.child.id!, { canonSnapshotJson: legacyJson })

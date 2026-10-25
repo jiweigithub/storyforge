@@ -1,6 +1,7 @@
 name: Verify signed Android release upgrade
 on:
   workflow_dispatch:
+  workflow_call:
   pull_request:
     paths:
       - '.github/workflows/client-release-upgrade.yml'
@@ -8,6 +9,8 @@ on:
       - 'tests/helpers/native-upgrade-fixture.ts'
 permissions:
   contents: read
+env:
+  PREVIOUS_CLIENT_VERSION: 4.0.3
 jobs:
   signed-apk-upgrade:
     permissions:
@@ -27,7 +30,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           version=$(node -p "require('./package.json').version")
-          gh release download "v$version" --pattern 'upgrade-test-*.apk' --dir release-test
+          mkdir -p release-test
+          gh release download "v$PREVIOUS_CLIENT_VERSION" --pattern "StoryForge-$PREVIOUS_CLIENT_VERSION-android.apk" --output release-test/upgrade-test-old.apk
+          gh release download "v$version" --pattern "StoryForge-$version-android.apk" --output release-test/upgrade-test-new.apk
+          gh release download "v$version" --pattern 'upgrade-test-runner.apk' --dir release-test
       - name: Enable emulator acceleration
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules

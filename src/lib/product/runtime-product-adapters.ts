@@ -60,13 +60,16 @@ export async function createProductOwnedBranchOriginV1(input: {
 }): Promise<Record<string, unknown>> {
   const canon = JSON.parse(input.parent.canonSnapshotJson) as Record<string, unknown>
   if (input.parent.kind !== 'avg' || (!input.state.avgRules && !input.state.avgReading)) return canon
-  canon.avgBranchOrigin = await createAvgBranchOriginV1({
+  const avgBranchOrigin = await createAvgBranchOriginV1({
     runtimeSourceHash: input.parent.runtimeSourceHash, initialState: input.state,
     parentInitialState: JSON.parse(input.parent.initialStateJson), parentThroughSequence: input.throughSequence,
     parentEventPrefix: input.events.filter(event => event.sequence <= input.throughSequence)
       .map(({ sequence, type, payloadJson }) => ({ sequence, type, payloadJson })),
   })
-  return canon
+  if (canon.schema === 'storyforge.product-runtime-source' && canon.version === 2) {
+    return { schema: 'storyforge.product-runtime-source', version: 3, source: canon, avgBranchOrigin }
+  }
+  return { ...canon, avgBranchOrigin }
 }
 
 export function parseProductOwnedRuntimeStateV1(

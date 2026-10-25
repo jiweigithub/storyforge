@@ -243,7 +243,10 @@ export function getAllPredefinedIds(): string[] {
 /** 判断一个 entry 是否为空（两个文本都为空） */
 export function isEntryEmpty(entry: WorldRuleEntry | undefined): boolean {
   if (!entry) return true
-  return !entry.historicalAnchors.trim() && !entry.fictionalAdaptations.trim()
+  // Incomplete persisted entries are not known-empty: keep them visible and
+  // never let the store delete unrecognised content while editing another field.
+  return typeof entry.historicalAnchors === 'string' && typeof entry.fictionalAdaptations === 'string'
+    && !entry.historicalAnchors.trim() && !entry.fictionalAdaptations.trim()
 }
 
 /** 统计已填节点数 */

@@ -26,6 +26,7 @@ const EXPECTED_TOOLS = [
   'read_inspiration_workspace',
   'read_character_driven_plan',
   'search_text',
+  'query_world_release',
   'list_context_catalog',
   'search_context',
   'read_context_resource',
@@ -315,7 +316,12 @@ describe('R-AGENT1 · 只读 Tool Registry', () => {
         ? { sourceRef: originalCapability, maxTokens: 1000 }
         : args[tool.name] ?? {}
       const result = await tool.execute({ projectId, contextGatewaySession: gatewaySession }, toolArgs)
-      expect(result.ok, `${tool.name}: ${result.error ?? ''}`).toBe(true)
+      if (tool.name === 'query_world_release') {
+        // This is a draft Canon session, without a frozen-world capability.
+        // The new tool must fail closed and remain read-only in that scope.
+        expect(result.ok).toBe(false)
+        expect(result.error).toContain('未授权叙事查询')
+      } else expect(result.ok, `${tool.name}: ${result.error ?? ''}`).toBe(true)
       if (tool.name === 'read_context_resource') {
         originalCapability = JSON.parse(result.content).sourceRefCapabilities[0]
       }

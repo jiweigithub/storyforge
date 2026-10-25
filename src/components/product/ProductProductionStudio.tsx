@@ -58,7 +58,7 @@ import type {
   ProductBuildCompatibilityReportV1, ProductEvolutionAffectedLaneV1, ProductProductionBriefV3, ProductProductionRecordV1,
   ProductProductionScaleV1, ProductProductionSourceOptionsV1, ProductProductionSourceSelectionV1,
   ProductStartingPointSuggestionV1, ProductionProductKindV1, TtrpgCampaignProposalSectionV2, WorkspaceScope,
-  ProductProductionHandoffV1, WorldReferenceCatalogEntryV1,
+  ProductProductionHandoffV1, WorldReferenceCatalogEntry,
   AiTownBriefSettingsV1,
 } from '../../lib/types'
 import { PRODUCT_BROWSER_PERFORMANCE_POLICY_V1 } from '../../lib/product-production/browser-performance'
@@ -650,7 +650,7 @@ export default function ProductProductionStudio(props: {
   }
   const initialProduct = props.initialProduct && props.allowedProducts.includes(props.initialProduct)
     ? props.initialProduct : props.allowedProducts[0]
-  const [releases, setReleases] = useState<WorldReferenceCatalogEntryV1[]>([])
+  const [releases, setReleases] = useState<WorldReferenceCatalogEntry[]>([])
   const [productions, setProductions] = useState<ProductProductionRecordV1[]>([])
   const [selectedProductionId, setSelectedProductionId] = useState<number | null>(null)
   const [details, setDetails] = useState<ProductProductionDetailsV1 | null>(null)
@@ -793,6 +793,7 @@ export default function ProductProductionStudio(props: {
     const { worldReleases: nextReleases, productions: nextProductions } = await listProductProductionWorkspaceV1(
       scope,
       allowedProducts,
+      { narrativePreview: import.meta.env.DEV && new URLSearchParams(window.location.search).has('narrative-preview') },
     )
     setReleases(nextReleases)
     setProductions(nextProductions)
@@ -990,7 +991,13 @@ export default function ProductProductionStudio(props: {
     })
     return () => { active = false }
   }, [])
-  useEffect(() => { void refresh() }, [refresh])
+  useEffect(() => {
+    let active = true
+    void refresh().catch(cause => {
+      if (active) setError(cause instanceof Error ? cause.message : String(cause))
+    })
+    return () => { active = false }
+  }, [refresh])
   useEffect(() => () => {
     queuedProductionIdRef.current = null
     if (productionRecoveryTimer.current != null) globalThis.clearTimeout(productionRecoveryTimer.current)
@@ -1020,7 +1027,7 @@ export default function ProductProductionStudio(props: {
 
   const consult = () => run(async () => {
     if (worldReleaseId == null) throw new Error('请先发布一个 WorldRelease。')
-    const result = await consultProductProductionStartV1({ scope: props.scope, worldReleaseId })
+    const result = await consultProductProductionStartV1({ scope: props.scope, worldReleaseId, productType })
     setSuggestions(result.suggestions)
     setSourceOptions(result.sourceOptions)
     setSelectionDefaults(result.selectionDefaults)

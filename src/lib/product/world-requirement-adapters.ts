@@ -29,6 +29,7 @@ function selector(input: {
  * adapter is snapshotted; product code never receives a global world wildcard.
  */
 export interface UpperProductWorldRequirementGoalV1 {
+  semanticContract?: 3 | 4
   selectedAreas: WorldCapabilityArea[]
   selectedResourceKinds: string[]
   selectedContextKinds: ContextResourceKind[]
@@ -160,6 +161,49 @@ export const AI_TOWN_WORLD_REQUIREMENT_ADAPTER_V1 = createUpperProductWorldRequi
 export const TEXT_ADVENTURE_WORLD_REQUIREMENT_ADAPTER_V1 = createUpperProductWorldRequirementAdapterV1('text-adventure')
 export const AVG_WORLD_REQUIREMENT_ADAPTER_V1 = createUpperProductWorldRequirementAdapterV1('avg')
 export const TEXT_OPEN_WORLD_REQUIREMENT_ADAPTER_V1 = createUpperProductWorldRequirementAdapterV1('text-open-world')
+
+function enhancedProductRules(productType: 'character-interaction' | 'avg', goal: UpperProductWorldRequirementGoalV1): WorldRequirementRuleV1[] {
+  const rules = upperProductRules(productType, goal)
+  if (goal.semanticContract !== 4) return rules
+  for (const rule of rules) {
+    if (rule.key === 'product-cast') rule.selector.resourceKinds = ['entity']
+    if (rule.key === 'participant-relations') rule.selector.resourceKinds = ['relation']
+    if (rule.key === 'story-continuity') rule.selector.contextKinds = [...new Set([...rule.selector.contextKinds, 'fact' as const])]
+  }
+  // This is a semantic upper bound only. The exact compiler admits solely A∪D,
+  // and the product's prohibited rules still win over every required key.
+  rules.push({ key: 'declared-neutral-dependencies', label: '声明的语义与原文证据依赖', level: 'recommended', minimumResources: 1,
+    selector: selector({ areas: PRODUCT_AREAS[productType].filter(area => area !== 'multi-world' || goal.allowCrossWorld),
+      contextKinds: PRODUCT_CONTEXT_KINDS[productType].filter(kind => kind !== 'world-link' || goal.allowCrossWorld) }), condition: null })
+  return rules
+}
+
+/** New product compilers are explicit. Other products and frozen V1 plans
+ * continue using their existing adapter contracts. */
+export const CHARACTER_INTERACTION_WORLD_REQUIREMENT_ADAPTER_V2: WorldRequirementAdapterV1<UpperProductWorldRequirementGoalV1> = {
+  adapterId: 'storyforge.character-interaction.exact-world-requirements',
+  adapterVersion: 2,
+  productType: 'character-interaction',
+  contextTaskKind: 'agent-outline',
+  resolve: goal => [...enhancedProductRules('character-interaction', goal), {
+    key: 'no-author-manuscript', label: '聊天产品不读取作者正文与大纲', level: 'prohibited',
+    selector: selector({ areas: ['outline', 'detailed-outline', 'manuscript'],
+      contextKinds: ['outline-node', 'detailed-outline', 'chapter'] }),
+    minimumResources: 0, condition: null,
+  }],
+}
+
+export const AVG_WORLD_REQUIREMENT_ADAPTER_V2: WorldRequirementAdapterV1<UpperProductWorldRequirementGoalV1> = {
+  adapterId: 'storyforge.avg.exact-world-requirements',
+  adapterVersion: 2,
+  productType: 'avg',
+  contextTaskKind: 'agent-outline',
+  resolve: goal => [...enhancedProductRules('avg', goal), {
+    key: 'no-cross-world-runtime', label: 'AVG 不继承跨世界运行通道', level: 'prohibited',
+    selector: selector({ areas: ['multi-world'], contextKinds: ['world', 'world-link'] }),
+    minimumResources: 0, condition: null,
+  }],
+}
 
 const UPPER_PRODUCT_WORLD_REQUIREMENT_ADAPTERS_V1: ReadonlyMap<
   ProductionProductKindV1,

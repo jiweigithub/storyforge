@@ -4,8 +4,9 @@ import type { AIProvider } from '../types/ai'
 import type { ContextLayer, ContextSegment } from '../ai/context-budget'
 import type { PreparedContinuityContext } from '../ai/chapter-memory/continuity-context'
 import type { InspirationResultMode } from '../types/inspiration-workspace'
-import type { RagSelectionTraceCollector } from '../types/rag-library'
+import type { RagAnnotationTargetSelectionV1, RagSelectionTraceCollector } from '../types/rag-library'
 import type { WorkspaceScope } from '../types/world-ownership'
+import type { NarrativeDomainFieldsV1 } from '../types/narrative-domain'
 import type {
   ExactRunArtifactKindV1,
   WorkspaceDocumentCodecV1,
@@ -56,6 +57,15 @@ export interface WorldSemanticResourceSpec {
   canonPolicy: 'authoritative-table' | 'confirmed-rows-only'
   statusField?: string
   confirmedStatusValues?: readonly string[]
+  /** Current source eligibility; historical release decoders freeze their own snapshot. */
+  projector?: {
+    version: 1
+    kind: 'entity' | 'event' | 'assertion' | 'relation' | 'epistemic-event' | 'development' | 'disclosure'
+    sourceFields: readonly string[]
+    annotationFields: readonly (keyof NarrativeDomainFieldsV1)[]
+    provenanceField: string
+  }
+  publishPolicy?: 'reviewed-narrative-v1'
 }
 
 /** WORLD-2C product ownership, separate from the physical project lifecycle owner. */
@@ -186,7 +196,15 @@ export interface BlobOwnerRef {
   onDelete: 'cascade'
 }
 
-export type RefSpec = SimpleRef | JsonRef | ArrayRef | IndirectRef | BlobOwnerRef
+export interface NarrativeSourceRefSpecV1 {
+  kind: 'narrative-source-refs-v1'
+  field: keyof NarrativeDomainFieldsV1
+  /** Typed FK vocabulary; deletion retains source UID and evidence. */
+  targetTables: readonly string[]
+  onDelete: 'tombstone'
+}
+
+export type RefSpec = SimpleRef | JsonRef | ArrayRef | IndirectRef | BlobOwnerRef | NarrativeSourceRefSpecV1
 
 /** 导出时的 ID 重映射声明 */
 export interface ExportRemapField {
@@ -224,6 +242,10 @@ export interface ExportRemapField {
  * exportAs 是当前便携协议的稳定影子坐标；导入时只用该坐标重映射。
  */
 export type ExportRefRemap = {
+  kind: 'narrative-source-refs-v1'
+  field: keyof NarrativeDomainFieldsV1
+  exportAs: string
+} | {
   field: string
   remapVia: string
   kind: 'portals'
@@ -342,6 +364,8 @@ export interface TableSpec<T = any> {
     version: 1
     field: 'ragDocumentId'
     resourceKind: string
+    /** NW-1A entity identity classification, not a writable IR/Canon field. */
+    narrativeEntityType?: 'character' | 'location' | 'codex-entry' | 'world-group'
     /** Context Gateway catalog metadata remains on this registry entry. */
     contextKind: ContextResourceKind
     label: string
@@ -401,6 +425,8 @@ export interface FieldSpec {
   field: string
   /** Optional stable CreativeArtifact output id resolved through this same registry. */
   candidateId?: string
+  /** This field requires the registered domain confirmation/CAS boundary. */
+  adoptionPolicy?: 'narrative-annotation-v1'
   type: 'string' | 'longtext' | 'json' | 'object' | 'number' | 'boolean' | 'enum' | 'array'
   enums?: string[]
   worldScoped?: boolean
@@ -478,6 +504,9 @@ export interface AdoptionExtensionSpec {
 }
 
 export interface AdoptInput {
+  /** NW-1C: author-selected durable candidate. Payload is loaded from verified
+   * ledger state; caller-provided fields are never trusted on this route. */
+  narrativeCandidate?: { runId: number; candidateHash: string }
   /** Author-operated, registry-allowlisted exact text edits; never set from model payloads. */
   preserveAuthorText?: boolean
   extensionSnapshot?: import('../extensions/types').ExtensionRegistrySnapshot
@@ -655,6 +684,11 @@ export interface AssembleContextInput {
   searchKinds?: string[]
   /** RAG-1: 节点/Agent 明确选择的稳定资料字段键。 */
   ragEntryKeys?: string[]
+  /** Exact original evidence through the same Canon provider; refuses loss. */
+  ragReadMode?: 'original-evidence-v1'
+  /** Authoring target state through ragSelection; target must also be one of
+   * the explicitly selected original sources. Never a product runtime read. */
+  ragAnnotationTarget?: RagAnnotationTargetSelectionV1
   /** RAG-1 内部执行证据收集器；调用结束后由节点运行快照冻结。 */
   ragSelectionTrace?: RagSelectionTraceCollector
   /** assembleContext 内部批量预取；调用方无需传。 */
@@ -733,6 +767,17 @@ export interface ContextResourceDescriptorV1 {
     resourceKind: string
     /** Release-scoped portable row identity; never a Dexie id. */
     resourceCoordinate: string
+    /** Frozen directory provenance, not semantic evidence. Only the verified
+     * narrative provider may attach this under author-review author access. */
+    authorSource?: import('../types/world-query').WorldQueryAuthorSourceV1
+    /** Verified v4 neutral dependency contract. Contains only identities
+     * visible in this grant, including records sharing an original span. */
+    narrative?: {
+      version: 1
+      resolverVersion: 'narrative-neutral-closure-v1'
+      requiredResourceKeys: string[]
+      relationEndpoints: [string, string] | null
+    }
   }
   relations: ContextResourceRelationV1[]
   timeRange?: ContextTimeRangeV1
@@ -834,6 +879,16 @@ export interface ContextResourceProviderV1 {
   read(input: ResourceReadInputV1): Promise<ContextResourceReadV1>
   readOriginal(input: OriginalEvidenceReadInputV1): Promise<OriginalEvidenceReadV1>
   fingerprint(scope: FrozenResourceScopeV1): Promise<string>
+  /** Optional, explicitly registered v4 protocol. Author/controller capability
+   * creation is never exposed as a model tool argument. */
+  worldQuery?: import('../types/world-query').WorldQueryProviderProtocolV1
+  /** Metadata query only; actual reads still use read/readOriginal and their
+   * existing Manifest evidence. Present only on a verified v4 binding. */
+  queryWorldMetadata?(input: { scope: FrozenResourceScopeV1; query: import('../types/world-query').WorldQueryV1 }): Promise<{
+    result: import('../types/world-query').WorldQueryResultV1; descriptors: ContextResourceDescriptorV1[]
+  }>
+  /** Non-cacheable revocation/stale check for an opaque bound permission. */
+  assertAccessCurrent?(scope: FrozenResourceScopeV1): Promise<void>
 }
 
 export interface ContextAccessPolicyV1 {

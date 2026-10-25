@@ -1,3 +1,4 @@
+import type { NarrativeDomainMetadataV1, NarrativeDomainFieldsV1 } from './narrative-domain'
 import type { RagDocumentMetadata } from './rag-library'
 
 /**
@@ -14,7 +15,9 @@ export type WorldGroupType =
   | 'custom'       // 自定义
 
 /** 世界组 — 一组独立的世界观设定 */
-export interface WorldGroup extends RagDocumentMetadata {
+type WorldGroupNarrativeFieldsV1 = NarrativeDomainMetadataV1 & Pick<NarrativeDomainFieldsV1, 'narrativeAliasesV1' | 'narrativeChronologyV1'>
+
+export interface WorldGroup extends RagDocumentMetadata, WorldGroupNarrativeFieldsV1 {
   id?: number
   projectId: number
   /** 世界组名称（如"斗破世界"、"遮天世界"） */

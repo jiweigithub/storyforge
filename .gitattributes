@@ -6,3 +6,7 @@
 
 # Preserve the verbatim upstream CC0 notice, including its original line endings.
 tests/fixtures/avg-audio/KENNEY-LICENSE.txt -text -diff
+
+# Verification evidence must keep the exact emitted bytes, including coverage
+# table padding and trailing blank lines. Source files retain normal checks.
+tests/acceptance/narrative-world/raw/** -text whitespace=-blank-at-eol,-blank-at-eof

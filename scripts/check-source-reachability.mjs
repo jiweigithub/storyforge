@@ -39,6 +39,19 @@ const entrypoints = [
   'src/lib/avg/audio-gain.worker.ts',
   'src/lib/avg/audio-dsp-compute-v2.worker.ts',
   'src/lib/avg/audio-dsp-verify-v2.worker.ts',
+  // NW-1A is a headless identity/time/codec contract. Domain projection and
+  // release/Gateway activation follow in NW-1B/2A/2B; no author UI is exposed.
+  'src/lib/world-engine/narrative-ir.ts',
+  // NW-1B: reviewed domain projection/confirmation are headless, with author UI
+  // and durable candidate integration reserved for NW-1C.
+  'src/lib/world-engine/narrative-domain-authoring.ts',
+  'src/lib/world-engine/narrative-domain-projection.ts',
+  // NW-2A: versioned offline content/index codec. Persistence and author UI
+  // remain gated until the complete revision/package lifecycle is integrated.
+  'src/lib/world-engine/narrative-release-v4.ts',
+  // Vite loads this dedicated compiler through new Worker(new URL(...)); it is
+  // a separate module graph, not a main-thread TypeScript import.
+  'src/lib/world-engine/narrative-release.worker.ts',
   // Text-open-world owns this headless durable expression Harness. It is an
   // internal capability boundary, never a product route or session identity.
   'src/lib/open-world/evolution-harness.ts',

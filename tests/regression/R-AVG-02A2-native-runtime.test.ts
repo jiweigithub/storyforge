@@ -13,6 +13,7 @@ import { hashProductProductionValueV2 } from '../../src/lib/product-production/h
 import { exportProjectJSON, importProjectJSON } from '../../src/lib/export/json-export'
 import { deleteWork } from '../../src/lib/workspace/lifecycle'
 import { createProductBuildPreviewManifestV2 } from '../../src/lib/product-production/preview-manifest'
+import { verifyProductRuntimeSessionSourceV1 } from '../../src/lib/product-production/preview-source'
 
 async function readLine(id: number, key: string, commandId: string) {
   const base = await readProductRuntimeStateVersion(id)
@@ -105,7 +106,9 @@ describe('AVG native V2 compilation, event replay and saves', () => {
   it('refuses deleted or replaced native rules on import before creating any project', async () => {
     const s = await seedAvgNativePreview()
     const session = await createProductRuntimeInstance({ scope: s.scope, kind: 'avg', title: '导入防护', productSource: { kind: 'build', productBuildId: s.buildId, expectedPreviewHash: s.preview.previewHash } })
-    expect(JSON.parse(session.canonSnapshotJson).packageVersion).toBe(2)
+    expect((await verifyProductRuntimeSessionSourceV1({scope:s.scope,session})).runtimePackage.version).toBe(2)
+    expect(JSON.parse(session.canonSnapshotJson)).toMatchObject({schema:'storyforge.product-runtime-source',version:2,
+      sourceManifest:{readMode:'frozen-product-package',directWorldReads:[]}})
     const snapshot = await exportProjectJSON(s.scope.projectId), count = await db.projects.count()
     for (const mode of ['delete','replace']) {
       const forged = structuredClone(snapshot)
@@ -121,6 +124,15 @@ describe('AVG native V2 compilation, event replay and saves', () => {
     await db.productRuntimeSessions.update(session.id!, { initialStateJson: JSON.stringify(initial) })
     await expect(readProductRuntimeState(session.id!)).rejects.toThrow(/冻结来源/)
   })
+  it('rejects a legacy native release with both its initial rules and mutable native hint removed despite an intact cached head', async () => {
+    const s=await seedAvgNativeRelease()
+    const session=await createProductRuntimeInstance({scope:s.scope,kind:'avg',title:'旧版原生缓存守门',productSource:{kind:'release',productReleaseId:s.id}})
+    const initial=JSON.parse(session.initialStateJson),canon=JSON.parse(session.canonSnapshotJson)
+    delete initial.avgRules;delete canon.packageVersion
+    await db.productRuntimeSessions.update(session.id!,{initialStateJson:JSON.stringify(initial),canonSnapshotJson:JSON.stringify(canon)})
+    await expect(readProductRuntimeState(session.id!)).rejects.toThrow(/冻结来源/)
+  })
+
   it('runs an actual bound Build preview, stops premature/unavailable choices, saves a repeated visit and restores through backup', async () => {
     const s = await seedAvgNativePreview()
     const session = await createProductRuntimeInstance({ scope: s.scope, kind: 'avg', title: '原生 V2', productSource: { kind: 'build', productBuildId: s.buildId, expectedPreviewHash: s.preview.previewHash } })

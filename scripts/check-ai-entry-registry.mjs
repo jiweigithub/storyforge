@@ -9,6 +9,27 @@ const registryPath = 'src/lib/agent/ai-entry-registry.json'
 const registry = JSON.parse(fs.readFileSync(path.join(root, registryPath), 'utf8'))
 const failures = []
 
+// Offline evaluation runners do not enter the application's UI/Harness or
+// own a creative-data writer. Keep their explicit, non-adopting boundary in
+// this same registry instead of silently exempting a new raw model entry.
+const offlineIds = new Set()
+for (const entry of registry.offlineEvaluations ?? []) {
+  if (!entry.entryId?.startsWith('eval.') || offlineIds.has(entry.entryId)
+    || entry.boundary !== 'eval-only' || entry.adoptAllowed !== false || entry.adoptionTargets?.length
+    || entry.transport !== 'local-codex-subscription' || !entry.reason
+    || !/^scripts\/evaluate-[a-z-]+\.mjs$/.test(entry.caller ?? '')
+    || !/^scripts\/[a-z-]+-contract\.mjs$/.test(entry.contract ?? '')
+    || !fs.existsSync(path.join(root, entry.caller ?? '')) || !fs.existsSync(path.join(root, entry.contract ?? ''))) {
+    failures.push('离线评测入口边界无效: ' + entry.entryId)
+    continue
+  }
+  offlineIds.add(entry.entryId)
+  const caller = fs.readFileSync(path.join(root, entry.caller), 'utf8')
+  const contract = fs.readFileSync(path.join(root, entry.contract), 'utf8')
+  if (!contract.includes(`'${entry.entryId}'`) || !caller.includes('assertOfflineEntry()')
+    || !caller.includes('runtime.generate(')) failures.push('离线评测缺少实际合同绑定: ' + entry.entryId)
+}
+
 function walk(dir, acc = []) {
   for (const entry of fs.readdirSync(path.join(root, dir), { withFileTypes: true })) {
     const file = `${dir}/${entry.name}`
@@ -192,7 +213,7 @@ const skillSource = fs.readFileSync(path.join(root, 'src/lib/agent/skill-registr
 const skillIds = new Set([...skillSource.matchAll(/\bid:\s*'([^']+)'/g)].map(match => match[1]))
 const registered = new Map()
 for (const entry of registry.entries ?? []) {
-  if (!entry?.entryId || registered.has(entry.entryId)) {
+  if (!entry?.entryId || registered.has(entry.entryId) || offlineIds.has(entry.entryId)) {
     failures.push(`${registryPath}: 重复或无效 entryId ${String(entry?.entryId)}`)
     continue
   }

@@ -95,3 +95,22 @@ describe('local failure reporting privacy and explicit handoff', () => {
     expect(container.textContent).not.toContain('PRIVATE-PLAYER-STATE')
   })
 })
+
+
+it('keeps ordinary rendering retry inside React instead of reloading or invoking the save barrier', async () => {
+  const coordinator = await import('../../src/lib/authoring/pending-edit-coordinator')
+  const flush = vi.spyOn(coordinator, 'flushPendingEditsV1')
+  vi.spyOn(console, 'error').mockImplementation(() => {})
+  let broken = true
+  function RecoverableView() {
+    if (broken) throw new Error('ordinary render failure')
+    return createElement('p', null, 'ordinary view recovered')
+  }
+  container = document.createElement('div'); document.body.append(container); root = createRoot(container)
+  await act(async () => root!.render(createElement(ErrorBoundary, { children: createElement(RecoverableView) })))
+  broken = false
+  const retry = [...container.querySelectorAll('button')].find(button => button.textContent?.trim() === '重试')!
+  await act(async () => retry.click())
+  expect(container.textContent).toContain('ordinary view recovered')
+  expect(flush).not.toHaveBeenCalled()
+})

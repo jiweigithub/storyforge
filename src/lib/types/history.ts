@@ -1,3 +1,4 @@
+import type { NarrativeDomainMetadataV1, NarrativeDomainFieldsV1 } from './narrative-domain'
 import type { RagDocumentMetadata } from './rag-library'
 
 /** 历史事件 */
@@ -62,7 +63,9 @@ export const HISTORICAL_ERA_LABELS: Record<HistoricalEra, string> = {
 }
 
 /** 历史时间线事件（PHASE-H1 独立表存储） */
-export interface HistoricalTimelineEvent {
+type HistoricalTimelineEventNarrativeFieldsV1 = NarrativeDomainMetadataV1 & Pick<NarrativeDomainFieldsV1, 'narrativeEventV1'>
+
+export interface HistoricalTimelineEvent extends HistoricalTimelineEventNarrativeFieldsV1 {
   id?: number          // 数据库自增 ID
   projectId: number    // 项目 ID
   era: HistoricalEra | string // 所属历史时期

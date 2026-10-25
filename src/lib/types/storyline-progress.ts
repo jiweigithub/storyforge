@@ -1,3 +1,4 @@
+import type { NarrativeDomainMetadataV1, NarrativeDomainFieldsV1 } from './narrative-domain'
 export const STORYLINE_PROGRESS_STATUSES = [
   'dormant',
   'active',
@@ -9,7 +10,9 @@ export const STORYLINE_PROGRESS_STATUSES = [
 export type StorylineProgressStatus = typeof STORYLINE_PROGRESS_STATUSES[number]
 
 /** Phase 39：StoryArc 静态蓝图的作者已确认动态投影。 */
-export interface StorylineProgress {
+type StorylineProgressNarrativeFieldsV1 = NarrativeDomainMetadataV1 & Pick<NarrativeDomainFieldsV1, 'narrativeDevelopmentsV1'>
+
+export interface StorylineProgress extends StorylineProgressNarrativeFieldsV1 {
   id?: number
   projectId: number
   arcId: number

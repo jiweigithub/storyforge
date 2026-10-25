@@ -1,4 +1,5 @@
 import { db } from '../db/schema'
+import { remapNarrativeDomainReferencesV1 } from '../narrative-domain/lifecycle'
 
 /**
  * 删除重要地点前清理城池词条的软引用。
@@ -11,6 +12,7 @@ export async function clearImportantLocationReferences(
   locationIds: ReadonlySet<number>,
 ): Promise<number> {
   if (locationIds.size === 0) return 0
+  for (const id of locationIds) await remapNarrativeDomainReferencesV1({ table: 'importantLocations', fromId: id })
   const entries = await db.codexEntries.where('projectId').equals(projectId).toArray()
   const affected = entries.filter(entry =>
     entry.id != null &&

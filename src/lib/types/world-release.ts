@@ -35,14 +35,17 @@ export interface WorldDerivationV1 {
   worldId: number
   sourceWorkspaceUid: string
   sourceWorkCode: string
-  /** Source Work updatedAt at the instant the immutable content vector was captured. */
+  /** Source Work updatedAt for novel derivation; 0 for a frozen World copy,
+   * whose version identity is sourceReleaseUid in narrativeLineageJson. */
   sourceWorkRevision: number
   /** Full registered Canon revision vector, retained for replay and stale proof. */
   sourceRevisionVectorJson: string
-  sourceKind: 'long-novel' | 'short-novel'
+  sourceKind: 'long-novel' | 'short-novel' | 'world-release-copy'
   sourceRangeJson: string
   selectedResourceIdsJson: string
   sourceContentHash: string
+  /** Versioned, hash-bound narrative identity mapping. Historical rows omit it. */
+  narrativeLineageJson?: string
   targetRevisionId: number | null
   targetReleaseId: number | null
   createdAt: number

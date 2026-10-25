@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import WorldRuleEntryEditor from '../../src/components/worldview/WorldRuleEntryEditor'
 import WorldRulesNavigation from '../../src/components/worldview/WorldRulesNavigation'
 import type { WorldRuleNavigationNode } from '../../src/components/worldview/WorldRulesNavigation'
-import { createEmptyEntry } from '../../src/lib/types/world-rules'
+import { createEmptyEntry, countFilledEntries, isEntryEmpty, type WorldRuleEntry } from '../../src/lib/types/world-rules'
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
@@ -135,5 +135,24 @@ describe('AUDIT-6 / HEALTH-4 · 真实与幻想受控视图', () => {
     }))
     expect(host.textContent).toContain('选择左侧的子类开始设定')
     expect(host.querySelector('textarea')).toBeNull()
+  })
+})
+
+
+describe('world-rule partial-record rendering and preservation', () => {
+  it('keeps incomplete entries visible without treating unrecognised data as deletable empty content', () => {
+    const entries = {
+      missingHistory: { fictionalAdaptations: '保留的幻想规则', priority: 'balanced' },
+      missingFantasy: { historicalAnchors: '保留的历史依据', priority: 'historical' },
+      unknownValue: { historicalAnchors: 42, fictionalAdaptations: '', priority: 'balanced' },
+    } as unknown as Record<string, WorldRuleEntry>
+    const before = JSON.stringify(entries)
+    expect(countFilledEntries(entries)).toBe(3)
+    expect(Object.values(entries).map(isEntryEmpty)).toEqual([false, false, false])
+    expect(JSON.stringify(entries)).toBe(before)
+    expect(isEntryEmpty(undefined)).toBe(true)
+    expect(isEntryEmpty(createEmptyEntry())).toBe(true)
+    expect(isEntryEmpty({ ...createEmptyEntry(), historicalAnchors: '  ' })).toBe(true)
+    expect(isEntryEmpty({ ...createEmptyEntry(), fictionalAdaptations: '规则' })).toBe(false)
   })
 })

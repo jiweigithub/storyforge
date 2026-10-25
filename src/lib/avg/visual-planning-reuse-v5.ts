@@ -34,8 +34,13 @@ export function avgVisualReuseDescriptorV5(history:Awaited<ReturnType<typeof rea
 
 /** Re-prove a V5 author decision, original proposal Run, scope, route and
  * registered method. Reuse provides a fresh candidate only; adoption is new. */
-export async function readAvgVisualReuseHistoryV5(input:{scope:WorkspaceScope;build:ProductBuildRecordV1;brief:ProductProductionBriefV3;
-  task:ProductProductionPlanTaskV3;source:AvgVisualProposalReuseSourceV5;path?:AvgVisualReusePathV5}):Promise<Awaited<ReturnType<typeof readAvgHistoricalVisualArtifactsV5>>[number]>{
+type VisualReuseHistoryInputV5={scope:WorkspaceScope;build:ProductBuildRecordV1;brief:ProductProductionBriefV3;
+  task:ProductProductionPlanTaskV3;source:AvgVisualProposalReuseSourceV5;path?:AvgVisualReusePathV5}
+type VisualReuseHistoryV5=Awaited<ReturnType<typeof readAvgHistoricalVisualArtifactsV5>>[number]
+export function readAvgVisualReuseHistoryV5(input:VisualReuseHistoryInputV5):Promise<VisualReuseHistoryV5>{
+  return readVisualReuseHistoryV5(input,true)
+}
+async function readVisualReuseHistoryV5(input:VisualReuseHistoryInputV5,currentMethod:boolean):Promise<VisualReuseHistoryV5>{
   const source=parseAvgVisualProposalReuseSourceV5(input.source),path=input.path??[],planning=input.brief.avgVisualPlanning
   const identity=`${source.productionKey}:${source.buildNumber}:${source.artifact.artifactKey}`
   if(path.length>=32||path.includes(identity)||source.buildNumber>=input.build.buildNumber||planning?.version!==5
@@ -52,9 +57,9 @@ export async function readAvgVisualReuseHistoryV5(input:{scope:WorkspaceScope;bu
   const role=AVG_VISUAL_PLANNING_ROLES_V5.find(r=>r.subjectKind===kind)
   if(!role)throw new Error('[avg-visual-reuse] V5 来源岗位无效')
   const skill=getAgentSkillV1(role.skillId),request=history.original.modelRequest
-  if(!same(history.original.modelRun.contract.executionBindings,[{stepId:input.task.taskKey,...createAgentSkillExecutionBindingV1(skill)}])
+  if(currentMethod&&(!same(history.original.modelRun.contract.executionBindings,[{stepId:input.task.taskKey,...createAgentSkillExecutionBindingV1(skill)}])
     ||request.systemPrompt!==avgVisualPlanningMethodV5(role.subjectKind)||request.promptVersion!==skill.promptVersion
-    ||request.maximumOutputTokens!==role.outputTokens)throw new Error('[avg-visual-reuse] V5 原模型岗位方法已变化，不能自动复用')
+    ||request.maximumOutputTokens!==role.outputTokens))throw new Error('[avg-visual-reuse] V5 原模型岗位方法已变化，不能自动复用')
   return history
 }
 
@@ -97,7 +102,10 @@ export async function readAvgVisualReuseEvidenceV5(scope:WorkspaceScope,row:{pro
   const requestText=await readAgentRunArtifactExactV1({projectId:scope.projectId,artifactKind:'source-snapshot',contentHash:String(q.requestSnapshotHash)})
   if(await hashAvgVisualExactTextV1(requestText)!==q.requestSnapshotHash)throw new Error('[avg-visual-reuse] V5 当前确定性输入字节损坏')
   const request=avgRecord(JSON.parse(requestText),['schema','version','taskKey','targetArtifactKey','scopeHash','sourceInputHash','contextText','source','originalRequestHash','rawResponseHash'],'V5 reuse input')
-  const history=await readAvgVisualReuseHistoryV5({scope,build,brief,task,source,path}),packet=assertAvgVisualReuseSemanticInputV5(String(request.contextText),history,source)
+  // This producer already completed under its own frozen contract. Re-prove
+  // those exact bytes, not today's tool catalog; new reuse still uses the
+  // strict public reader above before it can receive execution authority.
+  const history=await readVisualReuseHistoryV5({scope,build,brief,task,source,path},false),packet=assertAvgVisualReuseSemanticInputV5(String(request.contextText),history,source)
   if(request.schema!=='storyforge.avg.visual-reuse-input'||request.version!==2||request.taskKey!==task.taskKey||request.targetArtifactKey!==source.artifact.artifactKey
     ||request.scopeHash!==await hashProductProductionValueV2(brief.avgVisualPlanning.scope)||request.scopeHash!==q.scopeHash
     ||request.sourceInputHash!==brief.avgVisualPlanning.scope.sourceInputHash||!same(request.source,source)

@@ -61,7 +61,7 @@ export default function WorldRuleEntryEditor({
               📜 取自真实（历史考据 / 现实原型）
             </label>
             <textarea
-              value={currentEntry.historicalAnchors}
+              value={currentEntry.historicalAnchors ?? ''}
               onChange={event => onFieldChange('historicalAnchors', event.target.value)}
               placeholder="这个维度中有哪些内容是取自真实历史或现实的？例如：使用唐朝开元年间真实官制三省六部"
               rows={5}
@@ -74,7 +74,7 @@ export default function WorldRuleEntryEditor({
               ✨ 架空改造（虚构 / 改编 / 原创设定）
             </label>
             <textarea
-              value={currentEntry.fictionalAdaptations}
+              value={currentEntry.fictionalAdaptations ?? ''}
               onChange={event => onFieldChange('fictionalAdaptations', event.target.value)}
               placeholder="这个维度中有哪些内容是虚构或改编的？例如：在真实官制基础上增设灵修院，专管修士事务"
               rows={5}

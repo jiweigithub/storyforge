@@ -268,6 +268,10 @@ async function fieldsForRow(spec: ResourceSpec, row: ResourceRow): Promise<Field
     : Object.keys(row).sort().map(key => ({ key, field: undefined }))
   const projected: FieldProjectionV1[] = []
   for (const definition of definitions) {
+    // A registered proposal field isn't an approved context reader. Domain
+    // annotations require the typed, reviewed projection introduced in NW-1C;
+    // don't expose receipts/private plans through this legacy field fallback.
+    if (spec.worldSemantic?.projector?.annotationFields.some(field => field === definition.key)) continue
     const value = row[definition.key]
     if (!semanticFieldAllowed(definition.key, value)) continue
     const exact = exactValue(value)

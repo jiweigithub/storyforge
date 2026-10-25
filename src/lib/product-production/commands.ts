@@ -23,7 +23,7 @@ import type {
   ProductProductionCommandRecordV1,
   ProductProductionCommandV1,
   ProductProductionRecordV1,
-  ProductSourcePlanV1,
+  ProductSourcePlan,
   TextOpenWorldCreatorBriefV1,
   TextOpenWorldCreatorSourceBindingV1,
   TextOpenWorldCreatorSourceLocatorV1,
@@ -36,10 +36,11 @@ import { parseProductProductionBriefV3, parseProductProductionCommandV1 } from '
 import {
   createConfirmedProductBriefV1,
   createProductProductionSourcePlanV1,
+  refreezeProductProductionEvolutionSourcePlanV2,
   parseProductProductionSourcePlanV1,
 } from './source-contracts'
 import { assertFormalProductProductionStartV1 } from '../product/source-contracts'
-import { createWorldReferenceV1 } from '../product/source'
+import { createWorldReferenceV1, createWorldReference } from '../product/source'
 import { assertAiTownWorldSourceSelectionHashV1 } from '../ai-town/contracts'
 import {
   createProductProductionPlanV3,
@@ -1038,7 +1039,7 @@ async function applyCommand(input: {
   production: ProductProductionRecordV1 & { id: number }
   command: ProductProductionCommandV1
   preparedBriefHash: string | null
-  preparedSourcePlan: ProductSourcePlanV1 | null
+  preparedSourcePlan: ProductSourcePlan | null
   preparedConfirmedBrief: ConfirmedProductBriefV1 | null
   preparedCreatorSource: {
     locator: TextOpenWorldCreatorSourceLocatorV1
@@ -2838,14 +2839,14 @@ async function applyCommand(input: {
   }
   const nextBrief = parseProductProductionBriefV3({
     ...Object.fromEntries(Object.entries(priorBrief).filter(([key]) => key !== 'avgRevision')),
-    source: publicSemanticsAffected ? {
+    source: { ...(publicSemanticsAffected ? {
       ...priorBrief.source,
       // Evolution lineage belongs to evolution.base/userGoal. Product source
       // semantics remain public, authored facts and must never become a repair
       // prompt. Recover the latest non-evolution revision so legacy polluted
       // Briefs heal on their next governed evolution.
       startingPoint: semanticBaseline.source.startingPoint,
-    } : priorBrief.source,
+    } : priorBrief.source), worldReleaseId: previous.sourceWorldReleaseId },
     intent: publicSemanticsAffected ? semanticBaseline.intent : priorBrief.intent,
     productionBudget: budgetFloor ? {
       ...generationPolicy.productionBudget,
@@ -2866,6 +2867,9 @@ async function applyCommand(input: {
   })
   const revision = await nextBriefRevision(production.id)
   const briefHash = await Dexie.waitFor(hashProductProductionValueV2(nextBrief))
+  const sourcePlan = await Dexie.waitFor(refreezeProductProductionEvolutionSourcePlanV2({
+    previous, nextBrief, createdAt: now,
+  }))
   await db.productProductionBriefs.add(stampNewRecord(scope, 'productProductionBriefs', {
     projectId: scope.projectId, worldId: scope.worldId, workId: scope.workId,
     productionId: production.id, revision, parentRevision: previous.revision, status: 'draft' as const,
@@ -2878,8 +2882,8 @@ async function applyCommand(input: {
       evolutionImpact: nextBrief.evolution,
     }),
     briefJson: canonicalProductProductionJsonV2(nextBrief), briefHash,
-    sourcePlanJson: previous.sourcePlanJson,
-    sourcePlanHash: previous.sourcePlanHash,
+    sourcePlanJson: sourcePlan.version === 1 ? previous.sourcePlanJson : canonicalProductProductionJsonV2(sourcePlan),
+    sourcePlanHash: sourcePlan.planHash,
     confirmedBriefJson: '{}',
     confirmedBriefHash: '',
     authorizedAt: null, createdAt: now,
@@ -2898,7 +2902,7 @@ async function executeTransaction(input: {
   command: ProductProductionCommandV1
   payloadHash: string
   preparedBriefHash: string | null
-  preparedSourcePlan: ProductSourcePlanV1 | null
+  preparedSourcePlan: ProductSourcePlan | null
   preparedConfirmedBrief: ConfirmedProductBriefV1 | null
   preparedCreatorSource: {
     locator: TextOpenWorldCreatorSourceLocatorV1
@@ -3188,7 +3192,7 @@ export async function executeProductProductionCommand(input: {
   const preparedBriefHash = command.type === 'save-brief-revision'
     ? await hashProductProductionValueV2(command.brief)
     : null
-  let preparedSourcePlan: ProductSourcePlanV1 | null = null
+  let preparedSourcePlan: ProductSourcePlan | null = null
   let preparedConfirmedBrief: ConfirmedProductBriefV1 | null = null
   let preparedCreatorSource: {
     locator: TextOpenWorldCreatorSourceLocatorV1
@@ -3210,7 +3214,8 @@ export async function executeProductProductionCommand(input: {
   let preparedCreatorMedia: TextOpenWorldCreatorMediaPreparationV1 | null = input.preparedCreatorMedia ?? null
   let preparedCreatorMediaAuthorization: TextOpenWorldCreatorMediaAuthorizationV1 | null = null
   const preparedWorldReferenceHash = command.type === 'create-intent'
-    ? (await createWorldReferenceV1(command.worldReleaseId)).referenceHash
+    ? (await (command.productType === 'character-interaction' || command.productType === 'avg'
+      ? createWorldReference(command.worldReleaseId) : createWorldReferenceV1(command.worldReleaseId))).referenceHash
     : null
   const preparedTextRevision = command.type === 'revise-text-content'
     ? await prepareTextContentRevisionV1(scope, input.productionId!, command) : null

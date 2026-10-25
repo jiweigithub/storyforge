@@ -22,6 +22,7 @@ export default function WorldDerivationActions({
   const dialog = useDialog()
   const [busy, setBusy] = useState<'draft' | 'release' | null>(null)
   const [error, setError] = useState('')
+  const narrativePreview = import.meta.env.DEV && new URLSearchParams(window.location.search).has('narrative-preview')
   if (
     !project.id
     || effectiveWorkspacePurpose(project) !== 'independent-work'
@@ -45,7 +46,7 @@ export default function WorldDerivationActions({
     try {
       await flushPendingEditsV1()
       const sourceScope = await resolveScopeLike(project.id!)
-      const result = await deriveNovelToWorld({ sourceScope, publish })
+      const result = await deriveNovelToWorld({ sourceScope, publish, ...(narrativePreview ? { formatVersion: 4 as const } : {}) })
       await onDerived(result.targetProjectId)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '派生世界失败')
@@ -56,6 +57,7 @@ export default function WorldDerivationActions({
 
   return (
     <div className={compact ? 'flex items-center gap-1' : 'flex flex-wrap items-center gap-2'}>
+      {narrativePreview && <span className="text-xs text-text-muted">实验：保留叙事索引与来源对照</span>}
       <button
         type="button"
         className="rounded border border-border px-2 py-1 text-[11px] text-text-secondary hover:bg-bg-hover disabled:opacity-50"

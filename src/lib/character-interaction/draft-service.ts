@@ -69,7 +69,7 @@ export async function selectChatWorldV1(scope: WorkspaceScope, revision: number,
     const current = await readChatDraftV1(scope);
     if (current.revision !== revision)
         throw new Error("角色聊天 方案已变化，请刷新后重新选择世界");
-    const localId = await cacheWorldReferenceForProductV1(scope, releaseId);
+    const localId = await cacheWorldReferenceForProductV1(scope, releaseId, { narrativeProductType: 'character-interaction' });
     return db.transaction("rw", scopeTransactionTables(db.chatAuthoringDrafts), async () => {
         const row = await readChatDraftV1(scope);
         if (row.revision !== revision)

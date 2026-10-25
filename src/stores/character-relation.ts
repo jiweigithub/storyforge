@@ -1,3 +1,5 @@
+import { transactionTablesForReferenceCascade } from '../lib/registry/lifecycle'
+import { cascadeRegisteredReferences } from '../lib/workspace/lifecycle'
 import { create } from 'zustand'
 import { db } from '../lib/db/schema'
 import type { CharacterRelation } from '../lib/types'
@@ -64,7 +66,10 @@ export const useCharacterRelationStore = create<CharacterRelationStore>((set, ge
   deleteRelation: async (id: number) => {
     const current = get().relations.find(r => r.id === id) ?? await db.characterRelations.get(id)
     if (!current || !await assertRecordInScope(await resolveScopeLike(current.projectId), 'characterRelations', current, { owner: 'world' })) return
-    await db.characterRelations.delete(id)
+    await db.transaction('rw', transactionTablesForReferenceCascade('characterRelations'), async () => {
+      await cascadeRegisteredReferences('characterRelations', id)
+      await db.characterRelations.delete(id)
+    })
     set({ relations: get().relations.filter((r) => r.id !== id) })
   },
 }))

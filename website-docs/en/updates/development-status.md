@@ -1,5 +1,41 @@
 # Pending development and branch audit
 
+## October 23, 2026 · Large-contract repair formally delivered
+
+This section updates release status only, without re-auditing the other development branches below. [PR #185](https://github.com/yuanbw2025/storyforge/pull/185) merged as `e4f2496d`, and [release preparation PR #190](https://github.com/yuanbw2025/storyforge/pull/190) merged as `8e82486a`. The independent [release workflow](https://github.com/yuanbw2025/storyforge/actions/runs/39873499281) passed every job, and formal **v4.0.4** is public at fixed source `d90961a2`. The large run-contract repair is no longer awaiting release and is not included in v4.0.3. Exact publication time, upgrade and data boundaries live in [version compatibility](/en/updates/compatibility). The complete October 22 branch review below remains a dated snapshot; this release does not establish completion of other issues or products.
+
+
+## October 22, 2026 · Complete branch and worktree review
+
+Reviewed from the last successful baseline `50062745` through remote main `463b6473`. The inventory covers **186 local branches, including this maintenance branch, and 115 related worktrees**, including detached checkouts; 136 development heads are not ancestors of main. Commit and file counts are not feature counts. This is a dated snapshot; full paths, hashes, ancestry, patches, and working-file evidence are retained in the maintenance record.
+
+### Entered main
+
+- [PR #171](https://github.com/yuanbw2025/storyforge/pull/171) merged as `47d2c665`, preserving predecessor snapshots during detailed-outline generation and handling missing style statistics. This update adds [outline recovery steps](/en/features/longform/writing#continuing-after-detailed-outline-generation-stops) and [style statistics guidance](/en/features/longform/style-learning#when-sample-statistics-show-not-recorded); these are no longer pending features.
+- [PR #184](https://github.com/yuanbw2025/storyforge/pull/184) merged as `463b6473`, adding a sanitized public issue, repair, release, and writeback workflow and preparing v4.0.3. The stable release remains v4.0.2 while the [v4.0.3 release workflow](https://github.com/yuanbw2025/storyforge/actions/runs/39765160155) runs. Version facts live in [compatibility](/en/updates/compatibility).
+- Other mainline changes concern delivery verification, verification dates, and traffic archives; they do not add product operations or raise maturity. Existing guides retain the merged #141/#165/#166 scope.
+
+### New or advancing development
+
+“Unpushed” means not contained in any fetched origin ref. Uncommitted observations establish scope only, not completion or acceptance.
+
+| Branch / head / worktree | Observed scope | Status and deduplication |
+| --- | --- | --- |
+| `feat/avg-media-integration-20261021` · `88bfaea4`; `feat/avg-audio-consumption-20261022` and `feat/avg-audio-derived-production-20261022` · `17c9081f` | Foreground and PCM audio foundations, per-line gain drafts, adopted processed-voice consumption, portrait layout, and retained recovery | `88bfaea4` has 15 commits outside fetched origin refs, including 13 non-merge commits. Audio, foreground, and image branches share dependencies or validation history. Pushed [draft PR #160](https://github.com/yuanbw2025/storyforge/pull/160) remains at `534b3812` and does not deliver later local commits. |
+| `avg-base00a-20261014/storyforge` and `avg-base00b-20261014/storyforge` · `17c9081f`; `avg-extension-contracts-20261015/storyforge` · `88bfaea4` | Voice production/review, audio processing/consumption, local repair controls, plans, and regression material | Respectively 31, 33, and 24 uncommitted entries include untracked or staged changes. Equal-head copies still contain different working files; preserve each. `avg-media-harness-20261016` has two additional style/regression changes; the earlier 100-entry `avg-media-recovery-20261016` observation remains. |
+| `feat/character-chat-optimization-20261006` and `fix/chat-regression-compat-20261022` · `26fd6e29` | Grounded story actions, unanswered inquiries across turns, opening review, and recoverable production | Pushed [draft PR #172](https://github.com/yuanbw2025/storyforge/pull/172), not merged. Its 270 commits outside main are not 270 features. Both branches share one head; the author worktree has two plan/acceptance changes and the compatibility worktree has five history-reader/test changes. Uncommitted material is not declared complete. |
+| `feat/ttrpg-entity-ai-20261016` · `34fc430a`; matching worktree | Explicit methods and versioned Oracle budgets, clue sharing, pending-stage policy, next stages in frozen releases, and compatible-session continuity | Of 216 commits outside main, 12 are not contained in fetched origin refs. Another 18 uncommitted entries concern open authoring/compatible openings and plans. Existing ownership and candidate boundaries remain; no unilateral commit, push, or merge. |
+| `feat/text-open-world-productization-20261013` · `d330c653`; `open-world-productization/storyforge` | Three production lanes, image confirmation, web distribution, local feedback, and main synchronization | [PR #134](https://github.com/yuanbw2025/storyforge/pull/134) remains open. The one commit not contained in origin is a merge; there are no new unpushed non-merge commits. Actual `MERGE_HEAD=463b6473`; 16 of 22 status entries have exactly the same blob as main. Remaining changes include version, metrics, and both change logs. Synchronization files are not new open-world features. |
+| `fix/agent-contract-event-size-20261021` · `9653011a` | One finite UTF-8 byte budget for valid contracts and accepted/revised event snapshots | [PR #185](https://github.com/yuanbw2025/storyforge/pull/185) merged normally on October 22, 2026 as `e4f2496d`. Final full CLI passed 4602 tests, browser passed 311 with 4 environment-dependent skips, and regular CI succeeded. [Issue #178](https://github.com/yuanbw2025/storyforge/issues/178) awaits formal v4.0.4 delivery; v4.0.3 does not include this repair. |
+| `narrative-world-design`, `nw2e-retrieval-repair`, and `nw-mainline-refresh-20261016` | Existing narrative projection, provenance, retrieval, governance integration, and extensive acceptance material | The chain remains outside main. The actual merge parent of `nw-mainline-refresh` is `16b006fd`. Many untracked acceptance outputs and synchronization files do not establish new features. Equivalent design/backup patches, identical heads, and ancestry remain deduplicated; worktrees are not taken over or cleaned. |
+
+### Preserved and deduplicated work
+
+Of 28 worktrees with status entries, 14 contain working-file changes, 13 contain registered retired static assets in old TTRPG validation copies, and one contains only test cache. Each deletion in the thirteen copies was again matched to `.codex-retired-assets.json` and its Git blob; these are not pending code and are not automatically restored. Earlier deduplication of merged longform work, historical UI, built-in works, backups, merge-only history, and equivalent patches is retained.
+
+This run maintains the knowledge base only, without product tests or changes to other development. Older dated sections below remain historical snapshots; current status is described above.
+
+
 
 ## October 20, 2026 complete review
 

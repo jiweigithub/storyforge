@@ -1,3 +1,4 @@
+import { lookupContextResourceMetadataV1 } from '../context-gateway/resource-metadata'
 import { hashCanonicalValue } from '../agent/run/hash'
 import type { AgentContextTaskKind } from '../agent/context-policy'
 import { readContextGatewayManifestV3ForAttemptV1 } from '../context-gateway/attempt-evidence'
@@ -6,6 +7,7 @@ import { createContextGatewayToolSessionV1 } from '../context-gateway/tool-sessi
 import {
   describeWorldSemanticResourceV1,
   listWorldSemanticResourceDescriptorsV1,
+  openProductWorldResourceCatalogV2,
 } from '../context-gateway/world-release-client'
 import type {
   ContextManifestPointerV1,
@@ -16,6 +18,9 @@ import type {
   ProductSourceManifestV1,
   ProductSourceMissingStrategyV1,
   ProductSourcePlanV1,
+  ProductSourcePlan,
+  ProductSourceManifest,
+  ProductSourceManifestV2,
   UpperProductKindV1,
   WorkspaceScope,
   WorldReferenceV1,
@@ -37,6 +42,14 @@ import {
   validatePortableWorldReferenceV1,
   validateWorldReferenceV1,
 } from '../world-engine/world-reference'
+
+import {
+  assertExactProductSourceCatalogV2, assertExactSourceManifestV2, exactManifestEvidenceV2,
+  portableWorldSourceRefsHashV2, validateExactSourcePlanFieldsV2,
+} from './exact-source-contracts'
+
+import type { WorldReferenceV2 } from '../types/world-query'
+import { portableWorldReference, validatePortableWorldReference, resolveWorldReferenceResourceScope } from '../world-engine/world-reference-v2'
 
 const HASH = /^[a-f0-9]{64}$/
 const KEY = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/
@@ -196,7 +209,7 @@ function permissionFromRequirements(
 }
 
 function portableSourcePlanBodyV1(
-  body: Omit<ProductSourcePlanV1, 'planHash'>,
+  body: Omit<ProductSourcePlan, 'planHash'>,
 ): unknown {
   const { localReleaseRecordId: _localLocator, ...portableWorldReference } = body.worldReference
   return { ...body, worldReference: portableWorldReference }
@@ -244,7 +257,7 @@ export async function previewWorldRequirementsV1<TGoal>(input: {
   return { adapter, requirements }
 }
 
-export async function freezeProductSourcePlanV1<TGoal>(input: {
+export interface ProductSourcePlanFreezeInputV1<TGoal> {
   productInstanceKey: string
   worldReference: WorldReferenceV1
   adapter: WorldRequirementAdapterV1<TGoal>
@@ -256,11 +269,30 @@ export async function freezeProductSourcePlanV1<TGoal>(input: {
   maxReadCalls?: number
   maxRetrievedTokens?: number
   createdAt?: number
-}): Promise<ProductSourcePlanV1> {
-  assertStableKey(input.productInstanceKey, 'productInstanceKey')
+}
+
+export async function freezeProductSourcePlanV1<TGoal>(input: ProductSourcePlanFreezeInputV1<TGoal>): Promise<ProductSourcePlanV1> {
   const worldReference = await validateWorldReferenceV1(input.worldReference)
   const scope = await resolveWorldReferenceResourceScopeV1(worldReference)
   const descriptors = await listWorldSemanticResourceDescriptorsV1(scope)
+  const basis = await createProductSourcePlanBasisV2({ ...input, worldReference, descriptors })
+  const body: Omit<ProductSourcePlanV1, 'planHash'> = { ...basis, version: 1, worldReference }
+  return { ...body, planHash: await hashCanonicalValue(portableSourcePlanBodyV1(body)) }
+}
+
+/** In-memory compiler input, never a persisted or executable SourcePlan. */
+export type ProductSourcePlanBasisV2 = Omit<ProductSourcePlanV1, 'version' | 'planHash' | 'worldReference'> & {
+  worldReference: WorldReferenceV1 | WorldReferenceV2
+}
+
+export async function createProductSourcePlanBasisV2<TGoal>(input: Omit<ProductSourcePlanFreezeInputV1<TGoal>, 'worldReference'> & {
+  worldReference: WorldReferenceV1 | WorldReferenceV2
+  descriptors: readonly ContextResourceDescriptorV1[]
+}): Promise<ProductSourcePlanBasisV2> {
+  assertStableKey(input.productInstanceKey, 'productInstanceKey')
+  const worldReference = await validatePortableWorldReference(input.worldReference)
+  await resolveWorldReferenceResourceScope(worldReference)
+  const descriptors = [...input.descriptors]
   const requirementPreview = await previewWorldRequirementsV1({
     adapter: input.adapter,
     goal: input.goal,
@@ -305,9 +337,8 @@ export async function freezeProductSourcePlanV1<TGoal>(input: {
       fail('initial-resource', `初始世界资源越过 adapter permission:${resourceKey}`)
     }
   }
-  const base: Omit<ProductSourcePlanV1, 'planHash'> = {
+  const base: ProductSourcePlanBasisV2 = {
     schema: 'storyforge.product-source-plan',
-    version: 1,
     productType: input.adapter.productType,
     productInstanceKey: input.productInstanceKey,
     worldReference,
@@ -322,14 +353,21 @@ export async function freezeProductSourcePlanV1<TGoal>(input: {
     readiness: readiness({ requirements, missingStrategy: input.missingStrategy }),
     createdAt: input.createdAt ?? Date.now(),
   }
-  return { ...base, planHash: await hashCanonicalValue(portableSourcePlanBodyV1(base)) }
+  return base
 }
 
 export async function validateProductSourcePlanV1(plan: ProductSourcePlanV1): Promise<ProductSourcePlanV1> {
-  if (plan.schema !== 'storyforge.product-source-plan' || plan.version !== 1) fail('plan-contract', 'SourcePlan 合同身份无效')
+  if (plan.version !== 1) fail('plan-contract', 'V1 入口只接受旧版 SourcePlan')
+  return await validateProductSourcePlan(plan) as ProductSourcePlanV1
+}
+
+/** Explicit dispatch; never coerces a frozen V1 plan into enhanced authority. */
+export async function validateProductSourcePlan(plan: ProductSourcePlan): Promise<ProductSourcePlan> {
+  if (plan.schema !== 'storyforge.product-source-plan' || ![1, 2].includes(plan.version)) fail('plan-contract', 'SourcePlan 合同身份无效')
   assertHash(plan.planHash, 'planHash')
   assertHash(plan.gatewayPolicyHash, 'gatewayPolicyHash')
-  await validatePortableWorldReferenceV1(plan.worldReference)
+  if (plan.version === 1) await validatePortableWorldReferenceV1(plan.worldReference)
+  else await validatePortableWorldReference(plan.worldReference)
   const { planHash, ...body } = plan
   if (await hashCanonicalValue(portableSourcePlanBodyV1(body)) !== planHash
     || await hashCanonicalValue(plan.gatewayPolicy) !== plan.gatewayPolicyHash) {
@@ -341,6 +379,7 @@ export async function validateProductSourcePlanV1(plan: ProductSourcePlanV1): Pr
   }
   const normalizedReadiness = readiness({ requirements: plan.requirements, missingStrategy: plan.missingStrategy })
   if (normalizedReadiness !== plan.readiness) fail('plan-readiness', 'SourcePlan readiness 与必读缺口不一致')
+  if (plan.version === 2) await validateExactSourcePlanFieldsV2(plan)
   return structuredClone(plan)
 }
 
@@ -354,16 +393,21 @@ export async function portableProductSourcePlanV1(planInput: ProductSourcePlanV1
   }
 }
 
+export async function portableProductSourcePlan(planInput: ProductSourcePlan): Promise<ProductSourcePlan> {
+  const plan = await validateProductSourcePlan(planInput)
+  return plan.version === 1 ? portableProductSourcePlanV1(plan) : { ...plan, worldReference: await portableWorldReference(plan.worldReference) }
+}
+
 export async function createConfirmedProductBriefV1(input: {
   productType: UpperProductKindV1
   productInstanceKey: string
-  sourcePlan: ProductSourcePlanV1
+  sourcePlan: ProductSourcePlan
   briefRevision: number
   briefContentHash: string
   authorStartRevision: number
   confirmedAt?: number
 }): Promise<ConfirmedProductBriefV1> {
-  const plan = await validateProductSourcePlanV1(input.sourcePlan)
+  const plan = await validateProductSourcePlan(input.sourcePlan)
   if (plan.productType !== input.productType || plan.productInstanceKey !== input.productInstanceKey) {
     fail('brief-owner', 'Brief owner 与 SourcePlan 不一致')
   }
@@ -372,6 +416,7 @@ export async function createConfirmedProductBriefV1(input: {
     fail('brief-revision', 'Brief/开始授权 revision 非法')
   }
   assertHash(input.briefContentHash, 'briefContentHash')
+  if (plan.version === 2 && plan.compiler.briefHash !== input.briefContentHash) fail('brief-stale', 'Brief 已改变，必须重新冻结精确来源计划')
   const base: Omit<ConfirmedProductBriefV1, 'confirmationHash'> = {
     schema: 'storyforge.confirmed-product-brief', version: 1,
     productType: input.productType,
@@ -388,10 +433,11 @@ export async function createConfirmedProductBriefV1(input: {
 
 export async function validateConfirmedProductBriefV1(input: {
   brief: ConfirmedProductBriefV1
-  sourcePlan: ProductSourcePlanV1
+  sourcePlan: ProductSourcePlan
 }): Promise<ConfirmedProductBriefV1> {
-  const plan = await validateProductSourcePlanV1(input.sourcePlan)
+  const plan = await validateProductSourcePlan(input.sourcePlan)
   const brief = input.brief
+  if (plan.version === 2 && brief.briefContentHash !== plan.compiler.briefHash) fail('brief-stale', '确认 Brief 不匹配精确来源计划')
   if (brief.schema !== 'storyforge.confirmed-product-brief' || brief.version !== 1
     || brief.sourcePlanHash !== plan.planHash || brief.productType !== plan.productType
     || brief.productInstanceKey !== plan.productInstanceKey) fail('brief-contract', '确认 Brief 与 SourcePlan 不一致')
@@ -409,9 +455,9 @@ function traceDecisions(manifest: Awaited<ReturnType<typeof readContextGatewayMa
   ]
 }
 
-function resourceAllowed(plan: ProductSourcePlanV1, descriptor: ContextResourceDescriptorV1): boolean {
+function resourceAllowed(plan: ProductSourcePlan, descriptor: ContextResourceDescriptorV1): boolean {
   const semantic = descriptor.worldSemantic
-  if (!semantic) return false
+  if (!semantic || (plan.version === 2 && !plan.exact.permittedResourceKeys.includes(descriptor.resourceKey))) return false
   if (!plan.permission.allowedSelectors.some(selector => selectorMatches(selector, descriptor))) return false
   if (plan.permission.prohibitedSelectors.some(selector => selectorMatches(selector, descriptor))) return false
   return plan.permission.allowedAreas.includes(semantic.area)
@@ -420,6 +466,7 @@ function resourceAllowed(plan: ProductSourcePlanV1, descriptor: ContextResourceD
 
 export interface ProductSourceReadBoundaryV1 {
   sourceScope: FrozenResourceScopeV1
+  worldQueryAccess?: import('../types/world-query').WorldQueryAccessV1
   allowedResourceKeys: string[]
   mandatoryResourceKeys: string[]
   mandatoryFullResourceKeys: string[]
@@ -430,12 +477,27 @@ export interface ProductSourceReadBoundaryV1 {
  * SourcePlan. The plan freezes selectors (the protocol); this projection
  * resolves those selectors against the immutable WorldRelease catalog without
  * exposing physical world tables to an upper product. */
-export async function resolveProductSourceReadBoundaryV1(
-  sourcePlanInput: ProductSourcePlanV1,
+export async function resolveProductSourceReadBoundaryV1(sourcePlanInput: ProductSourcePlanV1): Promise<ProductSourceReadBoundaryV1> {
+  await validateProductSourcePlanV1(sourcePlanInput)
+  return resolveProductSourceReadBoundary(sourcePlanInput)
+}
+
+export async function resolveProductSourceReadBoundary(
+  sourcePlanInput: ProductSourcePlan,
 ): Promise<ProductSourceReadBoundaryV1> {
-  const plan = await validateProductSourcePlanV1(sourcePlanInput)
-  const sourceScope = await resolveWorldReferenceResourceScopeV1(plan.worldReference)
-  const descriptors = await listWorldSemanticResourceDescriptorsV1(sourceScope)
+  const plan = await validateProductSourcePlan(sourcePlanInput)
+  const sourceScope = await resolveWorldReferenceResourceScope(plan.worldReference)
+  const narrativeCatalog = plan.worldReference.version === 2 ? await openProductWorldResourceCatalogV2({
+    localReleaseRecordId: plan.worldReference.localReleaseRecordId, expectedProjectId: sourceScope.projectId,
+    expectedWorldId: sourceScope.worldId, productType: plan.productType, sourcePlan: plan }) : null
+  const descriptors = narrativeCatalog?.resources ?? await listWorldSemanticResourceDescriptorsV1(sourceScope)
+  if (plan.version === 2) {
+    await assertExactProductSourceCatalogV2(plan, descriptors)
+    const mandatory = plan.exact.slices.find(slice => slice.key === 'adaptation')!.resourceKeys
+    return { sourceScope, ...(narrativeCatalog?.worldQueryAccess ? { worldQueryAccess: narrativeCatalog.worldQueryAccess } : {}),
+      allowedResourceKeys: [...plan.exact.permittedResourceKeys],
+      mandatoryResourceKeys: [...mandatory], mandatoryFullResourceKeys: [...mandatory], targetResourceKeys: [...mandatory] }
+  }
   const allowed = descriptors.filter(descriptor => resourceAllowed(plan, descriptor))
   const allowedKeys = new Set(allowed.map(item => item.resourceKey))
   const mandatory = new Set<string>()
@@ -514,21 +576,35 @@ function addDecision(input: {
 }
 
 export async function aggregateProductSourceManifestFromExactRunsV1(input: {
+  scope: WorkspaceScope; sourcePlan: ProductSourcePlanV1; runContextManifests: LocalContextManifestAttemptV1[]; createdAt?: number
+}): Promise<ProductSourceManifestV1> {
+  await validateProductSourcePlanV1(input.sourcePlan)
+  return await aggregateProductSourceManifestFromExactRuns(input) as ProductSourceManifestV1
+}
+
+export async function aggregateProductSourceManifestFromExactRuns(input: {
   scope: WorkspaceScope
-  sourcePlan: ProductSourcePlanV1
+  sourcePlan: ProductSourcePlan
   runContextManifests: LocalContextManifestAttemptV1[]
   createdAt?: number
-}): Promise<ProductSourceManifestV1> {
-  const plan = await validateProductSourcePlanV1(input.sourcePlan)
+}): Promise<ProductSourceManifest> {
+  const plan = await validateProductSourcePlan(input.sourcePlan)
   if (!input.runContextManifests.length) fail('run-manifest', '发布 SourceManifest 至少需要一个真实 production Context Manifest')
-  const sourceScope = await resolveWorldReferenceResourceScopeV1(plan.worldReference)
-  const readBoundary = await resolveProductSourceReadBoundaryV1(plan)
+  const sourceScope = await resolveWorldReferenceResourceScope(plan.worldReference)
+  const readBoundary = await resolveProductSourceReadBoundary(plan)
   const gatewaySession = await createContextGatewayToolSessionV1({
     scope: sourceScope,
+    worldQueryAccess: readBoundary.worldQueryAccess,
     policy: plan.gatewayPolicy,
     allowedResourceKeys: readBoundary.allowedResourceKeys,
   })
   if (gatewaySession.policyHash !== plan.gatewayPolicyHash) fail('policy', '冻结 Gateway policy 与 SourcePlan 不一致')
+  const permittedFingerprints = new Set([gatewaySession.scopeFingerprint])
+  if (plan.version === 2 && readBoundary.worldQueryAccess) for (const slice of plan.exact.slices) {
+    const session = await createContextGatewayToolSessionV1({ scope: sourceScope, worldQueryAccess: readBoundary.worldQueryAccess,
+      policy: plan.gatewayPolicy, allowedResourceKeys: slice.resourceKeys })
+    permittedFingerprints.add(session.scopeFingerprint)
+  }
   const resourceMap = new Map<string, MutableResourceEvidenceV1>()
   const pointers = [...input.runContextManifests]
     .sort((left, right) => left.runId - right.runId || left.stepId.localeCompare(right.stepId) || left.attempt - right.attempt)
@@ -547,12 +623,20 @@ export async function aggregateProductSourceManifestFromExactRunsV1(input: {
     const manifest = restored.manifest
     if (manifest.manifestHash !== pointer.manifestHash
       || manifest.gateway.policyHash !== plan.gatewayPolicyHash
-      || manifest.gateway.scopeFingerprint !== gatewaySession.scopeFingerprint) {
+      || !permittedFingerprints.has(manifest.gateway.scopeFingerprint)) {
       fail('run-manifest-binding', `Run ${pointerKey} 未绑定 SourcePlan 的 release/policy`)
     }
-    for (const decision of traceDecisions(manifest)) {
-      if (decision.sourceKey !== 'worldRelease') continue
-      const descriptor = await descriptorForTrace({ scope: sourceScope, resourceKey: decision.resourceKey })
+    const decisions = traceDecisions(manifest).filter(decision => decision.sourceKey === 'worldRelease')
+    const descriptors = readBoundary.worldQueryAccess
+      ? await lookupContextResourceMetadataV1({
+        provider: gatewaySession.providers.find(binding => binding.source.key === 'worldRelease')!.provider,
+        scope: sourceScope,
+        resourceKeys: decisions.map(decision => decision.resourceKey),
+      }) : null
+    for (const decision of decisions) {
+      const descriptor = descriptors
+        ? descriptors.get(decision.resourceKey) ?? fail('permission', `Run ${pointerKey} 的资源在冻结授权下不可用:${decision.resourceKey}`)
+        : await descriptorForTrace({ scope: sourceScope, resourceKey: decision.resourceKey })
       if (!resourceAllowed(plan, descriptor) || !plan.permission.allowedDepths.includes(decision.depth)) {
         fail('permission', `Run ${pointerKey} 越过 SourcePlan 读取 ${decision.resourceKey}`)
       }
@@ -563,7 +647,7 @@ export async function aggregateProductSourceManifestFromExactRunsV1(input: {
         status: 'matched',
         depth: decision.depth,
         contentHash: decision.contentHash,
-        sourceRefsHash: await hashCanonicalValue(decision.sourceRefs),
+        sourceRefsHash: plan.version === 2 ? await portableWorldSourceRefsHashV2(decision.sourceRefs) : await hashCanonicalValue(decision.sourceRefs),
         manifestHash: manifest.manifestHash,
         reasonCode: decision.reason,
       })
@@ -589,7 +673,7 @@ export async function aggregateProductSourceManifestFromExactRunsV1(input: {
   const matchedDescriptors = [...resourceMap.values()]
     .filter(item => item.status === 'matched')
     .map(item => item.descriptor)
-  const requirementOutcomes = plan.requirements.map(requirement => {
+  const requirementOutcomes = plan.requirements.map((requirement, index) => {
     if (requirement.status !== 'matched') {
       return {
         requirementKey: requirement.key,
@@ -598,11 +682,15 @@ export async function aggregateProductSourceManifestFromExactRunsV1(input: {
         reasonCodes: [...requirement.reasonCodes],
       }
     }
-    const evidence = matchedDescriptors.filter(descriptor => requirementMatches(requirement, descriptor))
+    const exactRequired = plan.version === 2 && (requirement.level === 'stable-required'
+      || (requirement.level === 'conditional' && requirement.condition?.active))
+      ? plan.exact.requirements[index]!.requiredResourceKeys : null
+    const evidence = matchedDescriptors.filter(descriptor => exactRequired
+      ? exactRequired.includes(descriptor.resourceKey) : requirementMatches(requirement, descriptor))
       .map(item => item.resourceKey).sort()
     const status: WorldRequirementStatusV1 = evidence.length === 0
       ? 'omitted'
-      : evidence.length < requirement.minimumResources
+      : evidence.length < (exactRequired?.length ?? requirement.minimumResources)
         ? 'insufficient'
         : 'matched'
     return {
@@ -635,16 +723,29 @@ export async function aggregateProductSourceManifestFromExactRunsV1(input: {
     summary,
     createdAt: input.createdAt ?? Date.now(),
   }
+  if (plan.version === 2) {
+    const body: Omit<ProductSourceManifestV2, 'manifestHash'> = { ...base, version: 2, exactEvidence: await exactManifestEvidenceV2(plan) }
+    const manifest: ProductSourceManifestV2 = { ...body, manifestHash: await hashCanonicalValue(body) }
+    await assertExactSourceManifestV2(plan, manifest)
+    return manifest
+  }
   return { ...base, manifestHash: await hashCanonicalValue(base) }
 }
 
 export async function validateProductSourceManifestV1(input: {
-  sourceManifest: ProductSourceManifestV1
-  sourcePlan: ProductSourcePlanV1
+  sourceManifest: ProductSourceManifestV1; sourcePlan: ProductSourcePlanV1
 }): Promise<ProductSourceManifestV1> {
-  const plan = await validateProductSourcePlanV1(input.sourcePlan)
+  await validateProductSourcePlanV1(input.sourcePlan)
+  return await validateProductSourceManifest(input) as ProductSourceManifestV1
+}
+
+export async function validateProductSourceManifest(input: {
+  sourceManifest: ProductSourceManifest
+  sourcePlan: ProductSourcePlan
+}): Promise<ProductSourceManifest> {
+  const plan = await validateProductSourcePlan(input.sourcePlan)
   const manifest = input.sourceManifest
-  if (manifest.schema !== 'storyforge.product-source-manifest' || manifest.version !== 1
+  if (manifest.schema !== 'storyforge.product-source-manifest' || manifest.version !== plan.version
     || manifest.productType !== plan.productType || manifest.productInstanceKey !== plan.productInstanceKey
     || manifest.worldReferenceHash !== plan.worldReference.referenceHash
     || manifest.sourcePlanHash !== plan.planHash) {
@@ -661,6 +762,7 @@ export async function validateProductSourceManifestV1(input: {
     pointerKeys.add(key)
     assertHash(pointer.manifestHash, 'sourceManifest.pointer.manifestHash')
   }
+  if (plan.version === 2 && manifest.version === 2) await assertExactSourceManifestV2(plan, manifest)
   return structuredClone(manifest)
 }
 
@@ -683,18 +785,20 @@ export async function createProductReleaseLineageV1(input: {
   releaseVersion: number
   releaseHash: string
   parentRelease: ProductReleaseLineageV1['parentRelease']
-  worldReference: WorldReferenceV1
-  sourcePlan: ProductSourcePlanV1
-  sourceManifest: ProductSourceManifestV1
+  worldReference: WorldReferenceV1 | WorldReferenceV2
+  sourcePlan: ProductSourcePlan
+  sourceManifest: ProductSourceManifest
   confirmedBrief: ConfirmedProductBriefV1
   build: ProductReleaseLineageV1['build']
   quality: ProductReleaseLineageV1['quality']
   compatibility: ProductReleaseLineageV1['compatibility']
   createdAt?: number
 }): Promise<ProductReleaseLineageV1> {
-  const plan = await validateProductSourcePlanV1(input.sourcePlan)
+  const plan = await validateProductSourcePlan(input.sourcePlan)
+  await validatePortableWorldReference(input.worldReference)
+  if (input.worldReference.referenceHash !== plan.worldReference.referenceHash) fail('lineage-chain', 'lineage 与来源计划的世界引用不一致')
   await validateConfirmedProductBriefV1({ brief: input.confirmedBrief, sourcePlan: plan })
-  await validateProductSourceManifestV1({ sourceManifest: input.sourceManifest, sourcePlan: plan })
+  await validateProductSourceManifest({ sourceManifest: input.sourceManifest, sourcePlan: plan })
   if (input.sourceManifest.sourcePlanHash !== plan.planHash
     || input.sourceManifest.worldReferenceHash !== plan.worldReference.referenceHash
     || input.sourceManifest.productType !== input.productType
@@ -752,12 +856,12 @@ export async function validateProductReleaseLineageV1(value: ProductReleaseLinea
 }
 
 export async function assertFormalProductProductionStartV1(input: {
-  sourcePlan: ProductSourcePlanV1
+  sourcePlan: ProductSourcePlan
   confirmedBrief: ConfirmedProductBriefV1
   authorStartRevision: number
 }): Promise<void> {
-  const plan = await validateProductSourcePlanV1(input.sourcePlan)
-  await resolveWorldReferenceResourceScopeV1(plan.worldReference)
+  const plan = await validateProductSourcePlan(input.sourcePlan)
+  await resolveProductSourceReadBoundary(plan)
   const brief = await validateConfirmedProductBriefV1({ brief: input.confirmedBrief, sourcePlan: plan })
   if (plan.readiness === 'blocked') fail('source-plan-blocked', 'SourcePlan 存在未解决的稳定必读缺口')
   if (brief.authorStartRevision !== input.authorStartRevision) {

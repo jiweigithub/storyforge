@@ -2,6 +2,12 @@
   "version": 2,
   "bindingVersion": 1,
   "scope": "formal-ai-execution-entry",
+  "offlineEvaluations": [
+    { "entryId": "eval.narrative-world.fixed-reader", "boundary": "eval-only", "adoptAllowed": false, "caller": "scripts/evaluate-narrative-reader-local-codex.mjs", "transport": "local-codex-subscription", "contract": "scripts/narrative-reader-contract.mjs", "reason": "只读仓库冻结合成评测输入；本机订阅固定读者模型仅输出不可变调用回执与评分，不连接作者数据库，不采纳、不发布、不自动重试。" },
+    { "entryId": "eval.narrative-world.reader-semantic-review", "boundary": "eval-only", "adoptAllowed": false, "caller": "scripts/evaluate-narrative-reader-judge-local-codex.mjs", "transport": "local-codex-subscription", "contract": "scripts/narrative-reader-judge-contract.mjs", "reason": "只读已完成且冻结的合成读者回答，以不同模型按固定标准评审；隐藏条件及原字句分数，保存原文引证与所有失败，不连接作者数据库、不采纳、不发布、不自动重试，不代替真人验收。" },
+    { "entryId": "eval.narrative-world.edit-impact", "boundary": "eval-only", "adoptAllowed": false, "caller": "scripts/evaluate-narrative-impact-local-codex.mjs", "transport": "local-codex-subscription", "contract": "scripts/narrative-impact-contract.mjs", "reason": "只读原冻结合成场景与拟议修改，隐藏影响 gold 后生成带逐字证据的复核建议；与确定性计划单独评分，不读作者数据库、不产生写入或 unaffected 证明、不采纳、不发布、不自动重试，不代替独立作者验收。" },
+    { "entryId": "eval.narrative-world.author-quality", "boundary": "eval-only", "adoptAllowed": false, "caller": "scripts/evaluate-narrative-author-quality-local-codex.mjs", "transport": "local-codex-subscription", "contract": "scripts/narrative-author-quality-contract.mjs", "reason": "只读绑定同一完整原文、封存版本和实际查询回执的两组评测材料，生成修订全文与两章续写；独立模型和作者盲评分开保存。原文比较、实际改动和用时另取回执，不读作者数据库、不采纳、不发布、不自动重试，不从有效输出形状推定文学质量。" }
+  ],
   "limitedTransports": [
     { "entryId": "longform.voice.input", "boundary": "ephemeral-author-input", "adoptAllowed": false, "allowedCallers": ["src/lib/longform-voice/session.ts"], "reason": "浏览器或独立语音服务仅将显式录音转成可编辑输入，不自动发送、执行或采纳。" },
     { "entryId": "longform.voice.output", "boundary": "read-only-audio", "adoptAllowed": false, "allowedCallers": ["src/lib/longform-voice/session.ts"], "reason": "仅朗读作者选择的可见文本；不读取数据库、检索上下文或写作品，音频播放后释放。" }

@@ -94,6 +94,7 @@ export default function WorldSharingPanel({ project, worldReleaseRevision = 0, o
   const choosePackage = async (file: File) => {
     setBusy(true); setMessage(null)
     try {
+      if (file.size > 32 * 1024 * 1024) throw new Error('世界分享包超过 32 MiB 文件预算。')
       const input: unknown = JSON.parse(await file.text())
       const report = await inspectWorldPackage(input)
       setPreview({ input, report })

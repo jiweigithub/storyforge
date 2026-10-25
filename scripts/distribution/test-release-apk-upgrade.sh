@@ -8,10 +8,14 @@ done
 adb install release-test/upgrade-test-old.apk
 adb install release-test/upgrade-test-runner.apk
 run_phase() {
-  adb shell am instrument -w -r -e class com.storyforge.client.ClientUpgradeTest -e phase "$1" com.storyforge.client.test/androidx.test.runner.AndroidJUnitRunner | tee "release-test/$1.txt"
-  grep -q 'OK (1 test)' "release-test/$1.txt"
+  local evidence_name="${2:-$1}"
+  adb shell am instrument -w -r -e class com.storyforge.client.ClientUpgradeTest -e phase "$1" com.storyforge.client.test/androidx.test.runner.AndroidJUnitRunner | tee "release-test/$evidence_name.txt"
+  grep -q 'OK (1 test)' "release-test/$evidence_name.txt"
 }
 run_phase seed
+adb shell am force-stop com.storyforge.client
+# Establish that the old formal APK can read its own persisted baseline before replacement.
+run_phase baseline baseline-restart
 adb shell am force-stop com.storyforge.client
 adb install -r release-test/upgrade-test-new.apk
 run_phase restore

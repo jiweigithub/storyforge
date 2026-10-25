@@ -370,9 +370,7 @@ export async function migrateTextOpenWorldSaveToReleaseV1(input: {
     origin: 'branch',
     canonSnapshot: migrationCanon,
     initialState: prepared.migratedState,
-  })
-  child.parentSessionId = prepared.sourceSession.id
-  child.parentThroughSequence = prepared.preview.source.throughSequence
+  }, { parentSessionId: prepared.sourceSession.id, parentThroughSequence: prepared.preview.source.throughSequence })
 
   const inserted = await db.transaction(
     'rw',

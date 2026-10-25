@@ -1,0 +1,5 @@
+
+> storyforge@4.0.2 gen:project-metrics
+> node scripts/generate-project-metrics.mjs
+
+[project-metrics] updated docs/ARCHITECTURE.md

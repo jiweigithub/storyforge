@@ -5,6 +5,7 @@ import type { TtrpgAuthoringDraftV1 } from "../ttrpg/authoring-contract";
 import type { ChatAuthoringDraftV1 } from '../character-interaction/authoring-contract'
 import type { AvgAuthoringDraftV1, AvgDraftMediaV1 } from '../avg/authoring-contract'
 import Dexie, { type Table } from 'dexie'
+import type { WorldNarrativeIndexCacheV1 } from '../types/narrative-index-cache'
 import type {
   AdaptationProject,
   AdaptationCausalEdgeV1,
@@ -127,7 +128,7 @@ import type { RetrievalChunk } from '../types/retrieval-chunk'
 import type { TemporalFact } from '../types/temporal-fact'
 
 export const STORYFORGE_DATABASE_NAME = 'storyforge-core'
-export const STORYFORGE_SCHEMA_VERSION = 11
+export const STORYFORGE_SCHEMA_VERSION = 12
 
 /** The hard-cutover baseline released before independent creation releases. */
 export const STORYFORGE_STORES_V1 = {
@@ -300,13 +301,18 @@ export const STORYFORGE_STORES_V10 = {
   chatAuthoringDrafts: '++id, projectId, worldId, &workId, worldReleaseId, productionId, updatedAt',
 } as const satisfies Record<string, string>
 
-export const STORYFORGE_STORES = {
+export const STORYFORGE_STORES_V11 = {
   ...STORYFORGE_STORES_V10,
   extensionPackages: '++id, &[pluginId+version], digest, installedAt',
   extensionProfiles: '++id, projectId, worldId, workId, pluginId, &[projectId+ownerKey+pluginId], updatedAt',
   extensionRecords: '++id, projectId, worldId, workId, profileId, &[profileId+generation+key], updatedAt',
   extensionContracts: '++id, projectId, worldId, workId, profileId, &[profileId+digest]',
   extensionOperations: '++id, projectId, worldId, workId, profileId, createdAt',
+} as const satisfies Record<string, string>
+
+export const STORYFORGE_STORES = {
+  ...STORYFORGE_STORES_V11,
+  worldNarrativeIndexCaches: '++id, projectId, worldId, &releaseId, lastAccessedAt',
 } as const satisfies Record<string, string>
 
 export class StoryForgeDB extends Dexie {
@@ -384,6 +390,7 @@ export class StoryForgeDB extends Dexie {
   narrativeChoices!: Table<NarrativeChoice, number>
   worldRevisions!: Table<WorldRevision, number>
   worldReleases!: Table<WorldRelease, number>
+  worldNarrativeIndexCaches!: Table<WorldNarrativeIndexCacheV1, number>
   worldDerivations!: Table<WorldDerivationV1, number>
   workspaceDocuments!: Table<WorkspaceDocumentBindingV1, number>
   adaptationProjects!: Table<AdaptationProject, number>
@@ -453,6 +460,7 @@ export class StoryForgeDB extends Dexie {
     // through the v9 bridge; v10 adds it for databases already running town v9.
     this.version(9).stores({ ...STORYFORGE_STORES_V9, chatAuthoringDrafts: STORYFORGE_STORES.chatAuthoringDrafts })
     this.version(10).stores(STORYFORGE_STORES_V10)
+    this.version(11).stores(STORYFORGE_STORES_V11)
     this.version(STORYFORGE_SCHEMA_VERSION).stores(STORYFORGE_STORES)
   }
 }

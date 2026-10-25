@@ -21,6 +21,7 @@ import type {
   ProductionProductKindV1,
   ProductProductionBriefV3,
   ProductProductionRecordV1,
+  ProductSourcePlan,
   ProductRuntimePackageV1,
   ProviderCapabilityRequirementV1,
 } from '../types'
@@ -9828,6 +9829,7 @@ async function executeTextAdventureSceneScriptActAssemblyTask(
 async function executeIntegrationTask(input: ProductProductionTaskExecutionInputV1, options: {
   production: ProductProductionRecordV1
   brief: ProductProductionBriefV3
+  sourcePlan?: ProductSourcePlan
 }): Promise<ProductProductionTaskExecutionResultV1> {
   const startedAt = performance.now()
   const textAdventureArchitecture = options.brief.intent.productType === 'text-adventure'
@@ -9979,8 +9981,9 @@ async function executeIntegrationTask(input: ProductProductionTaskExecutionInput
       worldId: options.production.worldId,
       workId: options.production.workId,
     },
-    worldReleaseId: options.brief.source.worldReleaseId,
+    worldReleaseId: options.sourcePlan?.worldReference.localReleaseRecordId ?? options.brief.source.worldReleaseId,
     selection: options.brief.source.selection,
+    sourcePlan: options.sourcePlan,
   })
   if (sourceCatalog.release.contentHash !== options.brief.source.worldContentHash) {
     fail('Production 的冻结 WorldRelease 不存在、跨世界或已漂移')
@@ -10689,6 +10692,7 @@ export async function createBuiltInProductionCapabilityBindingV1(input: {
 export function createConfiguredProductProductionExecutorV1(input: {
   production: ProductProductionRecordV1
   brief: ProductProductionBriefV3
+  sourcePlan?: ProductSourcePlan
   category?: string
   runText?: ProductionTextRunnerV1
   runVision?: ProductionVisionRunnerV1
@@ -10696,6 +10700,10 @@ export function createConfiguredProductProductionExecutorV1(input: {
   avgImageEndpointRouteHash?: string
   avgVoiceTransport?: Parameters<typeof createAvgAssemblyExecutorV1>[0]['voiceTransport']
 }): ProductProductionTaskExecutorV1 {
+  if (input.brief.source.selection.version === 2
+    && (input.sourcePlan?.version !== 2 || input.sourcePlan.worldReference.version !== 2)) {
+    fail('增强世界生产执行器缺少已确认的精确 SourcePlan')
+  }
   if (input.brief.avgAudioProcessing && !avgAudioProcessingExecutionReadyV1()) throw new Error('[avg-audio-process] 本地声音加工链尚未就绪，不能创建执行器或回退到原音频任务')
   if (input.brief.avgSoundPlanning) {
     if (!avgSoundProductionExecutionReadyV1()) throw new Error('[avg-sound] 声音实际生产、审听和采用闭环尚未接通，不能创建执行器或回退通用任务')
@@ -10735,12 +10743,23 @@ export function createConfiguredProductProductionExecutorV1(input: {
   }
   const options = {
     production: structuredClone(input.production), brief: structuredClone(input.brief),
+    sourcePlan: input.sourcePlan ? structuredClone(input.sourcePlan) : undefined,
     category: input.category ?? 'product-production', runText: input.runText ?? defaultTextRunner,
     runVision: input.runVision ?? defaultVisionRunner,
     mediaCapabilities: input.mediaCapabilities ?? new Map<string, ResolvedProductMediaCapabilityV1>(),
   }
+  let sourceBindingVerified = false
   return async request => {
     if (request.signal.aborted) throw new DOMException('Aborted', 'AbortError')
+    if (!sourceBindingVerified && options.sourcePlan?.version === 2) {
+      if (options.sourcePlan.compiler.briefHash !== await hashProductProductionValueV2(options.brief)
+        || options.sourcePlan.productInstanceKey !== options.production.productionKey
+        || options.sourcePlan.productType !== options.brief.intent.productType
+        || options.sourcePlan.worldReference.referenceHash !== options.brief.source.selection.worldReferenceHash) {
+        fail('生产执行器的 Brief、产品或精确来源计划绑定不一致')
+      }
+      sourceBindingVerified = true
+    }
     if (request.task.taskKey === 'media.repair-feedback'
       && request.task.executionMode === 'human-import') {
       const rows = await db.productBuildArtifacts

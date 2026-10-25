@@ -1,14 +1,16 @@
-import { PROJECT_TABLES } from '../registry/project-tables'
-import { WORLD_CAPABILITY_AREAS, type WorldCapabilityArea } from '../registry/types'
+import type { WorldCapabilityArea } from '../registry/types'
+import { WORLD_CAPABILITY_AREAS_V3 as WORLD_CAPABILITY_AREAS, WORLD_SEMANTIC_REGISTRY_V3 as WORLD_SEMANTIC_SPECS } from './semantic-registry-v3'
 import type { WorldRelease, WorldReleaseManifestV3 } from '../types'
 import { hashWorldReleaseValueV1 } from './release-hash'
 import { assertWorldSemanticSnapshotV1 } from './semantic-snapshot'
+import { verifyWorldReleaseContentV4 } from './narrative-release-v4'
+import type { WorldReleaseManifestV4 } from '../types/narrative-release'
+import type { NarrativeIndexV1 } from '../types/narrative-index'
 
 const HASH = /^[a-f0-9]{64}$/
 const WORLD_SEMANTIC_TABLES = new Set(
-  PROJECT_TABLES.filter(spec => spec.worldSemantic).map(spec => spec.name),
+  WORLD_SEMANTIC_SPECS.map(spec => spec.name),
 )
-const WORLD_SEMANTIC_SPECS = PROJECT_TABLES.filter(spec => spec.worldSemantic)
 const WORLD_SEMANTIC_BY_TABLE = new Map(WORLD_SEMANTIC_SPECS.map(spec => [spec.name, spec] as const))
 const WORLD_RELEASE_MANIFEST_KEYS = new Set([
   'schema', 'version', 'semanticContract', 'worldCode', 'worldName', 'workTitle',
@@ -59,7 +61,7 @@ function exactUniqueStrings(value: unknown, label: string): string[] {
 }
 
 /**
- * The only active decoder for immutable semantic WorldRelease payloads.
+ * Frozen v3 decoder. Its historical registry and hash contract remain unchanged.
  *
  * Product modules must never import this codec. They consume the neutral
  * Context Gateway protocol instead.
@@ -234,6 +236,27 @@ export async function verifyPureWorldReleaseManifestV3(input: {
       originalEvidenceAvailable: rowCount > 0,
       queryableIndexAvailable: rowCount > 0,
     }
+    // The historical v3 producer also counted rows in omitted tables and
+    // included their latest revision. Those rows are deliberately absent from
+    // the package, so only the selected portion can be reconstructed here.
+    // Preserve these observational counters without using them as availability
+    // or read authority. Selection, actual row counts and all other fields
+    // remain exact; a fully selected area still has an exact aggregate.
+    if (omittedResourceCount > 0) {
+      if (!Number.isSafeInteger(capability.omittedRowCount)
+        || capability.omittedRowCount! < expected.omittedRowCount) {
+        fail('capabilities', `未选入资源计数非法:${area}`)
+      }
+      if (capability.omittedRowCount! > expected.omittedRowCount) {
+        const latest = capability.latestRevision
+        if (latest !== null && (!Number.isSafeInteger(latest) || latest! < 0)
+          || expected.latestRevision !== null && (latest === null || latest! < expected.latestRevision)) {
+          fail('capabilities', `未选入资源修订统计非法:${area}`)
+        }
+        expected.latestRevision = latest ?? null
+      }
+      expected.omittedRowCount = capability.omittedRowCount!
+    }
     if (await hashWorldReleaseValueV1(capability) !== await hashWorldReleaseValueV1(expected)) {
       fail('capabilities', `capabilityProfile 与 catalog/PROJECT_TABLES 不一致:${area}`)
     }
@@ -254,4 +277,48 @@ export async function verifyPureWorldReleaseRecordV3(
     expectedContentHash: release.contentHash,
     expectedWorldCode: release.sourceWorldCode,
   })
+}
+
+export type VerifiedWorldReleaseV1 =
+  | { version: 3; manifest: PureWorldReleaseManifestV3; index: null; readiness: 'legacy' }
+  | { version: 4; manifest: WorldReleaseManifestV4; index: NarrativeIndexV1 | null; readiness: 'ready' | 'rebuilt' | 'unavailable' }
+
+/** Single version-dispatch boundary. Never reinterpret old bytes with a new
+ * registry, canonicalizer or index recipe. Unknown versions fail closed. */
+export async function verifyWorldReleaseManifestV1(input: {
+  manifest: string | unknown
+  expectedContentHash?: string
+  expectedWorldCode?: string
+  index?: unknown
+  mode?: 'complete' | 'source-only'
+}): Promise<VerifiedWorldReleaseV1> {
+  // compilerVersion is forbidden by the frozen v3 contract and is the first
+  // root key of canonical v4 wire. Dispatch it directly to the COMPLETE v4
+  // verifier, which still checks schema, version, canonical bytes, source
+  // reprojection and index. No second full JSON tree is needed just to route.
+  // Object v4 inputs must likewise reach its strict capture before any lossy
+  // JSON.stringify could drop undefined, normalize -0 or invoke toJSON.
+  const candidate = input.manifest
+  const v4Wire = typeof candidate === 'string' && candidate.startsWith('{"compilerVersion":')
+  const v4Object = isRecord(candidate) && (Object.getOwnPropertyDescriptor(candidate, 'version')?.value === 4
+    || Object.prototype.hasOwnProperty.call(candidate, 'compilerVersion'))
+  if (v4Wire || v4Object) return { version: 4, ...await verifyWorldReleaseContentV4(input) }
+  const original = typeof input.manifest === 'string' ? input.manifest : JSON.stringify(input.manifest)
+  const parsed = parseJson(original)
+  if (!isRecord(parsed) || parsed.schema !== 'storyforge.world-release') fail('root', '不是已登记的世界封存内容')
+  if (parsed.version === 3) {
+    if (input.index !== undefined) fail('legacy-index', 'v3 不承诺 v4 索引，不能附加索引冒充升级')
+    return { version: 3, manifest: await verifyPureWorldReleaseManifestV3({ ...input, manifest: parsed }), index: null, readiness: 'legacy' }
+  }
+  if (parsed.version === 4) {
+    const verified = await verifyWorldReleaseContentV4({ ...input, manifest: typeof input.manifest === 'string' ? original : candidate })
+    return { version: 4, ...verified }
+  }
+  return fail('version', '未知 WorldRelease 版本，无法按当前合同验证')
+}
+
+export async function verifyWorldReleaseRecordV1(release: WorldRelease): Promise<VerifiedWorldReleaseV1> {
+  if (!release.id || !Number.isSafeInteger(release.id)) fail('release-id', 'WorldRelease 缺少本地记录 ID')
+  return verifyWorldReleaseManifestV1({ manifest: release.manifestJson,
+    expectedContentHash: release.contentHash, expectedWorldCode: release.sourceWorldCode })
 }

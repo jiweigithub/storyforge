@@ -9,6 +9,7 @@ import { clearCultivationSystemReferences } from '../cultivation/lifecycle'
 import { PROJECT_TABLES, REGISTRY_BY_NAME } from './project-tables'
 import { markAndSweepAgentRunArtifactsV1 } from '../memory/artifact-retention-store'
 import type { TableSpec } from './types'
+import { remapNarrativeDomainReferencesV1 } from '../narrative-domain/lifecycle'
 
 // ─────────────────────────────────────────────────────────────
 // 派生选择器
@@ -48,6 +49,7 @@ export function transactionTablesFor(
     set.add(db.outlineNodes)
     set.add(db.worldGroups)
     set.add(db.worldGroupLinks)
+    for (const spec of PROJECT_TABLES) if (spec.worldSemantic?.projector) set.add(spec.table)
     return [...set]
   }
   // 归属到主世界：所有 worldScoped 表。
@@ -67,6 +69,8 @@ export function transactionTablesForReferences(sourceTableName: string): Table[]
     const targetName = ref.target.match(/^([^[]+)\[/)?.[1]
     if (targetName) names.add(targetName)
   }
+  for (const spec of PROJECT_TABLES) if (spec.refs?.some(ref =>
+    ref.kind === 'narrative-source-refs-v1' && ref.targetTables.includes(sourceTableName))) names.add(spec.name)
   return [...names].map(name => {
     const spec = REGISTRY_BY_NAME.get(name)
     if (!spec) throw new Error(`PROJECT_TABLES 引用目标未登记: ${sourceTableName} → ${name}`)
@@ -93,6 +97,9 @@ export function transactionTablesForReferenceCascade(sourceTableName: string): T
       pending.push(target)
     }
   }
+  const sources = [...names]
+  for (const spec of PROJECT_TABLES) if (spec.refs?.some(ref =>
+    ref.kind === 'narrative-source-refs-v1' && sources.some(name => ref.targetTables.includes(name)))) names.add(spec.name)
   return [...names].map(name => REGISTRY_BY_NAME.get(name)!.table)
 }
 
@@ -208,7 +215,10 @@ export async function cascadeDeleteGroup(projectId: number, wgId: number): Promi
 
       const rows = await spec.table.where('projectId').equals(projectId).toArray()
       for (const row of rows as any[]) {
-        if (row[wgField] === wgId) await spec.table.delete(row.id)
+        if (row[wgField] === wgId) {
+          await remapNarrativeDomainReferencesV1({ table: spec.name, fromId: row.id })
+          await spec.table.delete(row.id)
+        }
       }
     }
 
@@ -221,6 +231,7 @@ export async function cascadeDeleteGroup(projectId: number, wgId: number): Promi
     // 世界关系链接 + 世界组本身
     await db.worldGroupLinks.where('fromGroupId').equals(wgId).delete()
     await db.worldGroupLinks.where('toGroupId').equals(wgId).delete()
+    await remapNarrativeDomainReferencesV1({ table: 'worldGroups', fromId: wgId })
     await db.worldGroups.delete(wgId)
   })
   await markAndSweepAgentRunArtifactsV1(projectId)

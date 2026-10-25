@@ -49,7 +49,7 @@ node scripts/distribution/build-android.mjs --release
 
 1. 版本唯一来源为 `package.json`。Android `versionCode = major × 1,000,000 + minor × 1,000 + patch`；每段 0–999，正式渠道只接受稳定 `x.y.z`。版本必须递增，不要改公式、应用 ID 或签名。
 2. 先通过项目既有 CI、E2E、客户端定向检查，并完成两版本覆盖安装与备份恢复验证；在维护者授权的版本范围内发布。
-3. 现有 `release.yml` 在便携包和三平台客户端都成功后，向同一个 GitHub Release 上传 `.exe`、`.dmg`、`.blockmap`、`latest.yml`、`.apk`、便携 ZIP 与 `SHA256SUMS.txt`，最后公开 Release。客户端构建工作流手动执行只生成 Actions artifacts，不公开 Release。
+3. 现有 `release.yml` 在便携包、三平台客户端和正式签名 Android 两版本覆盖升级都成功后，核对发行源码已合入 `main`，再向同一个 GitHub Release 上传 `.exe`、`.dmg`、`.blockmap`、`latest.yml`、`.apk`、便携 ZIP 与 `SHA256SUMS.txt`，最后公开 Release。客户端构建工作流手动执行只生成 Actions artifacts，不公开 Release。
 4. 公开后的版本不可覆盖。不要单独提前发布更新元数据，也不要在缺少 Android 包时把 Windows 更新先置为 latest。新版本应使用新 tag 和 release notes。
 5. 安装操作先等待现有待保存编辑协调器完成写入，失败则阻断安装。Windows 由 `electron-updater` 检查与下载；禁用自动下载、退出时自动安装、预发布和降级。下载与退出安装各有原生确认窗口。GitHub 下载失败仍可使用当前安装。可通过 `CSC_LINK` / `CSC_KEY_PASSWORD` 接入 Windows 代码签名；未配置时为未签名安装器，系统可能提示未知发布者。
 6. Android 只检查固定仓库最新稳定 Release，精确匹配 APK 名称与 URL，验证 GitHub asset SHA-256、APK 包名、递增版本号和当前签名，再调用系统安装器。首次需要用户允许“安装未知应用”。下载或校验失败不得启动安装；用户取消系统安装时旧版保留。
@@ -100,8 +100,12 @@ Windows 只保存固定枚举的进程异常摘要；主进程原生硬崩溃未
 
 `npm run build:macos -- --arm64` 或 `--x64` 生成对应 DMG；应用使用同一桌面入口、固定 origin 和 `~/Library/Application Support/StoryForge`。当前采用 ad-hoc 签名，不是 Developer ID 签名或 Apple 公证。macOS 更新固定读取官方仓库最新稳定版，选择当前 CPU 的精确文件名，验证大小与 GitHub SHA-256；用户确认后再次验 hash、打开 DMG 并退出，由用户拖入“应用程序”替换，不假装完成无人值守安装。
 
-`upgrade-smoke.mjs` 在隔离目录运行 4.0.1 和 4.0.2，Windows 实际运行两个 NSIS 安装器，Mac 从新 DMG 替换应用。4.0.1 的 Mac app 是测试基线，非历史公开发行。生产 `createWorkspace()`、注册表派生的完整导出/导入是测试唯一作品入口；比较完整导出，验证正文、封面、OPFS 探针、非法备份零写入与恢复后重启。此证据不代替全部产品媒资/游戏存档或真人移动布局验收。
+`upgrade-smoke.mjs` 在隔离目录运行既有正式版本和本次候选，旧源码 SHA 与版本由客户端工作流的 `PREVIOUS_CLIENT_REF` / `PREVIOUS_CLIENT_VERSION` 一起指定；探针必须传入旧版号并核对实际应用版本，不能沿用固定旧值。v4.0.3 从正式 v4.0.2 验证覆盖升级。Windows 实际运行两个 NSIS 安装器，Mac 从新 DMG 替换应用。生产 `createWorkspace()`、注册表派生的完整导出/导入是测试唯一作品入口；比较完整导出，验证正文、封面、OPFS 探针、非法备份零写入与恢复后重启。此证据不代替全部产品媒资/游戏存档或真人移动布局验收。
 
-Android 正式验证用永久密钥在本机签署测试 runner，测试 runner 与两个正式 APK 暂存于 Release 草稿，CI 只接收签名后的 APK，不接收密钥。分别安装旧 APK、执行 seed、`adb install -r` 新 APK、执行恢复和重启校验。测试 JS 只进入 androidTest 的 assets，不进入公开应用。发布前删除三个 `upgrade-test-*.apk` 附件。
+Android 正式验证用永久密钥在本机签署测试 runner；新正式 APK 与测试 runner 暂存于 Release 草稿，CI 只接收签名后的 APK，不接收密钥。升级工作流从既有正式发行下载旧 APK，从本次草稿下载实际将发布的新 APK，避免另一份同版本测试包替代正式包验收。分别安装旧 APK、执行 seed、`adb install -r` 新 APK、执行恢复和重启校验。旧版号在升级工作流的 `PREVIOUS_CLIENT_VERSION` 指定，与桌面旧版基线一致。测试 JS 只进入 androidTest 的 assets，不进入公开应用。发布前删除临时 `upgrade-test-*.apk` 附件。
 
 没有 Actions 签名 Secrets 时，正式发布工作流读取草稿中维护者已上传的同版本 APK，校验正式应用 ID、版本和固定证书指纹。未提供正式 APK 则发布失败；不会退回 debug 包。Windows/macOS 仍由 GitHub 自动构建。iOS 本次暂缓。
+
+## 模块加载失败的明确恢复
+
+React 页面模块或预加载样式失败时，错误页的“重试”先等待既有编辑保存屏障成功，再由用户这一次操作重新加载页面，避免只重置错误边界而反复显示缓存的加载失败。保存失败时保留错误页并阻止重新加载；持续资源故障仍显示失败，不后台循环重试，不清空浏览器数据、不切换 origin。普通渲染/业务错误继续走原有边界重置，不自动刷新。此恢复不等于已确认首次加载失败的网络、构建或缓存根因。

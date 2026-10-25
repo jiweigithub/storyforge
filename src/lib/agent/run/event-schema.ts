@@ -15,6 +15,7 @@ import {
   readString,
 } from './schema-utils'
 import { parseAgentRunStepVerificationReceiptV1 } from './verification-receipt'
+import { readAgentRunContractJsonV1 } from './checkpoint-contract'
 
 export const AGENT_RUN_EVENT_TYPES_V1: readonly AgentRunEventTypeV1[] = [
   'run.created',
@@ -119,7 +120,7 @@ function parsePayload<T extends AgentRunEventTypeV1>(
       const record = payloadRecord(value, type, ['contractJson'], [])
       payload = {
         ...(record.contractJson === undefined ? {} : {
-          contractJson: readString(record.contractJson, 'event.payload(contract.accepted).contractJson', { max: 100_000 }),
+          contractJson: readAgentRunContractJsonV1(record.contractJson, 'event.payload(contract.accepted).contractJson'),
         }),
       }
       break
@@ -129,7 +130,7 @@ function parsePayload<T extends AgentRunEventTypeV1>(
       payload = {
         previousContractHash: readHash(record.previousContractHash, 'event.payload(contract.revised).previousContractHash'),
         ...(record.contractJson === undefined ? {} : {
-          contractJson: readString(record.contractJson, 'event.payload(contract.revised).contractJson', { max: 100_000 }),
+          contractJson: readAgentRunContractJsonV1(record.contractJson, 'event.payload(contract.revised).contractJson'),
         }),
       }
       break

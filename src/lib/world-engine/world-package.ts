@@ -1,19 +1,23 @@
 import { importProjectJSON } from '../export/json-export'
 import { PROJECT_TABLES } from '../registry/project-tables'
 import { db } from '../db/schema'
-import { cascadeDeleteProject } from '../registry/lifecycle'
+import Dexie from 'dexie'
 import type { CommunityWorldLicense, WorldReleaseManifestV3 } from '../types'
+import type { WorldReleaseManifestV4 } from '../types/narrative-release'
+import type { NarrativeIndexV1 } from '../types/narrative-index'
+import { canonicalNarrativeJsonV1 } from './narrative-json'
 import { generateWorldCode } from '../workspace/identity'
-import { assertReleaseUnchanged, stableJson, worldReleaseUidV1 } from './releases'
+import { stableJson, worldReleaseUidV1 } from './releases'
+import { readWorldNarrativeIndexV1 } from './narrative-index-cache'
 import { resolveWorkspaceScope } from '../workspace/ownership'
-import {
-  parsePureWorldReleaseManifestV3,
-  verifyPureWorldReleaseManifestV3,
-} from './release-codec'
+import { verifyWorldReleaseManifestV1, type VerifiedWorldReleaseV1 } from './release-codec'
 import { assertWorldSemanticSnapshotV1, materializeWorldReleaseBackupV1 } from './semantic-snapshot'
+import { createNarrativeLineageV1 } from './narrative-lineage'
+import { packNarrativeJsonV1, unpackNarrativeJsonV1, type PackedNarrativeJsonV1 } from './narrative-package-packing'
+import { compressNarrativePackV1, decompressNarrativePackV1, type CompressedNarrativePackV1 } from './narrative-package-compression'
 
 export const WORLD_PACKAGE_FORMAT = 'storyforge.world-package'
-export const WORLD_PACKAGE_VERSION = 3
+export const WORLD_PACKAGE_VERSION = 5
 
 /** Current, explicit destinations for a frozen semantic world. */
 export const WORLD_PACKAGE_USES = [
@@ -42,18 +46,32 @@ export interface WorldPackageManifest {
   releaseHash: string
 }
 
-export interface WorldPackage {
+interface WorldPackageEnvelope {
   format: typeof WORLD_PACKAGE_FORMAT
-  packageVersion: typeof WORLD_PACKAGE_VERSION
   manifest: WorldPackageManifest
-  release: {
-    label: string
-    version: number
-    contentHash: string
-    manifest: WorldReleaseManifestV3
-  }
   integrity: { algorithm: 'SHA-256'; digest: string }
 }
+interface WorldPackageRelease<M> {
+  label: string
+  version: number
+  contentHash: string
+  manifest: M
+}
+export type WorldPackageV3 = WorldPackageEnvelope & {
+  packageVersion: 3
+  release: WorldPackageRelease<WorldReleaseManifestV3>
+}
+export type WorldPackageV4 = WorldPackageEnvelope & {
+  packageVersion: 4
+  release: WorldPackageRelease<WorldReleaseManifestV4> & { index: NarrativeIndexV1 }
+}
+export type WorldPackageV5 = WorldPackageEnvelope & {
+  packageVersion: 5
+  release: Omit<WorldPackageRelease<WorldReleaseManifestV4>, 'manifest'> & { packed: PackedNarrativeJsonV1 | CompressedNarrativePackV1 }
+}
+export type WorldPackage = WorldPackageV3 | WorldPackageV4 | WorldPackageV5
+type WorldPackagePayload = Omit<WorldPackageV3, 'integrity'> | Omit<WorldPackageV4, 'integrity'> | Omit<WorldPackageV5, 'integrity'>
+type WorldPackageDigestPayload = { format: unknown; packageVersion: unknown; manifest: unknown; release: unknown }
 
 export interface WorldPackageTrustReport {
   valid: boolean
@@ -76,7 +94,9 @@ const WORLD_PACKAGE_MANIFEST_KEYS = new Set([
   'authorName', 'attribution', 'license', 'allowedUses', 'contentWarnings',
   'publishedAt', 'releaseHash',
 ])
-const WORLD_PACKAGE_RELEASE_KEYS = new Set(['label', 'version', 'contentHash', 'manifest'])
+const WORLD_PACKAGE_RELEASE_KEYS_V3 = new Set(['label', 'version', 'contentHash', 'manifest'])
+const WORLD_PACKAGE_RELEASE_KEYS_V4 = new Set([...WORLD_PACKAGE_RELEASE_KEYS_V3, 'index'])
+const WORLD_PACKAGE_RELEASE_KEYS_V5 = new Set(['label', 'version', 'contentHash', 'packed'])
 const WORLD_PACKAGE_INTEGRITY_KEYS = new Set(['algorithm', 'digest'])
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -104,13 +124,35 @@ function cloneJson<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
 }
 
-function payloadForIntegrity(pkg: Omit<WorldPackage, 'integrity'>) {
+function payloadForIntegrity(pkg: WorldPackageDigestPayload) {
   return {
     format: pkg.format,
     packageVersion: pkg.packageVersion,
     manifest: pkg.manifest,
     release: pkg.release,
   }
+}
+
+function packageBytes(payload: WorldPackageDigestPayload): string {
+  return payload.packageVersion === 3 ? canonicalStringify(payloadForIntegrity(payload)) : canonicalNarrativeJsonV1(payloadForIntegrity(payload))
+}
+function detachPackage(input: unknown): unknown {
+  const bytes = JSON.stringify(input)
+  if (typeof bytes !== 'string' || new TextEncoder().encode(bytes).byteLength > WORLD_PACKAGE_MAX_BYTES) {
+    throw new Error(`世界分享包超过 ${WORLD_PACKAGE_MAX_BYTES / 1024 / 1024} MiB 纯语义包预算或不是 JSON。`)
+  }
+  return JSON.parse(bytes)
+}
+async function expandedPackageRelease(pkg: Record<string, unknown>): Promise<Record<string, unknown> | null> {
+  if (!isRecord(pkg.release)) return null
+  if (pkg.packageVersion !== 5) return pkg.release
+  const packed = pkg.release.packed
+  const components = unpackNarrativeJsonV1(isRecord(packed) && packed.schema === 'storyforge.narrative-pack-gzip'
+    ? await decompressNarrativePackV1(packed) : packed)
+  if (!isRecord(components) || Object.keys(components).length !== 2 || !('manifest' in components) || !('index' in components)) {
+    throw Error('打包内容必须精确包含完整 manifest 和 index。')
+  }
+  return { label: pkg.release.label, version: pkg.release.version, contentHash: pkg.release.contentHash, ...components }
 }
 
 export async function createWorldPackage(
@@ -121,16 +163,21 @@ export async function createWorldPackage(
     license: CommunityWorldLicense
     allowedUses: Record<WorldPackageUse, boolean>
     contentWarnings?: string[]
+    /** Explicit test/interop choice; large v4 packages automatically use the
+     * versioned lossless transport. Legacy v3 never changes its representation. */
+    transport?: 'dictionary-v1'
   },
 ): Promise<WorldPackage> {
-  await assertReleaseUnchanged(releaseId)
+  options = cloneJson(options)
   const release = await db.worldReleases.get(releaseId)
   if (!release) throw new Error('发布版本不存在。')
-  const releaseManifest = await verifyPureWorldReleaseManifestV3({
-    manifest: release.manifestJson,
-    expectedContentHash: release.contentHash,
-    expectedWorldCode: release.sourceWorldCode,
-  })
+  const verified = JSON.parse(release.manifestJson).version === 4
+    ? (await readWorldNarrativeIndexV1({ projectId: release.projectId, worldId: release.worldId, releaseId })).verified
+    : await verifyWorldReleaseManifestV1({ manifest: release.manifestJson, expectedContentHash: release.contentHash, expectedWorldCode: release.sourceWorldCode })
+  const current = await db.worldReleases.get(releaseId)
+  if (!current || canonicalStringify(current) !== canonicalStringify(release)) throw new Error('生成分享包期间发布记录已变化。')
+  const releaseManifest = verified.manifest
+  if (verified.version === 4 && !verified.index) throw new Error('v4 分享包必须携带已核对的完整索引。')
   if (!options.authorName.trim()) throw new Error('请填写作者署名。')
   if (!LICENSES.has(options.license)) throw new Error('许可选项无效。')
   if (!Object.values(options.allowedUses).some(Boolean)) throw new Error('至少选择一种允许的使用方式。')
@@ -148,20 +195,23 @@ export async function createWorldPackage(
     publishedAt: release.createdAt,
     releaseHash: release.contentHash,
   }
-  const withoutIntegrity: Omit<WorldPackage, 'integrity'> = {
-    format: WORLD_PACKAGE_FORMAT,
-    packageVersion: WORLD_PACKAGE_VERSION,
-    manifest,
-    release: {
-      label: release.label,
-      version: release.version,
-      contentHash: release.contentHash,
-      manifest: cloneJson(releaseManifest),
-    },
+  const shared = { format: WORLD_PACKAGE_FORMAT, manifest } as const
+  const released = { label: release.label, version: release.version, contentHash: release.contentHash }
+  let withoutIntegrity: WorldPackagePayload = verified.version === 3
+    ? { ...shared, packageVersion: 3, release: { ...released, manifest: cloneJson(verified.manifest) } }
+    : { ...shared, packageVersion: 4, release: { ...released, manifest: verified.manifest, index: verified.index! } }
+  if (options.transport && verified.version !== 4) throw Error('字典传输只承接完整 v4 世界内容。')
+  if (verified.version === 4 && (options.transport === 'dictionary-v1'
+    || new TextEncoder().encode(packageBytes(withoutIntegrity)).length + 128 > WORLD_PACKAGE_MAX_BYTES)) {
+    withoutIntegrity = { ...shared, packageVersion: 5, release: { ...released,
+      packed: packNarrativeJsonV1({ manifest: verified.manifest, index: verified.index! }) } }
+    if (new TextEncoder().encode(packageBytes(withoutIntegrity)).length + 128 > WORLD_PACKAGE_MAX_BYTES) {
+      withoutIntegrity.release.packed = await compressNarrativePackV1(withoutIntegrity.release.packed as PackedNarrativeJsonV1)
+    }
   }
   const pkg: WorldPackage = {
     ...withoutIntegrity,
-    integrity: { algorithm: 'SHA-256', digest: await sha256(canonicalStringify(payloadForIntegrity(withoutIntegrity))) },
+    integrity: { algorithm: 'SHA-256', digest: await sha256(packageBytes(withoutIntegrity)) },
   }
   if (new TextEncoder().encode(canonicalStringify(pkg)).byteLength > WORLD_PACKAGE_MAX_BYTES) {
     throw new Error(`世界分享包超过 ${WORLD_PACKAGE_MAX_BYTES / 1024 / 1024} MiB 纯语义包预算。`)
@@ -169,17 +219,20 @@ export async function createWorldPackage(
   return pkg
 }
 
-/** Read-only validation of the sole supported, pure-semantic package protocol. */
+/** Read-only transport dispatch. v5 unfolds exact v4 content, then passes the
+ * same complete source/projection/index checks; packing grants no trust. */
 export async function inspectWorldPackage(input: unknown): Promise<WorldPackageTrustReport> {
   const errors: string[] = []
   const warnings: string[] = []
+  try { input = detachPackage(input) }
+  catch (error) { return { valid: false, importable: false, manifest: null, errors: [error instanceof Error ? error.message : '分享包不是完整 JSON。'], warnings } }
   if (!isRecord(input)) {
     return { valid: false, importable: false, manifest: null, errors: ['分享包必须是 JSON 对象。'], warnings }
   }
   const unknownPackageKeys = Object.keys(input).filter(key => !WORLD_PACKAGE_KEYS.has(key))
   if (unknownPackageKeys.length > 0) errors.push(`世界分享包包含未知顶层字段：${unknownPackageKeys.join('、')}。`)
   if (input.format !== WORLD_PACKAGE_FORMAT) errors.push('这不是 StoryForge 世界分享包。')
-  if (input.packageVersion !== WORLD_PACKAGE_VERSION) {
+  if (![3, 4, WORLD_PACKAGE_VERSION].includes(input.packageVersion as number)) {
     errors.push(`不支持的世界分享包版本：${String(input.packageVersion)}。`)
   }
 
@@ -210,22 +263,31 @@ export async function inspectWorldPackage(input: unknown): Promise<WorldPackageT
     if (errors.length === 0) manifest = rawManifest as unknown as WorldPackageManifest
   }
 
-  const release = isRecord(input.release) ? input.release : null
-  let releaseManifest: ReturnType<typeof parsePureWorldReleaseManifestV3> | null = null
+  const wireRelease = isRecord(input.release) ? input.release : null
+  let release: Record<string, unknown> | null = null
+  try { release = await expandedPackageRelease(input) }
+  catch (error) { errors.push(error instanceof Error ? error.message : '打包内容无效。') }
+  let releaseManifest: VerifiedWorldReleaseV1['manifest'] | null = null
   if (!release || typeof release.contentHash !== 'string' || typeof release.version !== 'number') {
     errors.push('世界分享包缺少冻结发布。')
   } else {
-    const unknownReleaseKeys = Object.keys(release).filter(key => !WORLD_PACKAGE_RELEASE_KEYS.has(key))
+    const releaseKeys = input.packageVersion === 5 ? WORLD_PACKAGE_RELEASE_KEYS_V5
+      : input.packageVersion === 4 ? WORLD_PACKAGE_RELEASE_KEYS_V4 : WORLD_PACKAGE_RELEASE_KEYS_V3
+    const unknownReleaseKeys = Object.keys(wireRelease!).filter(key => !releaseKeys.has(key))
+    if (Object.keys(wireRelease!).length !== releaseKeys.size || [...releaseKeys].some(key => !(key in wireRelease!))) errors.push('冻结发布字段不完整。')
     if (unknownReleaseKeys.length > 0) errors.push(`冻结发布包含未知字段：${unknownReleaseKeys.join('、')}。`)
     if (typeof release.label !== 'string' || !release.label.trim() || !Number.isInteger(release.version) || release.version < 1 || !/^[a-f0-9]{64}$/.test(release.contentHash)) {
       errors.push('冻结发布身份无效。')
     }
     try {
-      releaseManifest = await verifyPureWorldReleaseManifestV3({
+      const verified = await verifyWorldReleaseManifestV1({
         manifest: release.manifest,
+        ...(input.packageVersion === 4 || input.packageVersion === 5 ? { index: release.index } : {}),
         expectedContentHash: release.contentHash,
         expectedWorldCode: manifest?.sourceWorldCode,
       })
+      if (verified.version !== (input.packageVersion === 5 ? 4 : input.packageVersion)) throw new Error('包版本与冻结内容版本不一致。')
+      releaseManifest = verified.manifest
     } catch (error) {
       errors.push(error instanceof Error ? error.message : '冻结世界发布无效。')
     }
@@ -250,11 +312,11 @@ export async function inspectWorldPackage(input: unknown): Promise<WorldPackageT
     if (!/^[a-f0-9]{64}$/.test(integrity.digest)) errors.push('分享包完整性摘要格式无效。')
     const payload = {
       format: WORLD_PACKAGE_FORMAT,
-      packageVersion: WORLD_PACKAGE_VERSION,
+      packageVersion: input.packageVersion,
       manifest,
-      release,
-    } as Omit<WorldPackage, 'integrity'>
-    if (await sha256(canonicalStringify(payloadForIntegrity(payload))) !== integrity.digest) {
+      release: wireRelease,
+    }
+    if (await sha256(packageBytes(payload)) !== integrity.digest) {
       errors.push('分享包完整性校验失败，文件可能已被修改。')
     }
   }
@@ -264,12 +326,16 @@ export async function inspectWorldPackage(input: unknown): Promise<WorldPackageT
 }
 
 export async function importWorldPackage(input: unknown): Promise<number> {
+  input = detachPackage(input)
   const report = await inspectWorldPackage(input)
   if (!report.valid || !report.importable || !report.manifest || !isRecord(input) || !isRecord(input.release)) {
     throw new Error(`世界分享包预检失败：${report.errors.join('；')}`)
   }
-  const release = input.release
-  const releaseManifest = parsePureWorldReleaseManifestV3(release.manifest)
+  const release = (await expandedPackageRelease(input))!
+  const verified = await verifyWorldReleaseManifestV1({ manifest: release.manifest, expectedContentHash: String(release.contentHash),
+    expectedWorldCode: report.manifest.sourceWorldCode, ...(input.packageVersion === 4 || input.packageVersion === 5 ? { index: release.index } : {}) })
+  const releaseManifest = verified.manifest
+  const manifestJson = verified.version === 3 ? stableJson(releaseManifest) : canonicalNarrativeJsonV1(releaseManifest)
   const sourceProject = releaseManifest.semanticSnapshot.project
   const semanticProjectKeys = [
     'workspaceUid', 'workspacePurpose', 'name', 'enableMultiWorld', 'productPlatformOptIns',
@@ -288,21 +354,41 @@ export async function importWorldPackage(input: unknown): Promise<number> {
     license: report.manifest.license,
     importedAt: Date.now(),
   }
-  const importedProjectId = await importProjectJSON(materializeWorldReleaseBackupV1(releaseManifest, project))
-  try {
+  // Capture the non-null validated identity before entering the async callback.
+  const packageManifest = report.manifest
+  const localWorldCode = generateWorldCode()
+  const lineage = verified.version === 4 ? await createNarrativeLineageV1({ source: verified.manifest.narrative,
+    targetOwner: { kind: 'world', worldCode: localWorldCode, sourceWorkCode: String(verified.manifest.semanticSnapshot.works[0].code) },
+    sourceWorkspaceUid: verified.manifest.sourceManifest.sourceWorkspaceUid, sourceContentHash: String(release.contentHash),
+    sourceReleaseUid: worldReleaseUidV1({ worldCode: report.manifest.sourceWorldCode, version: Number(release.version), contentHash: String(release.contentHash) }) }) : null
+  // Preflight, hashing and ID planning finish before the import transaction.
+  // Draft, lineage, original revision and original release commit atomically.
+  return importProjectJSON(materializeWorldReleaseBackupV1(releaseManifest, project), { finalizeInTransaction: async importedProjectId => {
     const importedProject = await db.projects.get(importedProjectId)
     if (!importedProject?.activeWorldId) {
       throw new Error('世界包导入后缺少当前 World 指针。')
     }
-    const localWorldCode = generateWorldCode()
+    if (await db.worlds.where('code').equals(localWorldCode).count()) throw Error('新世界编号冲突，请重新导入。')
     await db.worlds.update(importedProject.activeWorldId, {
       identityKind: 'world-draft',
       code: localWorldCode,
-      currentVersion: report.manifest.sourceWorldVersion,
+      currentVersion: packageManifest.sourceWorldVersion,
       communityOrigin,
       updatedAt: Date.now(),
     })
-    const scope = await resolveWorkspaceScope(importedProjectId)
+    const scope = await Dexie.Promise.resolve(resolveWorkspaceScope(importedProjectId))
+    if (verified.version === 4 && lineage) {
+      // The original installed release remains byte-identical. This receipt
+      // refers to the new editable draft, whose confirmations still need review.
+      await db.worldDerivations.add({ projectId: importedProjectId, worldId: scope.worldId,
+        sourceWorkspaceUid: lineage.sourceWorkspaceUid, sourceWorkCode: String(verified.manifest.semanticSnapshot.works[0].code),
+        sourceWorkRevision: 0, sourceKind: 'world-release-copy',
+        sourceRevisionVectorJson: canonicalNarrativeJsonV1({ version: 1, revisionVectorHash: lineage.sourceRevisionVectorHash }),
+        sourceRangeJson: canonicalNarrativeJsonV1({ kind: 'frozen-world-release', releaseUid: lineage.sourceReleaseUid }),
+        selectedResourceIdsJson: canonicalNarrativeJsonV1(verified.manifest.narrative.coverage.eligibleSelected),
+        sourceContentHash: lineage.sourceContentHash, narrativeLineageJson: canonicalNarrativeJsonV1(lineage),
+        targetRevisionId: null, targetReleaseId: null, createdAt: Date.now() })
+    }
     const now = Date.now()
     const revisionId = await db.worldRevisions.add({
       projectId: importedProjectId,
@@ -310,14 +396,14 @@ export async function importWorldPackage(input: unknown): Promise<number> {
       parentRevisionId: null,
       revision: Number(release.version),
       label: String(release.label),
-      manifestJson: stableJson(releaseManifest),
+      manifestJson,
       contentHash: String(release.contentHash),
       createdAt: now,
       updatedAt: now,
     }) as number
     await db.worldReleases.add({
       releaseUid: worldReleaseUidV1({
-        worldCode: report.manifest.sourceWorldCode,
+        worldCode: packageManifest.sourceWorldCode,
         version: Number(release.version),
         contentHash: String(release.contentHash),
       }),
@@ -326,17 +412,13 @@ export async function importWorldPackage(input: unknown): Promise<number> {
       revisionId,
       version: Number(release.version),
       label: String(release.label),
-      manifestJson: stableJson(releaseManifest),
+      manifestJson,
       contentHash: String(release.contentHash),
-      sourceWorldCode: report.manifest.sourceWorldCode,
+      sourceWorldCode: packageManifest.sourceWorldCode,
       createdAt: now,
     })
     await db.worlds.update(scope.worldId, { currentVersion: Number(release.version), updatedAt: now })
-    return importedProjectId
-  } catch (cause) {
-    await cascadeDeleteProject(importedProjectId)
-    throw cause
-  }
+  } })
 }
 
 export function downloadWorldPackage(pkg: WorldPackage, filename: string) {

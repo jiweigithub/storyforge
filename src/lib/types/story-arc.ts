@@ -1,3 +1,4 @@
+import type { NarrativeDomainMetadataV1, NarrativeDomainFieldsV1 } from './narrative-domain'
 /**
  * 全局故事线 — Phase B
  * 给全书一条从开篇到结局的主线剧情锚点
@@ -20,7 +21,9 @@ export interface StoryStage {
 }
 
 /** 故事线 */
-export interface StoryArc {
+type StoryArcNarrativeFieldsV1 = NarrativeDomainMetadataV1 & Pick<NarrativeDomainFieldsV1, 'narrativeDevelopmentsV1'>
+
+export interface StoryArc extends StoryArcNarrativeFieldsV1 {
   id?: number
   projectId: number
   /** 多世界作用域；null 表示单世界/默认主世界。 */

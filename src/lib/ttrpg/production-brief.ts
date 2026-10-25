@@ -10,7 +10,7 @@ import type {
   TtrpgProductionBriefV2,
   TtrpgProductionSeatV2,
   WorkspaceScope,
-  ProductWorldSourceSelectionV1,
+  ProductWorldSourceSelection,
 } from "../types";
 import { assertRecordInScope, resolveScope } from "../workspace/scope";
 import {
@@ -726,7 +726,7 @@ export interface TtrpgProductionBriefDraftInputV2 {
 
 function defaultSeats(input: {
   playerCount: number;
-  selection: ProductWorldSourceSelectionV1;
+  selection: ProductWorldSourceSelection;
   defaultMode: TtrpgProductionSeatV2["characterMode"];
 }): TtrpgProductionSeatV2[] {
   return Array.from({ length: input.playerCount }, (_, index) => {
@@ -835,7 +835,7 @@ export async function resolveTtrpgProductionRulePackV2(input: {
 /** Deterministically compile the nine-step author choices into a frozen contract. */
 export async function compileTtrpgProductionBriefV2(input: {
   scope: WorkspaceScope;
-  selection: ProductWorldSourceSelectionV1;
+  selection: ProductWorldSourceSelection;
   worldContentHash: string;
   title: string;
   premise: string;

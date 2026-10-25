@@ -32,10 +32,11 @@ import type {
   AnyProductRuntimePackage,
   AnyProductReleaseManifest,
   ProductReleaseLineageV1,
-  ProductSourcePlanV1,
+  ProductSourcePlan,
   ConfirmedProductBriefV1,
-  ProductSourceManifestV1,
+  ProductSourceManifest,
   ProductWorldSourceSelectionV1,
+  ProductWorldSourceSelection,
   TextOpenWorldCreatorReleaseSourceContractsV1,
   TextOpenWorldCreatorReleaseLineageV1,
 } from '../types'
@@ -43,8 +44,8 @@ import { canonicalProductProductionJsonV2, hashProductProductionValueV2, isSha25
 import {
   validateConfirmedProductBriefV1,
   validateProductReleaseLineageV1,
-  validateProductSourceManifestV1,
-  validateProductSourcePlanV1,
+  validateProductSourceManifest,
+  validateProductSourcePlan,
 } from '../product/source-contracts'
 
 const PRODUCT_TYPES = new Set<ProductionProductKindV1>(PRODUCTION_PRODUCT_KINDS_V1)
@@ -218,15 +219,15 @@ function productType(value: unknown): ProductionProductKindV1 {
   return value as ProductionProductKindV1
 }
 
-function worldResourceKey(value: unknown, label: string): string {
+function worldResourceKey(value: unknown, label: string, version: 1 | 2): string {
   const key = requiredText(value, label, 1_000)
-  if (!key.startsWith('world-release:') || /\s/.test(key)) fail(`${label} 不是中立世界资源 key`)
+  if ((version === 1 ? !key.startsWith('world-release:') || /\s/.test(key) : !/^world-narrative:[a-f0-9]{64}$/.test(key))) fail(`${label} 不是该版本的中立世界资源 key`)
   return key
 }
 
-function worldResourceKeyArray(value: unknown, label: string): string[] {
+function worldResourceKeyArray(value: unknown, label: string, version: 1 | 2): string[] {
   if (!Array.isArray(value) || value.length > 20_000) fail(`${label} 必须是有界数组`)
-  const keys = value.map((item, index) => worldResourceKey(item, `${label}[${index}]`))
+  const keys = value.map((item, index) => worldResourceKey(item, `${label}[${index}]`, version))
   if (new Set(keys).size !== keys.length) fail(`${label} 不能重复`)
   return keys.sort()
 }
@@ -255,31 +256,37 @@ function validateTtrpg(value: unknown, sourceWorldHash: string): NonNullable<Pro
 }
 
 export function parseProductWorldSourceSelectionV1(value: unknown): ProductWorldSourceSelectionV1 {
+  if (record(value, 'sourceWorld.selection').version !== 1) fail('V1 入口只接受旧版世界选择')
+  return parseProductWorldSourceSelection(value) as ProductWorldSourceSelectionV1
+}
+
+export function parseProductWorldSourceSelection(value: unknown): ProductWorldSourceSelection {
   const selection = record(value, 'sourceWorld.selection')
   exactKeys(selection, ['schema', 'version', 'productType', 'worldReferenceHash', 'resourceKeys', 'roleBindings'], 'sourceWorld.selection')
-  if (selection.schema !== 'storyforge.product-world-source-selection' || selection.version !== 1) {
+  if (selection.schema !== 'storyforge.product-world-source-selection' || (selection.version !== 1 && selection.version !== 2)) {
     fail('source selection 版本无效')
   }
   const selectedProduct = productType(selection.productType)
+  if (selection.version === 2 && selectedProduct !== 'character-interaction' && selectedProduct !== 'avg') fail('此产品尚未登记叙事来源选择')
   if (!isSha256Hash(selection.worldReferenceHash)) fail('selection.worldReferenceHash 无效')
-  const resourceKeys = worldResourceKeyArray(selection.resourceKeys, 'selection.resourceKeys')
+  const resourceKeys = worldResourceKeyArray(selection.resourceKeys, 'selection.resourceKeys', selection.version)
   const roleRecord = record(selection.roleBindings, 'selection.roleBindings')
   if (Object.keys(roleRecord).length > 100) fail('selection.roleBindings 数量超限')
   const allowed = new Set(resourceKeys)
   const roleBindings = Object.fromEntries(Object.entries(roleRecord).sort(([left], [right]) => left.localeCompare(right)).map(([role, rawKeys]) => {
     stableKey(role, `selection.roleBindings.${role}`)
-    const keys = worldResourceKeyArray(rawKeys, `selection.roleBindings.${role}`)
+    const keys = worldResourceKeyArray(rawKeys, `selection.roleBindings.${role}`, selection.version as 1 | 2)
     if (keys.some(key => !allowed.has(key))) fail(`selection.roleBindings.${role} 超出资源选择`)
     return [role, keys]
   }))
   return {
     schema: 'storyforge.product-world-source-selection',
-    version: 1,
+    version: selection.version,
     productType: selectedProduct,
     worldReferenceHash: selection.worldReferenceHash,
     resourceKeys,
     roleBindings,
-  }
+  } as ProductWorldSourceSelection
 }
 
 function validateInteraction(value: unknown): ProductRuntimePackageV1['interaction'] {
@@ -355,7 +362,7 @@ export function parseProductRuntimePackageV1(value: string | unknown): ProductRu
   const sourceWorld = record(pkg.sourceWorld, 'sourceWorld')
   exactKeys(sourceWorld, ['contentHash', 'selection'], 'sourceWorld')
   if (!isSha256Hash(sourceWorld.contentHash)) fail('sourceWorld.contentHash 无效')
-  const selection = parseProductWorldSourceSelectionV1(sourceWorld.selection)
+  const selection = parseProductWorldSourceSelection(sourceWorld.selection)
   if (selection.productType !== selectedProduct) {
     fail('source selection 与 package 来源不一致')
   }
@@ -502,7 +509,7 @@ export function parseProductRuntimePackageV2(value: string | unknown): ProductRu
   const sourceWorld = record(pkg.sourceWorld, 'sourceWorld')
   exactKeys(sourceWorld, ['contentHash', 'selection'], 'sourceWorld')
   if (!isSha256Hash(sourceWorld.contentHash)) fail('sourceWorld.contentHash 无效')
-  const selection = parseProductWorldSourceSelectionV1(sourceWorld.selection)
+  const selection = parseProductWorldSourceSelection(sourceWorld.selection)
   if (selection.productType !== 'avg') fail('source selection 与 V2 package 来源不一致')
   const narrative = parseFrozenNarrative(pkg.narrative)
   const graph = validateNarrativeContentGraph({
@@ -627,9 +634,9 @@ function parseProductReleaseManifestAtVersion(value: string | unknown, version: 
       sourceWorldRelease: { contentHash: sourceWorldRelease.contentHash }, runtimePackage,
       packageHash: manifest.packageHash, productionProvenance,
       sourceContracts: {
-        sourcePlan: sourceContracts.sourcePlan as ProductSourcePlanV1,
+        sourcePlan: sourceContracts.sourcePlan as ProductSourcePlan,
         confirmedBrief: sourceContracts.confirmedBrief as ConfirmedProductBriefV1,
-        sourceManifest: sourceContracts.sourceManifest as ProductSourceManifestV1,
+        sourceManifest: sourceContracts.sourceManifest as ProductSourceManifest,
       },
       releaseIdentityHash: manifest.releaseIdentityHash, lineage,
     }
@@ -645,9 +652,9 @@ function parseProductReleaseManifestAtVersion(value: string | unknown, version: 
     sourceContracts: creatorSourceContracts
       ? structuredClone(sourceContracts) as unknown as TextOpenWorldCreatorReleaseSourceContractsV1
       : {
-          sourcePlan: sourceContracts.sourcePlan as ProductSourcePlanV1,
+          sourcePlan: sourceContracts.sourcePlan as ProductSourcePlan,
           confirmedBrief: sourceContracts.confirmedBrief as ConfirmedProductBriefV1,
-          sourceManifest: sourceContracts.sourceManifest as ProductSourceManifestV1,
+          sourceManifest: sourceContracts.sourceManifest as ProductSourceManifest,
         },
     releaseIdentityHash: manifest.releaseIdentityHash,
     lineage,
@@ -685,12 +692,21 @@ async function verifyProductReleaseManifestBindings<T extends AnyProductReleaseM
   if (manifest.lineage.schema !== 'storyforge.product-release-lineage') {
     fail('共享WorldRelease来源必须使用共享lineage')
   }
-  const sourcePlan = await validateProductSourcePlanV1(manifest.sourceContracts.sourcePlan)
+  const sourcePlan = await validateProductSourcePlan(manifest.sourceContracts.sourcePlan)
+  const selection = manifest.runtimePackage.sourceWorld.selection
+  if (selection.version !== sourcePlan.worldReference.version) fail('产品选择协议与冻结世界引用版本不一致')
+  if (sourcePlan.version === 2) {
+    const roles = Object.fromEntries(Object.entries(selection.roleBindings).map(([key, values]) => [key, [...values].sort()]))
+    if (await hashProductProductionValueV2([...selection.resourceKeys].sort()) !== await hashProductProductionValueV2(sourcePlan.exact.authorResourceKeys)
+      || await hashProductProductionValueV2(roles) !== await hashProductProductionValueV2(sourcePlan.configuration.roleBindings)) {
+      fail('发布内容的精确选择或角色绑定与冻结计划不一致')
+    }
+  }
   const confirmedBrief = await validateConfirmedProductBriefV1({
     brief: manifest.sourceContracts.confirmedBrief,
     sourcePlan,
   })
-  const sourceManifest = await validateProductSourceManifestV1({
+  const sourceManifest = await validateProductSourceManifest({
     sourceManifest: manifest.sourceContracts.sourceManifest,
     sourcePlan,
   })
@@ -718,9 +734,9 @@ export async function createProductReleaseManifestV1(input: {
   runtimePackage: ProductRuntimePackageV1
   productionProvenance: ProductReleaseManifestV1['productionProvenance']
   sourceContracts: {
-    sourcePlan: ProductSourcePlanV1
+    sourcePlan: ProductSourcePlan
     confirmedBrief: ConfirmedProductBriefV1
-    sourceManifest: ProductSourceManifestV1
+    sourceManifest: ProductSourceManifest
   }
   lineage: ProductReleaseLineageV1
 }): Promise<ProductReleaseManifestV1> {

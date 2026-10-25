@@ -5,6 +5,8 @@
 > 权威层级：L4（代码事实与治理证据）
 > 裁决依据：`PROJECT-MASTER-CHARTER.md` 1.5.0、三个核心注册表、当前 schema、正式入口与自动检查器
 
+> 2026-10-13 口径注记：本文结论与数字限定于上述 2026-09-04 快照；其中“当前 schema v1 / 94表 / 拒绝全部历史备份”不是现在的实现。现行代码为 schema v11、128表、备份v15及严格v14转换，见 [数据治理](../DATA-GOVERNANCE.md) 与 [世界专项核验](../products/WORLD-ENGINE.md) §10。保留原审计证据，不追改当时测试结果。
+
 ## 1. 审计结论
 
 StoryForge 的现行架构已经收口为“独立创作产品 + 世界引擎 + 上层衍生产品 + 共享工程底座”，不存在仍可从正式页面切回旧 Game/Simulation 协议、旧产品身份、旧世界 reader、可变世界直启 runtime、手写世界表清单或第二套节点生成后端的路径。通用 Workspace/Work/Scope 能力也已从 `world-engine` 命名空间迁入中立 `workspace` 层，独立作品不再在模块依赖上伪装成世界引擎子功能。LocalWorkspace 根进一步完成硬切分：`Project` 仅为工作区壳，全部作品元数据和活动叙事计划由 `Work` 单独拥有，旧镜像读写与导入 fallback 已删除。

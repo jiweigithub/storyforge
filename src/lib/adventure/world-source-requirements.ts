@@ -1,6 +1,6 @@
 import type {
   ProductProductionPlanTaskV3,
-  ProductWorldSourceSelectionV1,
+  ProductWorldSourceSelection,
   ProductionProductKindV1,
 } from '../types'
 
@@ -16,7 +16,7 @@ const FULL_READ_TASKS = new Map<string, { skillId: string; role: 'all' | 'charac
 
 export function textAdventureMandatoryFullWorldResourcesV1(input: {
   productType: ProductionProductKindV1
-  selection: ProductWorldSourceSelectionV1
+  selection: ProductWorldSourceSelection
   task: Pick<ProductProductionPlanTaskV3, 'taskKey' | 'skillId' | 'executionMode'>
 }): string[] {
   if (input.productType !== 'text-adventure' || input.selection.productType !== 'text-adventure'

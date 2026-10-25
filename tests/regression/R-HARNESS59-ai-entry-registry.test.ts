@@ -73,6 +73,25 @@ describe('R-HARNESS59 / WEH-0H · 正式 AI 入口机器绑定', () => {
     })).toThrow(/不允许 category/)
   })
 
+  it('离线评测只作有限登记，不获得正式执行或采纳权限，旧注册表保持兼容', () => {
+    const full = JSON.parse(JSON.stringify(registry))
+    expect(() => parseFormalAIEntryRegistryV1(full)).not.toThrow()
+    const entryId = full.offlineEvaluations[0].entryId
+    expect(FORMAL_AI_ENTRY_REGISTRY_V1.entries.some(entry => entry.entryId === entryId)).toBe(false)
+    expect(() => assertFormalAIEntryCallV1({ formalEntryId: entryId, category: 'chapter.content' })).toThrow(/未登记正式/)
+    delete full.offlineEvaluations
+    expect(parseFormalAIEntryRegistryV1(full).entries).toEqual(FORMAL_AI_ENTRY_REGISTRY_V1.entries)
+    for (const patch of [{ adoptAllowed: true }, { adoptionTargets: ['chapters'] }, { boundary: 'durable-run' },
+      { caller: 'src/lib/agent/formal-ai-entry.ts' }, { transport: 'openai' }, { contract: '../escape.mjs' }]) {
+      const invalid = JSON.parse(JSON.stringify(registry))
+      Object.assign(invalid.offlineEvaluations[0], patch)
+      expect(() => parseFormalAIEntryRegistryV1(invalid)).toThrow(/离线评测/)
+    }
+    const duplicate = JSON.parse(JSON.stringify(registry))
+    duplicate.offlineEvaluations.push(duplicate.offlineEvaluations[0])
+    expect(() => parseFormalAIEntryRegistryV1(duplicate)).toThrow(/重复/)
+  })
+
   it('删除 Skill 绑定、非法开放辅助采纳和未知 schema 字段均被拒绝', () => {
     const base = JSON.parse(JSON.stringify(registry)) as typeof registry
     const unknownSkill = JSON.parse(JSON.stringify(base)) as typeof registry

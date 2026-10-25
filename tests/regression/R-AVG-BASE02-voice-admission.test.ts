@@ -74,17 +74,15 @@ describe('AVG V3 shared read codec and fixed Plan; production remains closed', (
     expect(await db.productProductionBriefs.count()).toBe(before.briefs); expect(await db.productBuilds.count()).toBe(before.builds)
   }, 30_000)
 
-  it('refuses authorize-start for a manually inserted V3 draft; readable data never grants a new Build', async () => {
+  it('rejects a manually inserted V3 draft whose exact SourcePlan was never reconfirmed, without granting a new Build', async () => {
     const s = await fixture(); vi.stubEnv('VITE_STORYFORGE_AVG_MEDIA_PRODUCTION', '1')
     const briefHash = await hashProductProductionValueV2(s.brief), production = (await db.productProductions.get(s.owner.productionId))!
     await db.productProductionBriefs.update(s.row.id!, { status: 'draft', briefJson: canonicalProductProductionJsonV2(s.brief), briefHash, authorizedAt: null })
     await db.productProductions.update(s.owner.productionId, { status: 'brief-ready' })
     const count = await db.productBuilds.count()
-    const receipt = await executeProductProductionCommand({ scope: s.owner.scope, productionId: s.owner.productionId,
+    await expect(executeProductProductionCommand({ scope: s.owner.scope, productionId: s.owner.productionId,
       command: { type: 'authorize-start', commandId: 'voice.closed.start', expectedStateRevision: production.stateRevision,
-        briefRevision: s.row.revision, briefHash, authorizationNonce: 'voice.closed.author-click' } })
-    expect(receipt.ok).toBe(false); expect(receipt.errorCode).toBe('brief-not-authorized')
-    expect(String(receipt.result.message)).toMatch(/配音生产.*尚未开放/)
+        briefRevision: s.row.revision, briefHash, authorizationNonce: 'voice.closed.author-click' } })).rejects.toThrow(/精确 SourcePlan/)
     expect(await db.productBuilds.count()).toBe(count)
   }, 30_000)
 })

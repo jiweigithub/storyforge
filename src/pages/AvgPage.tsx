@@ -65,6 +65,7 @@ export default function AvgPage() {
   const [params, setParams] = useSearchParams();
   const nativeFlushRef = useRef<(()=>Promise<void>)|null>(null);
   const registerNativeFlush = useCallback((flush:(()=>Promise<void>)|null)=>{nativeFlushRef.current=flush},[]);
+  const narrativePreview = import.meta.env.DEV && params.has('narrative-preview');
   const navigate = useNavigate();
   const projectId = Number(params.get("project")) || null;
   const workId = Number(params.get("work")) || null;
@@ -154,10 +155,10 @@ export default function AvgPage() {
     }
   }, [row?.work.id, row?.draft?.revision, dirty]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
-    void listLocalWorldReferenceChoicesV1()
+    void listLocalWorldReferenceChoicesV1(narrativePreview ? { narrativeProductType: 'avg' } : {})
       .then(setWorlds)
       .catch((e) => setError(String(e)));
-  }, [pageId, row?.draft?.worldReleaseId]);
+  }, [pageId, row?.draft?.worldReleaseId, narrativePreview]);
   useEffect(() => {
     const before = (event: BeforeUnloadEvent) => {
       if (dirty) {
@@ -169,7 +170,7 @@ export default function AvgPage() {
     return () => window.removeEventListener("beforeunload", before);
   }, [dirty]);
   const path = (id: string, target = row, extra = "") =>
-    `/avg/${id}${target ? `?project=${target.project.id}&work=${target.work.id}${(target === row ? productionId : target.productionId) ? `&production=${target === row ? productionId : target.productionId}` : ""}${extra}` : ""}`;
+    `/avg/${id}${target ? `?project=${target.project.id}&work=${target.work.id}${(target === row ? productionId : target.productionId) ? `&production=${target === row ? productionId : target.productionId}` : ""}${extra}` : ""}${narrativePreview ? `${target ? '&' : '?'}narrative-preview=1` : ''}`;
   const run = async (action: () => Promise<void>) => {
     if (busy) return;
     setBusy(true);
@@ -327,15 +328,15 @@ export default function AvgPage() {
         <small>VISUAL NOVEL</small>
         <h1>AVG</h1>
         <p>让每一次选择，都有回声。</p>
-        <button className="lf-current" onClick={() => go("library")}>
+        <button className="lf-current" disabled={busy} onClick={() => go("library")}>
           <BookOpen />
           {row?.work.title ?? "选择或新建 AVG"}
         </button>
         <nav aria-label="AVG 页面导航">
           {AVG_PRIMARY_NAV.map(([id, label, entry]) => (
-            <button key={id} aria-current={primaryId === id ? 'page' : undefined} onClick={() => go(nativeAssembly&&id==='workbench'?'production':entry)}>{label}</button>
+            <button key={id} disabled={busy} aria-current={primaryId === id ? 'page' : undefined} onClick={() => go(nativeAssembly&&id==='workbench'?'production':entry)}>{label}</button>
           ))}
-          <button onClick={() => void run(async () => { await nativeFlushRef.current?.(); if (dirty) await save(); navigate('/home/settings'); })}>通用设置</button>
+          <button disabled={busy} onClick={() => void run(async () => { await nativeFlushRef.current?.(); if (dirty) await save(); navigate('/home/settings'); })}>通用设置</button>
         </nav>
       </aside>
       <section className="lf-main">
@@ -351,7 +352,7 @@ export default function AvgPage() {
                 ["vision", "S2 · 产品定向"],
                 ["production", "S3 · 产品执行"],
               ].map(([id, label]) => (
-                <button key={id} aria-current={(id === 'source' ? page[0] === 'source' : id === 'vision' ? page[2] === 'S2 · 产品定向' : page[2] === 'S3 · 产品执行') ? 'step' : undefined} onClick={() => go(id)}>
+                <button key={id} disabled={busy} aria-current={(id === 'source' ? page[0] === 'source' : id === 'vision' ? page[2] === 'S2 · 产品定向' : page[2] === 'S3 · 产品执行') ? 'step' : undefined} onClick={() => go(id)}>
                   {label}
                 </button>
               ))}
@@ -366,8 +367,8 @@ export default function AvgPage() {
             <nav aria-label="AVG 内容导航">
               {primaryId === 'workbench' ? AVG_WORKBENCH_GROUPS.map(group => <section key={group.label}>
                 <h3>{group.label}</h3>
-                {group.pages.map(item => <button key={item[0]} aria-current={page[0] === item[0] ? 'page' : undefined} onClick={() => go(item[0])}>{item[1]}</button>)}
-              </section>) : <section><h3>游玩与记录</h3>{AVG_PLAYER_PAGES.map(item => <button key={item[0]} aria-current={page[0] === item[0] ? 'page' : undefined} onClick={() => go(item[0])}>{item[1]}</button>)}</section>}
+                {group.pages.map(item => <button key={item[0]} disabled={busy} aria-current={page[0] === item[0] ? 'page' : undefined} onClick={() => go(item[0])}>{item[1]}</button>)}
+              </section>) : <section><h3>游玩与记录</h3>{AVG_PLAYER_PAGES.map(item => <button key={item[0]} disabled={busy} aria-current={page[0] === item[0] ? 'page' : undefined} onClick={() => go(item[0])}>{item[1]}</button>)}</section>}
             </nav>
           </aside>}
           <main ref={contentRef} className="lf-content">
@@ -609,6 +610,7 @@ export default function AvgPage() {
                     {row && !row.draft && (
                       <button
                         className="lf-action"
+                        disabled={busy}
                         onClick={() => go("production")}
                       >
                         打开已有制作记录
@@ -628,6 +630,7 @@ export default function AvgPage() {
                         </Link>
                         <button
                           className="lf-action"
+                          disabled={busy}
                           onClick={() => go("vision")}
                         >
                           返回制作方案
@@ -648,6 +651,7 @@ export default function AvgPage() {
                             </h4>
                             <p>
                               {w.worldCode} · v{w.version}
+                              {w.narrative ? ' · 叙事世界接入（实验性）' : ''}
                             </p>
                           </div>
                           <button
@@ -749,6 +753,7 @@ export default function AvgPage() {
                         </p>
                         <button
                           className="lf-action"
+                          disabled={busy}
                           onClick={() => go("vision")}
                         >
                           填写制作方案
@@ -767,6 +772,7 @@ export default function AvgPage() {
                             </p>
                             <button
                               className="lf-action lf-action-primary"
+                              disabled={busy}
                               onClick={() => go("source")}
                             >
                               选择世界引擎

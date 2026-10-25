@@ -2,12 +2,14 @@
  * 便携备份预检（PRODUCT-1）。
  *
  * 这是导入边界的只读检查：表清单来自 PROJECT_TABLES，不复制一套导出枚举，也不访问
- * IndexedDB。接受当前架构与经严格校验的 v14；仅 normalizeProjectBackup 执行明确的 v14→v15 转换。
+ * IndexedDB。v14→v15 补插件空表，v15→v16 保留缺失注释，不臆造作者确认。
  */
 import { PROJECT_TABLES } from '../registry/project-tables'
 import { isCurrentWorldCode } from '../workspace/identity'
+import { NARRATIVE_DOMAIN_FIELDS_V1, parseNarrativeDomainFieldV1 } from '../narrative-domain/codec'
+import { assertNarrativeDomainReferenceRowsV1 } from '../narrative-domain/integrity'
 
-export const CURRENT_BACKUP_VERSION = 15
+export const CURRENT_BACKUP_VERSION = 16
 
 export interface BackupTrustReport {
   valid: boolean
@@ -98,16 +100,17 @@ export function inspectProjectBackup(input: unknown): BackupTrustReport {
   const version = typeof input.version === 'number' && Number.isInteger(input.version)
     ? input.version
     : null
-  if (version !== CURRENT_BACKUP_VERSION && version !== 14) {
-    errors.push(`只接受 v14 或当前备份版本 v${CURRENT_BACKUP_VERSION}。`)
+  if (version !== CURRENT_BACKUP_VERSION && version !== 14 && version !== 15) {
+    errors.push(`只接受 v14、v15 或当前备份版本 v${CURRENT_BACKUP_VERSION}。`)
   }
 
   if (version === 14) {
     for (const spec of PROJECT_TABLES.filter(spec => spec.introducedBackupVersion === 15)) {
       if (spec.name in input) errors.push(`v14 不允许携带 v15 插件表 ${spec.name}。`)
     }
-    warnings.push('已验证的 v14 备份将在导入时转换为 v15；不运行插件。')
+    warnings.push('已验证的 v14 备份将在导入时经 v15 转换为 v16；不运行插件。')
   }
+  if (version === 14 || version === 15) warnings.push('旧备份缺失的叙事注释保持缺失，不能自动视为已确认语义。')
   const project = input.project
   const projectName = isRecord(project) && typeof project.name === 'string' && project.name.trim()
     ? project.name.trim()
@@ -149,6 +152,22 @@ export function inspectProjectBackup(input: unknown): BackupTrustReport {
     }
     presentTables += 1
     recordCount += rows.length
+    const spec = PROJECT_TABLES.find(table => table.name === tableName)!
+    const annotations = spec.worldSemantic?.projector?.annotationFields ?? []
+    rows.forEach((row, index) => {
+      if (!isRecord(row)) return
+      for (const field of NARRATIVE_DOMAIN_FIELDS_V1) {
+        const portable = `_${field}Portable`
+        if (field in row) errors.push(`${tableName}[${index}].${field} 不允许携带本地叙事坐标。`)
+        if (!(portable in row)) continue
+        if (version !== 16 || !annotations.includes(field)) {
+          errors.push(`${tableName}[${index}].${portable} 未在此备份版本/来源登记。`)
+          continue
+        }
+        try { parseNarrativeDomainFieldV1(field, row[portable], 'portable') }
+        catch (error) { errors.push(`${tableName}[${index}].${portable}: ${String(error)}`) }
+      }
+    })
   }
 
   if (missingTables.length > 0) {
@@ -192,6 +211,12 @@ export function inspectProjectBackup(input: unknown): BackupTrustReport {
     })
   }
 
+  if (version === 16 && errors.length === 0) {
+    try {
+      assertNarrativeDomainReferenceRowsV1(new Map(PROJECT_TABLES.filter(spec => spec.exportable && spec.name !== 'projects')
+        .map(spec => [spec.name, input[spec.name] as Record<string, unknown>[]])), 'portable')
+    } catch (error) { errors.push(String(error)) }
+  }
   return {
     valid: errors.length === 0,
     version,
@@ -210,13 +235,15 @@ export function assertTrustedProjectBackup(input: unknown): asserts input is Rec
   if (!report.valid) throw new Error(`备份预检失败：${report.errors.join('；')}`)
 }
 
-/** The sole supported conversion: validate exact v14 first, then add only v15 tables. */
+/** Validate the source version before a lossless conversion. New semantic
+ * fields stay absent; a converter cannot declare or confirm author intent. */
 export function normalizeProjectBackup<T extends { version: number }>(input: T): T {
   assertTrustedProjectBackup(input)
-  if (input.version !== 14) return input
+  if (input.version === CURRENT_BACKUP_VERSION) return input
   const next = { ...input, version: CURRENT_BACKUP_VERSION } as T & Record<string, unknown>
-  for (const spec of PROJECT_TABLES) if (spec.exportable && spec.introducedBackupVersion === 15) {
+  for (const spec of PROJECT_TABLES) if (input.version === 14 && spec.exportable && spec.introducedBackupVersion === 15) {
     Object.defineProperty(next, spec.name, { value: [], enumerable: true, writable: true, configurable: true })
   }
+  assertTrustedProjectBackup(next)
   return next
 }

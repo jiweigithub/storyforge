@@ -71,6 +71,7 @@ export type AgentSkillExecutionModeV1 =
   | 'worldview-expand'
   | 'world-link-context'
   | 'constitution-extract'
+  | 'narrative-annotation-extract'
   | 'codex-extract'
   | 'codex-enrich'
   | 'story-core'
@@ -1313,6 +1314,28 @@ function productProductionInputPolicy(sourceKeys: readonly string[]): AgentSkill
 
 export const AGENT_SKILLS = [
   {
+    version: 1,
+    id: 'world-origin.narrative-annotation-extract',
+    agentId: 'world-origin', defaultForAgent: false,
+    label: '叙事注释候选抽取', owner: 'world-foundation-agent',
+    promptVersion: 'narrative-annotation-extract-v4', executionMode: 'narrative-annotation-extract',
+    contextTaskKind: 'agent-world-origin', readToolNames: [],
+    contextSourceKeys: ['ragSelection'], optionalContextSourceKeys: [],
+    inputPolicy: { sourceKeys: ['ragSelection'], states: {
+      empty: { handling: 'require-upstream', instruction: '作者必须明确选择来源字段；原文缺失时不生成。' },
+      partial: { handling: 'grounded-transform', instruction: '只提出所选原文支持的注释，未知时间和角色误信保留原类型。' },
+      complete: { handling: 'grounded-transform', instruction: '完整原文闭集仅用于候选；必须作者确认且来源 CAS 成功后才能写入。' },
+    } },
+    contextCompression: compressionPolicy(['ragSelection']), maxOutputTokens: 6_000,
+    writeTargets: [...REGISTRY_BY_NAME.values()].filter(spec => spec.worldSemantic?.projector).map(spec => ({
+      table: spec.name,
+      fields: (FIELD_BY_TARGET.get(spec.name) ?? []).filter(field => field.adoptionPolicy === 'narrative-annotation-v1').map(field => field.field),
+      adoptionExtension: ADOPTION_EXTENSIONS.find(extension => extension.target === spec.name
+        && extension.entrypoints.includes('src/lib/world-engine/narrative-domain-authoring.ts'))!.id,
+    })),
+    lastVerifiedAt: '2026-10-14', regressionTests: ['R-NW-1C-adoption', 'R-NW-1C-candidate-protocol'],
+  },
+  {
     version: 1, id: 'extensions.generate', agentId: 'prose', defaultForAgent: false,
     label: '插件自有内容候选', owner: 'extension-host', promptVersion: 'extension-generate-v1', executionMode: 'extension-generate', contextTaskKind: 'agent-prose', readToolNames: [],
     contextSourceKeys: ['extensionRecords'], optionalContextSourceKeys: ['worldview', 'storyCore', 'characters', 'historical', 'storyTimeline'],
@@ -2463,49 +2486,49 @@ export const AGENT_SKILLS = [
     version: 1, id: 'motion-drama.series-bible', agentId: 'outline', defaultForAgent: false,
     label: '漫剧系列定位与系列圣经', owner: 'motion-drama-product', promptVersion: 'motion-drama-series-bible-v1', executionMode: 'motion-drama-series-bible', contextTaskKind: 'agent-outline', readToolNames: [],
     contextSourceKeys: MOTION_DRAMA_SERIES_CONTEXT_KEYS, optionalContextSourceKeys: [], inputPolicy: ADAPTATION_INPUT_POLICY, contextCompression: compressionPolicy(MOTION_DRAMA_SERIES_CONTEXT_KEYS), maxOutputTokens: 10_000,
-    writeTargets: [{ table: 'motionDramaSeriesBibles', fields: ['bible'], adoptionExtension: 'motion-drama-series-bible-lifecycle' }], lastVerifiedAt: '2026-09-09', regressionTests: ['R-MOTIONDRAMA1-preproduction'],
+    writeTargets: [{ table: 'motionDramaSeriesBibles', fields: ['bible'], adoptionExtension: 'motion-drama-series-bible-lifecycle' }], lastVerifiedAt: '2026-10-25', regressionTests: ['R-MOTIONDRAMA1-preproduction'],
   },
   {
     version: 1, id: 'motion-drama.asset-bible', agentId: 'outline', defaultForAgent: false,
     label: '漫剧角色服装场景道具与声音物料', owner: 'motion-drama-product', promptVersion: 'motion-drama-asset-bible-v1', executionMode: 'motion-drama-asset-bible', contextTaskKind: 'agent-outline', readToolNames: [],
     contextSourceKeys: MOTION_DRAMA_EPISODE_CONTEXT_KEYS, optionalContextSourceKeys: [], inputPolicy: ADAPTATION_INPUT_POLICY, contextCompression: compressionPolicy(MOTION_DRAMA_EPISODE_CONTEXT_KEYS), maxOutputTokens: 16_000,
-    writeTargets: [{ table: 'motionDramaAssetSubjects', fields: ['kind', 'label', 'identity', 'appearance', 'palette', 'materials', 'continuityLocks', 'prohibitedChanges', 'basePrompt', 'negativePrompt', 'referenceBrief', 'sourceUnitKeys'], adoptionExtension: 'motion-drama-asset-subject-lifecycle' }], lastVerifiedAt: '2026-09-09', regressionTests: ['R-MOTIONDRAMA1-preproduction'],
+    writeTargets: [{ table: 'motionDramaAssetSubjects', fields: ['kind', 'label', 'identity', 'appearance', 'palette', 'materials', 'continuityLocks', 'prohibitedChanges', 'basePrompt', 'negativePrompt', 'referenceBrief', 'sourceUnitKeys'], adoptionExtension: 'motion-drama-asset-subject-lifecycle' }], lastVerifiedAt: '2026-10-25', regressionTests: ['R-MOTIONDRAMA1-preproduction'],
   },
   {
     version: 1, id: 'motion-drama.episode-outline', agentId: 'outline', defaultForAgent: false,
     label: '漫剧逐集集纲与节拍', owner: 'motion-drama-product', promptVersion: 'motion-drama-episode-outline-v1', executionMode: 'motion-drama-episode-outline', contextTaskKind: 'agent-outline', readToolNames: [],
     contextSourceKeys: MOTION_DRAMA_EPISODE_CONTEXT_KEYS, optionalContextSourceKeys: [], inputPolicy: ADAPTATION_INPUT_POLICY, contextCompression: compressionPolicy(MOTION_DRAMA_EPISODE_CONTEXT_KEYS), maxOutputTokens: 10_000,
-    writeTargets: [{ table: 'motionDramaEpisodes', fields: ['title', 'logline', 'synopsis', 'openingHook', 'beats', 'endHook', 'continuityIn', 'continuityOut', 'sourceUnitKeys'], adoptionExtension: 'motion-drama-episode-lifecycle' }], lastVerifiedAt: '2026-09-09', regressionTests: ['R-MOTIONDRAMA1-preproduction'],
+    writeTargets: [{ table: 'motionDramaEpisodes', fields: ['title', 'logline', 'synopsis', 'openingHook', 'beats', 'endHook', 'continuityIn', 'continuityOut', 'sourceUnitKeys'], adoptionExtension: 'motion-drama-episode-lifecycle' }], lastVerifiedAt: '2026-10-25', regressionTests: ['R-MOTIONDRAMA1-preproduction'],
   },
   {
     version: 1, id: 'motion-drama.episode-script', agentId: 'prose', defaultForAgent: false,
     label: '漫剧逐集可拍场景稿', owner: 'motion-drama-product', promptVersion: 'motion-drama-episode-script-v1', executionMode: 'motion-drama-episode-script', contextTaskKind: 'agent-prose', readToolNames: [],
     contextSourceKeys: MOTION_DRAMA_EPISODE_CONTEXT_KEYS, optionalContextSourceKeys: [], inputPolicy: ADAPTATION_INPUT_POLICY, contextCompression: compressionPolicy(MOTION_DRAMA_EPISODE_CONTEXT_KEYS), maxOutputTokens: 18_000,
-    writeTargets: [{ table: 'motionDramaScriptScenes', fields: ['heading', 'location', 'timeOfDay', 'dramaticPurpose', 'entryState', 'exitState', 'visibleAction', 'dialogue', 'narration', 'soundCues', 'emotionalTurn', 'estimatedSeconds', 'characterKeys', 'sourceUnitKeys'], adoptionExtension: 'motion-drama-script-scene-lifecycle' }], lastVerifiedAt: '2026-09-09', regressionTests: ['R-MOTIONDRAMA1-preproduction'],
+    writeTargets: [{ table: 'motionDramaScriptScenes', fields: ['heading', 'location', 'timeOfDay', 'dramaticPurpose', 'entryState', 'exitState', 'visibleAction', 'dialogue', 'narration', 'soundCues', 'emotionalTurn', 'estimatedSeconds', 'characterKeys', 'sourceUnitKeys'], adoptionExtension: 'motion-drama-script-scene-lifecycle' }], lastVerifiedAt: '2026-10-25', regressionTests: ['R-MOTIONDRAMA1-preproduction'],
   },
   {
     version: 1, id: 'motion-drama.shot-design', agentId: 'outline', defaultForAgent: false,
     label: '漫剧逐镜头分镜设计', owner: 'motion-drama-product', promptVersion: 'motion-drama-shot-design-v1', executionMode: 'motion-drama-shot-design', contextTaskKind: 'agent-outline', readToolNames: [],
     contextSourceKeys: MOTION_DRAMA_EPISODE_CONTEXT_KEYS, optionalContextSourceKeys: [], inputPolicy: ADAPTATION_INPUT_POLICY, contextCompression: compressionPolicy(MOTION_DRAMA_EPISODE_CONTEXT_KEYS), maxOutputTokens: 20_000,
-    writeTargets: [{ table: 'motionDramaShots', fields: ['narrativeFunction', 'targetSeconds', 'shotSize', 'cameraAngle', 'cameraMovement', 'composition', 'visibleAction', 'performance', 'lighting', 'transitionIn', 'transitionOut', 'dialogue', 'narration', 'soundPlan', 'subjectKeys', 'sourceUnitKeys'], adoptionExtension: 'motion-drama-shot-lifecycle' }], lastVerifiedAt: '2026-09-09', regressionTests: ['R-MOTIONDRAMA1-preproduction'],
+    writeTargets: [{ table: 'motionDramaShots', fields: ['narrativeFunction', 'targetSeconds', 'shotSize', 'cameraAngle', 'cameraMovement', 'composition', 'visibleAction', 'performance', 'lighting', 'transitionIn', 'transitionOut', 'dialogue', 'narration', 'soundPlan', 'subjectKeys', 'sourceUnitKeys'], adoptionExtension: 'motion-drama-shot-lifecycle' }], lastVerifiedAt: '2026-10-25', regressionTests: ['R-MOTIONDRAMA1-preproduction'],
   },
   {
     version: 1, id: 'motion-drama.image-prompts', agentId: 'outline', defaultForAgent: false,
     label: '漫剧静帧与关键帧 Prompt IR', owner: 'motion-drama-product', promptVersion: 'motion-drama-image-prompts-v1', executionMode: 'motion-drama-image-prompts', contextTaskKind: 'agent-outline', readToolNames: [],
     contextSourceKeys: MOTION_DRAMA_EPISODE_CONTEXT_KEYS, optionalContextSourceKeys: [], inputPolicy: ADAPTATION_INPUT_POLICY, contextCompression: compressionPolicy(MOTION_DRAMA_EPISODE_CONTEXT_KEYS), maxOutputTokens: 18_000,
-    writeTargets: [{ table: 'motionDramaShots', fields: ['imagePrompt', 'negativeImagePrompt', 'firstFramePrompt', 'keyFramePrompt', 'lastFramePrompt'], adoptionExtension: 'motion-drama-shot-lifecycle' }], lastVerifiedAt: '2026-09-09', regressionTests: ['R-MOTIONDRAMA1-preproduction'],
+    writeTargets: [{ table: 'motionDramaShots', fields: ['imagePrompt', 'negativeImagePrompt', 'firstFramePrompt', 'keyFramePrompt', 'lastFramePrompt'], adoptionExtension: 'motion-drama-shot-lifecycle' }], lastVerifiedAt: '2026-10-25', regressionTests: ['R-MOTIONDRAMA1-preproduction'],
   },
   {
     version: 1, id: 'motion-drama.video-prompts', agentId: 'outline', defaultForAgent: false,
     label: '漫剧视频运动 Prompt IR', owner: 'motion-drama-product', promptVersion: 'motion-drama-video-prompts-v1', executionMode: 'motion-drama-video-prompts', contextTaskKind: 'agent-outline', readToolNames: [],
     contextSourceKeys: MOTION_DRAMA_EPISODE_CONTEXT_KEYS, optionalContextSourceKeys: [], inputPolicy: ADAPTATION_INPUT_POLICY, contextCompression: compressionPolicy(MOTION_DRAMA_EPISODE_CONTEXT_KEYS), maxOutputTokens: 18_000,
-    writeTargets: [{ table: 'motionDramaShots', fields: ['videoPrompt', 'negativeVideoPrompt'], adoptionExtension: 'motion-drama-shot-lifecycle' }], lastVerifiedAt: '2026-09-09', regressionTests: ['R-MOTIONDRAMA1-preproduction'],
+    writeTargets: [{ table: 'motionDramaShots', fields: ['videoPrompt', 'negativeVideoPrompt'], adoptionExtension: 'motion-drama-shot-lifecycle' }], lastVerifiedAt: '2026-10-25', regressionTests: ['R-MOTIONDRAMA1-preproduction'],
   },
   {
     version: 1, id: 'motion-drama.quality-review', agentId: 'outline', defaultForAgent: false,
     label: '漫剧前期包质量审查', owner: 'motion-drama-product', promptVersion: 'motion-drama-quality-review-v1', executionMode: 'motion-drama-quality-review', contextTaskKind: 'agent-outline', readToolNames: [],
     contextSourceKeys: MOTION_DRAMA_EPISODE_CONTEXT_KEYS, optionalContextSourceKeys: [], inputPolicy: ADAPTATION_INPUT_POLICY, contextCompression: compressionPolicy(MOTION_DRAMA_EPISODE_CONTEXT_KEYS), maxOutputTokens: 12_000,
-    writeTargets: [{ table: 'motionDramaReviewIssues', fields: ['category', 'severity', 'sceneKey', 'shotKey', 'subjectKey', 'evidence', 'problem', 'suggestion'], adoptionExtension: 'motion-drama-review-issue-lifecycle' }], lastVerifiedAt: '2026-09-09', regressionTests: ['R-MOTIONDRAMA1-preproduction'],
+    writeTargets: [{ table: 'motionDramaReviewIssues', fields: ['category', 'severity', 'sceneKey', 'shotKey', 'subjectKey', 'evidence', 'problem', 'suggestion'], adoptionExtension: 'motion-drama-review-issue-lifecycle' }], lastVerifiedAt: '2026-10-25', regressionTests: ['R-MOTIONDRAMA1-preproduction'],
   },
   {
     version: 1,
@@ -3783,7 +3806,7 @@ export const AGENT_SKILLS = [
       fields: ['payloadJson'],
       adoptionExtension: 'product-production-artifacts',
     }],
-    lastVerifiedAt: '2026-09-07',
+    lastVerifiedAt: '2026-10-24',
     regressionTests: ['R-OPEN-WORLD3-gameplay-ruleset'],
   },
   {
@@ -3814,7 +3837,7 @@ export const AGENT_SKILLS = [
       fields: ['payloadJson'],
       adoptionExtension: 'product-production-artifacts',
     }],
-    lastVerifiedAt: '2026-09-07',
+    lastVerifiedAt: '2026-10-24',
     regressionTests: ['R-OPEN-WORLD3-player-build'],
   },
   {
@@ -3845,7 +3868,7 @@ export const AGENT_SKILLS = [
       fields: ['payloadJson'],
       adoptionExtension: 'product-production-artifacts',
     }],
-    lastVerifiedAt: '2026-09-07',
+    lastVerifiedAt: '2026-10-24',
     regressionTests: ['R-OPEN-WORLD3-story-architecture'],
   },
   {
@@ -3876,7 +3899,7 @@ export const AGENT_SKILLS = [
       fields: ['payloadJson'],
       adoptionExtension: 'product-production-artifacts',
     }],
-    lastVerifiedAt: '2026-09-07',
+    lastVerifiedAt: '2026-10-24',
     regressionTests: ['R-OPEN-WORLD3-region-skeleton'],
   },
   {
@@ -3907,7 +3930,7 @@ export const AGENT_SKILLS = [
       fields: ['payloadJson'],
       adoptionExtension: 'product-production-artifacts',
     }],
-    lastVerifiedAt: '2026-09-07',
+    lastVerifiedAt: '2026-10-24',
     regressionTests: ['R-OPEN-WORLD3-mainline'],
   },
   {
@@ -3938,7 +3961,7 @@ export const AGENT_SKILLS = [
       fields: ['payloadJson'],
       adoptionExtension: 'product-production-artifacts',
     }],
-    lastVerifiedAt: '2026-09-07',
+    lastVerifiedAt: '2026-10-24',
     regressionTests: ['R-OPEN-WORLD3-significant-threads'],
   },
   {
@@ -3969,7 +3992,7 @@ export const AGENT_SKILLS = [
       fields: ['payloadJson'],
       adoptionExtension: 'product-production-artifacts',
     }],
-    lastVerifiedAt: '2026-09-07',
+    lastVerifiedAt: '2026-10-24',
     regressionTests: ['R-OPEN-WORLD3-region-narrative-packs'],
   },
   {
@@ -4000,7 +4023,7 @@ export const AGENT_SKILLS = [
       fields: ['payloadJson'],
       adoptionExtension: 'product-production-artifacts',
     }],
-    lastVerifiedAt: '2026-09-07',
+    lastVerifiedAt: '2026-10-24',
     regressionTests: ['R-OPEN-WORLD3-quest-skeletons'],
   },
   {
@@ -4031,7 +4054,7 @@ export const AGENT_SKILLS = [
       fields: ['payloadJson'],
       adoptionExtension: 'product-production-artifacts',
     }],
-    lastVerifiedAt: '2026-09-07',
+    lastVerifiedAt: '2026-10-24',
     regressionTests: ['R-OPEN-WORLD3-progression-catalogs'],
   },
   {
@@ -4062,7 +4085,7 @@ export const AGENT_SKILLS = [
       fields: ['payloadJson'],
       adoptionExtension: 'product-production-artifacts',
     }],
-    lastVerifiedAt: '2026-09-07',
+    lastVerifiedAt: '2026-10-24',
     regressionTests: ['R-OPEN-WORLD3-encounter-catalog'],
   },
   {
@@ -4093,7 +4116,7 @@ export const AGENT_SKILLS = [
       fields: ['payloadJson'],
       adoptionExtension: 'product-production-artifacts',
     }],
-    lastVerifiedAt: '2026-09-07',
+    lastVerifiedAt: '2026-10-24',
     regressionTests: ['R-OPEN-WORLD3-item-reward-catalog'],
   },
   {
@@ -4124,7 +4147,7 @@ export const AGENT_SKILLS = [
       fields: ['payloadJson'],
       adoptionExtension: 'product-production-artifacts',
     }],
-    lastVerifiedAt: '2026-09-07',
+    lastVerifiedAt: '2026-10-24',
     regressionTests: ['R-OPEN-WORLD3-crafting-economy'],
   },
   {
@@ -4155,7 +4178,7 @@ export const AGENT_SKILLS = [
       fields: ['payloadJson'],
       adoptionExtension: 'product-production-artifacts',
     }],
-    lastVerifiedAt: '2026-09-07',
+    lastVerifiedAt: '2026-10-24',
     regressionTests: ['R-OPEN-WORLD3-npc-runtime'],
   },
   {
@@ -4186,7 +4209,7 @@ export const AGENT_SKILLS = [
       fields: ['payloadJson'],
       adoptionExtension: 'product-production-artifacts',
     }],
-    lastVerifiedAt: '2026-09-07',
+    lastVerifiedAt: '2026-10-24',
     regressionTests: ['R-OPEN-WORLD3-map-interaction'],
   },
   {
@@ -4217,7 +4240,7 @@ export const AGENT_SKILLS = [
       fields: ['payloadJson'],
       adoptionExtension: 'product-production-artifacts',
     }],
-    lastVerifiedAt: '2026-09-07',
+    lastVerifiedAt: '2026-10-24',
     regressionTests: ['R-OPEN-WORLD3-quest-finalize'],
   },
   {
@@ -4248,7 +4271,7 @@ export const AGENT_SKILLS = [
       fields: ['payloadJson'],
       adoptionExtension: 'product-production-artifacts',
     }],
-    lastVerifiedAt: '2026-09-07',
+    lastVerifiedAt: '2026-10-24',
     regressionTests: ['R-OPEN-WORLD3-scene-scripts'],
   },
   {
@@ -4279,7 +4302,7 @@ export const AGENT_SKILLS = [
       fields: ['payloadJson'],
       adoptionExtension: 'product-production-artifacts',
     }],
-    lastVerifiedAt: '2026-09-07',
+    lastVerifiedAt: '2026-10-24',
     regressionTests: ['R-OPEN-WORLD3-system-finalize'],
   },
   {
@@ -4310,7 +4333,7 @@ export const AGENT_SKILLS = [
       fields: ['payloadJson'],
       adoptionExtension: 'product-production-artifacts',
     }],
-    lastVerifiedAt: '2026-09-07',
+    lastVerifiedAt: '2026-10-24',
     regressionTests: ['R-OPEN-WORLD3-system-finalize'],
   },
   {
@@ -4341,7 +4364,7 @@ export const AGENT_SKILLS = [
       fields: ['payloadJson', 'qualityJson'],
       adoptionExtension: 'product-production-artifacts',
     }],
-    lastVerifiedAt: '2026-09-07',
+    lastVerifiedAt: '2026-10-24',
     regressionTests: ['R-OPEN-WORLD3-quality-review'],
   },
   {
@@ -4372,7 +4395,7 @@ export const AGENT_SKILLS = [
       fields: ['payloadJson', 'qualityJson'],
       adoptionExtension: 'product-production-artifacts',
     }],
-    lastVerifiedAt: '2026-09-07',
+    lastVerifiedAt: '2026-10-24',
     regressionTests: ['R-OPEN-WORLD3-quality-review'],
   },
   {
@@ -4399,7 +4422,7 @@ export const AGENT_SKILLS = [
     contextCompression: compressionPolicy(['manualText']),
     maxOutputTokens: 10_000,
     writeTargets: [],
-    lastVerifiedAt: '2026-09-09',
+    lastVerifiedAt: '2026-10-25',
     regressionTests: ['R-OPEN-WORLD5-creator-brief'],
   },
   {
@@ -4624,7 +4647,7 @@ export const AGENT_SKILLS = [
     ]),
     maxOutputTokens: 6_000,
     writeTargets: [{ table: 'productBuildArtifacts', fields: ['payloadJson'], adoptionExtension: 'product-production-artifacts' }],
-    lastVerifiedAt: '2026-09-07',
+    lastVerifiedAt: '2026-10-24',
     regressionTests: ['R-TEXTADV3-agent-team'],
   },
   {
@@ -4812,7 +4835,7 @@ export const AGENT_SKILLS = [
     contextCompression: compressionPolicy(['product-production.brief', 'product-production.adventure-visual-direction-inputs']),
     maxOutputTokens: 12_000,
     writeTargets: [{ table: 'productBuildArtifacts', fields: ['payloadJson'], adoptionExtension: 'product-production-artifacts' }],
-    lastVerifiedAt: '2026-09-07',
+    lastVerifiedAt: '2026-10-24',
     regressionTests: ['R-TEXTADV3-agent-team'],
   },
   {
@@ -4834,7 +4857,7 @@ export const AGENT_SKILLS = [
     ]),
     maxOutputTokens: 4_000,
     writeTargets: [{ table: 'productBuildArtifacts', fields: ['payloadJson'], adoptionExtension: 'product-production-artifacts' }],
-    lastVerifiedAt: '2026-09-07',
+    lastVerifiedAt: '2026-10-24',
     regressionTests: ['R-TEXTADV3-agent-team', 'R-PRODUCTPROD1F-production-executor'],
   },
   {
@@ -5468,7 +5491,7 @@ export function validateAgentSkillDefinitionsV1(
 ): void {
   const productProductionModes = new Set<AgentSkillExecutionModeV1>(['product-production'])
   const executionModesByAgent: Record<RegisteredAgentId, ReadonlySet<AgentSkillExecutionModeV1>> = {
-    'world-origin': new Set(['worldview-field', 'world-suggest', 'worldview-expand', 'world-link-context', 'constitution-extract', 'codex-extract', 'codex-enrich', 'story-core', 'creative-rules', 'locations', 'map-config', 'history-consult', 'history-storm', 'review']),
+    'world-origin': new Set(['worldview-field', 'world-suggest', 'worldview-expand', 'world-link-context', 'constitution-extract', 'narrative-annotation-extract', 'codex-extract', 'codex-enrich', 'story-core', 'creative-rules', 'locations', 'map-config', 'history-consult', 'history-storm', 'review']),
     character: new Set(['create', 'supplement', 'lifecycle', 'relationships', 'character-reply', 'memory-curator']),
     inspiration: new Set(['reference-summary', 'reference-characters', 'reverse', 'review']),
     outline: new Set(['auto', 'story-arcs', 'foreshadow-suggestions', 'storyline-progress', 'character-driven', 'character-revision', 'impact-summary-regenerate', 'volumes', 'chapters', 'details', 'adaptation-source-analysis', 'adaptation-causal-graph', 'screenplay-adaptation-brief', 'screenplay-decision-pass', 'screenplay-beat-sheet', 'screenplay-scene-card', 'screenplay-grounding-review', 'screenplay-dramaturgy-review', 'comic-adaptation-brief', 'comic-decision-pass', 'comic-script-adaptation', 'comic-page-rhythm', 'comic-panel-plan', 'comic-visual-bible', 'comic-image-request', 'comic-visual-continuity-review', 'comic-targeted-repair', 'comic-page-review', 'motion-drama-series-bible', 'motion-drama-asset-bible', 'motion-drama-episode-outline', 'motion-drama-shot-design', 'motion-drama-image-prompts', 'motion-drama-video-prompts', 'motion-drama-quality-review', 'short-intent-brief', 'short-story-design', 'short-scene-plan', 'short-continuity-review', 'character-interaction-production', 'product-production']),
@@ -5629,7 +5652,7 @@ export function validateAgentSkillDefinitionsV1(
       for (const toolName of gateway.additionalReadToolNames) {
         const tool = AGENT_TOOL_BY_NAME.get(toolName)
         if (!tool || tool.risk !== 'read' || ![
-          'list_context_catalog', 'search_context', 'read_context_resource', 'read_original_evidence',
+          'list_context_catalog', 'search_context', 'query_world_release', 'read_context_resource', 'read_original_evidence',
         ].includes(toolName)) {
           throw new Error(`Agent Skill ${skill.id} 的 Context Gateway 工具 ${toolName} 未登记`)
         }

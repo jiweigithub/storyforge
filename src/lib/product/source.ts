@@ -10,3 +10,4 @@ export {
   listWorldReferenceCatalogV1,
   validateWorldReferenceV1,
 } from '../world-engine/world-reference'
+export { createWorldReference } from '../world-engine/world-reference-v2'

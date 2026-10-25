@@ -14,7 +14,7 @@ import { verifyAvgBranchOriginV1 } from '../avg/branch-origin'
 import Dexie from 'dexie'
 import { db } from '../db/schema'
 import { PROJECT_TABLES, REGISTRY_BY_NAME } from '../registry/project-tables'
-import { remapWorldPortalTargets } from '../utils/world-portals'
+import { parseWorldPortals, remapWorldPortalTargets } from '../utils/world-portals'
 import type { TableSpec } from '../registry/types'
 import type { ProjectExportData } from './json-export'
 import { redactAuthoringSecrets } from '../node-authoring/contracts'
@@ -22,14 +22,121 @@ import { resolveWorkspaceOwnership } from '../workspace/ownership'
 import { portableizeAgentRunLedgerExportV1 } from '../agent/run/ledger-portability'
 import { assertAgentRunArtifactRecordIntegrityV1 } from '../memory/artifact-record'
 import { readVerifiedMediaBlobObjectData } from '../product-production/media-blob-store'
+import { assertProductRuntimeSourceSnapshotV3 } from '../product/runtime-source-branch'
 import type { AnyProductReleaseManifest, ProductRuntimeEvent } from '../types'
+import { remapNarrativeDomainFieldV1 } from '../narrative-domain/references'
+import { assertNarrativeDomainReferenceRowsV1 } from '../narrative-domain/integrity'
+import { assertNarrativeLineageRowsV1 } from '../world-engine/narrative-lineage-lifecycle'
+import { mapNarrativeDomainReferencesV1 } from '../narrative-domain/codec'
+import { narrativeDomainReferenceTargetV1 } from '../narrative-domain/references'
+import { canonicalNarrativeJsonV1, compareUnicodeCodePointsV1 } from '../narrative-domain/json'
+import { isPortableResourceUidV1 } from '../context-gateway/resource-uid'
 
 /** 当前完整便携备份契约。 */
-export const CURRENT_EXPORT_VERSION = 15
+export const CURRENT_EXPORT_VERSION = 16
 
 export interface StrictProjectExportSnapshot {
   data: ProjectExportData
   exportIds: ReadonlyMap<string, ReadonlyMap<number, number>>
+}
+
+/** The release compiler supplies an already captured semantic scope. Reuse
+ * the backup encoder without reading or materializing product/media tables.
+ * Unlike a best-effort backup, an explicit release selection may not silently
+ * drop a row or turn a live reference into a tombstone. */
+export function deriveRegisteredSemanticRowsV1(input: {
+  rows: ReadonlyMap<string, readonly Record<string, unknown>[]>
+  worldId: number
+  workId: number
+}): { records: Record<string, Record<string, unknown>[]>; exportIds: Map<string, Map<number, number>> } {
+  assertNarrativeDomainReferenceRowsV1(new Map([
+    ...input.rows,
+    ['worlds', [{ id: input.worldId }]],
+    ['works', [{ id: input.workId, worldId: input.worldId }]],
+  ]), 'local')
+  const idMaps = new Map<string, Map<number, number>>([
+    ['worlds', new Map([[input.worldId, 0]])], ['works', new Map([[input.workId, 0]])],
+  ])
+  const ordered = new Map<string, Record<string, unknown>[]>()
+  for (const [table, rows] of input.rows) {
+    const spec = REGISTRY_BY_NAME.get(table)
+    if (!spec?.worldSemantic || !spec.resourceIdentity || !spec.exportable) throw new Error(`[semanticExport] ${table} 未登记为可发布语义`)
+    const identity = spec.resourceIdentity
+    const seen = new Set<string>(), ids = new Map<number, number>()
+    for (const row of rows) {
+      const uid = row[identity.field]
+      if (!isPortableResourceUidV1(uid, identity.resourceKind) || seen.has(uid.toLowerCase())
+        || !Number.isSafeInteger(row.id) || (row.id as number) <= 0) throw new Error(`[semanticExport] ${table} 稳定身份缺失或重复`)
+      seen.add(uid.toLowerCase())
+    }
+    const sorted = [...rows].sort((a, b) => compareUnicodeCodePointsV1(String(a[identity.field]), String(b[identity.field])))
+    sorted.forEach((row, index) => {
+      if (ids.has(row.id as number)) throw new Error(`[semanticExport] ${table} 本地坐标重复`)
+      ids.set(row.id as number, index)
+    })
+    ordered.set(table, sorted); idMaps.set(table, ids)
+  }
+  const records: Record<string, Record<string, unknown>[]> = {}
+  const exactArray = (value: unknown, label: string): unknown[] => {
+    if (value === undefined || value === null || value === '') return []
+    if (typeof value === 'string') {
+      try { value = JSON.parse(value) } catch { throw new Error(`[semanticExport] ${label} 不是合法数组`) }
+    }
+    if (!Array.isArray(value)) throw new Error(`[semanticExport] ${label} 不是合法数组`)
+    return value
+  }
+  const cleanOptionalFields = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(cleanOptionalFields)
+    if (value && typeof value === 'object' && Object.getPrototypeOf(value) === Object.prototype) {
+      return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined).map(([key, item]) => [key, cleanOptionalFields(item)]))
+    }
+    return value
+  }
+  for (const [table, rows] of ordered) {
+    const spec = REGISTRY_BY_NAME.get(table)!
+    records[table] = rows.map((row, index) => {
+      for (const ref of spec.exportRemap ?? []) {
+        const id = row[ref.field]
+        if (id == null && (ref.onUnmapped === 'require' || ref.onUnmapped === 'drop')) throw new Error(`[semanticExport] ${table}.${ref.field} 必填引用缺失`)
+        if (id != null && !idMaps.get(ref.selfTree ? table : ref.remapVia)?.has(id as number)) {
+          throw new Error(`[semanticExport] ${table}.${ref.field} 引用不在封存范围内`)
+        }
+      }
+      for (const ref of spec.exportRefRemap ?? []) {
+        if (ref.kind === 'narrative-source-refs-v1') {
+          if (row[ref.field] !== undefined) mapNarrativeDomainReferencesV1(ref.field, row[ref.field], source => {
+            const target = narrativeDomainReferenceTargetV1(source)
+            if (target.id !== null && !idMaps.get(target.table)?.has(target.id)) throw new Error(`[semanticExport] ${table}.${ref.field} 证据或依赖未选入`)
+            return source
+          })
+          continue
+        }
+        const requireTarget = (id: unknown) => {
+          if (!Number.isSafeInteger(id) || !idMaps.get(ref.remapVia)?.has(id as number)) throw new Error(`[semanticExport] ${table}.${ref.field} 嵌套引用未选入`)
+        }
+        const items = exactArray(row[ref.field], `${table}.${ref.field}`)
+        if (ref.kind === 'id-array') items.forEach(requireTarget)
+        else if (ref.kind === 'scene-character-ids') for (const scene of items) {
+          if (!scene || typeof scene !== 'object' || Array.isArray(scene)) throw new Error(`[semanticExport] ${table}.${ref.field} 场景无效`)
+          exactArray((scene as Record<string, unknown>).characterIds, `${table}.${ref.field}.characterIds`).forEach(requireTarget)
+        }
+        else if (ref.kind === 'portals') {
+          const portals = parseWorldPortals(row[ref.field] as string | undefined)
+          if (items.length !== portals.length) throw new Error(`[semanticExport] ${table}.${ref.field} 通道无效`)
+          portals.forEach(portal => requireTarget(portal.targetWorldId))
+        } else if (row[ref.field] !== undefined) throw new Error(`[semanticExport] ${table}.${ref.field} 需要新的语义导出版本`)
+      }
+      const portable = toExportRow(spec, row, index, idMaps, true)
+      if (!portable) throw new Error(`[semanticExport] ${table} 不能丢弃已选来源`)
+      for (const ref of spec.exportRefRemap ?? []) if (ref.kind === 'scene-character-ids' && Array.isArray(portable[ref.field])) {
+        portable[ref.field] = portable[ref.field].map((scene: Record<string, unknown>) => ({ ...scene, characterIds: [] }))
+      }
+      const cleaned = cleanOptionalFields(portable) as Record<string, unknown>
+      canonicalNarrativeJsonV1(cleaned)
+      return cleaned
+    })
+  }
+  return { records, exportIds: idMaps }
 }
 
 interface CapturedProjectExportSnapshot extends StrictProjectExportSnapshot {
@@ -46,6 +153,10 @@ function maximumRuntimeSequenceForExport(sequences: ReadonlySet<number> | undefi
 async function assertProductRuntimeExportIntegrityV1(
   rowsByTable: ReadonlyMap<string, readonly any[]>,
 ): Promise<void> {
+  const { validateEnhancedProductSourcePlanRecordV2 } = await import('../product/exact-source-contracts')
+  for (const brief of rowsByTable.get('productProductionBriefs') ?? []) {
+    if (typeof brief.sourcePlanJson === 'string') await validateEnhancedProductSourcePlanRecordV2(brief)
+  }
   const builds = rowsByTable.get('productBuilds') ?? []
   const qualityReceipts = rowsByTable.get('productQualityGateReceipts') ?? []
   const sessions = rowsByTable.get('productRuntimeSessions') ?? []
@@ -121,6 +232,9 @@ async function assertProductRuntimeExportIntegrityV1(
     }
   }
   const sessionsById = new Map<number, any>()
+  const sourceManifestContract = await import('../product/runtime-source-manifest')
+  const briefsByRevision = new Map((rowsByTable.get('productProductionBriefs') ?? [])
+    .map(brief => [`${brief.productionId}:${brief.revision}`, brief]))
   let migrationContract: typeof import('../open-world/player-save-migration-contract') | null = null
   for (const session of sessions) {
     if (!Number.isSafeInteger(session.id) || session.id < 1 || sessionsById.has(session.id)) {
@@ -143,6 +257,20 @@ async function assertProductRuntimeExportIntegrityV1(
         origin: session.parentSessionId != null || branchOrigin ? 'branch' : session.productReleaseId != null ? 'release' : 'preview' })
     }
     sessionsById.set(session.id, session)
+    let runtimeSourceManifest = null
+    if (session.productReleaseId != null) {
+      const manifest = releaseManifestsById.get(session.productReleaseId)
+      if (!manifest) throw new Error('[deriveExport] ProductRuntimeSession 产品来源缺失')
+      runtimeSourceManifest = await sourceManifestContract.runtimeSourceManifestFromReleaseV1(manifest)
+    } else if (session.productBuildId != null) {
+      const build = buildsById.get(session.productBuildId)
+      const brief = build && briefsByRevision.get(`${build.productionId}:${build.briefRevision}`)
+      if (!build || !brief) throw new Error('[deriveExport] ProductRuntimeSession 预览来源缺失')
+      runtimeSourceManifest = await sourceManifestContract.runtimeSourceManifestFromBuildRecordsV1({ build, brief })
+    }
+    if (runtimeSourceManifest && (session.runtimeSourceHash !== runtimeSourceManifest.packageHash
+      || session.kind !== runtimeSourceManifest.productType)) throw new Error('[deriveExport] ProductRuntimeSession 来源身份不一致')
+    await assertProductRuntimeSourceSnapshotV3({ session, manifest: runtimeSourceManifest })
   }
 
   const sequencesBySession = new Map<number, Set<number>>()
@@ -304,7 +432,12 @@ function toExportRow(
   if (spec.exportIdField) obj._exportId = index
 
   for (const rr of spec.exportRefRemap ?? []) {
-    if (rr.kind === 'portals') {
+    if (rr.kind === 'narrative-source-refs-v1') {
+      if (Object.prototype.hasOwnProperty.call(obj, rr.field)) {
+        obj[rr.exportAs] = remapNarrativeDomainFieldV1(rr.field, obj[rr.field], 'export', idMaps)
+        delete obj[rr.field]
+      }
+    } else if (rr.kind === 'portals') {
       const map = idMaps.get(rr.remapVia)
       obj[rr.field] = remapWorldPortalTargets(obj[rr.field], (targetId: number) => map?.get(targetId))
     } else if (rr.kind === 'id-array') {
@@ -560,6 +693,8 @@ async function captureProjectExportInTransaction(
     rows.forEach((r, i) => { if (r.id != null) idMap.set(r.id, i) })
     idMaps.set(spec.name, idMap)
   }
+  assertNarrativeDomainReferenceRowsV1(rowsByTable, 'local')
+  await Dexie.waitFor(assertNarrativeLineageRowsV1(rowsByTable, 'local'))
   // 第二遍:逐行转导出对象
   const projectSpec = REGISTRY_BY_NAME.get('projects')
   if (!projectSpec) throw new Error('[deriveExport] PROJECT_TABLES 缺少 projects 根表')

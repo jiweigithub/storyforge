@@ -6,6 +6,9 @@ import { createBuildProductMediaResolver, createReleaseProductMediaResolver } fr
 import { verifyProductBuildPreviewManifest } from './preview-manifest'
 import { verifyProductReleaseManifest, requirePlayableProductRuntimePackage } from './runtime-package'
 import { avgExecutableModule } from '../avg/executable-module'
+import { runtimeSourceManifestFromBuildRecordsV1,
+  runtimeSourceManifestFromReleaseV1 } from '../product/runtime-source-manifest'
+import { assertProductRuntimeSourceSnapshotV3 } from '../product/runtime-source-branch'
 
 export async function productRuntimeSourceForSessionV1(session: ProductRuntimeSession): Promise<ProductRuntimeSourceV1> {
   if (session.productReleaseId != null) return { kind: 'release', productReleaseId: session.productReleaseId }
@@ -21,10 +24,12 @@ export async function verifyProductRuntimeSessionSourceV1(input: {
   scope: WorkspaceScope
   session: ProductRuntimeSession
 }): Promise<Omit<ResolvedProductRuntimeSourceV1, 'mediaResolver'>> {
-  return verifyProductRuntimeSource({
+  const verified = await verifyProductRuntimeSource({
     scope: input.scope,
     source: await productRuntimeSourceForSessionV1(input.session),
   })
+  await assertProductRuntimeSourceSnapshotV3({ session: input.session, manifest: verified.sourceManifest })
+  return verified
 }
 
 export async function resolveProductRuntimeSource(input: {
@@ -76,11 +81,13 @@ export async function verifyProductRuntimeSourceEnvelope(input: {
     const parsed = await verifyProductReleaseManifest(release.manifestJson)
     const runtimePackage = parsed.runtimePackage
     const packageHash = parsed.packageHash
+    const sourceManifest = await runtimeSourceManifestFromReleaseV1(parsed)
     return {
       source: input.source,
       runtimePackage,
       packageHash,
       runtimeSourceHash: packageHash,
+      ...(sourceManifest ? { sourceManifest } : {}),
     }
   }
 
@@ -112,10 +119,12 @@ export async function verifyProductRuntimeSourceEnvelope(input: {
   if (preview.runtimePackage.sourceWorld.contentHash !== brief.sourceWorldContentHash) {
     throw new Error('[product-runtime-source] Build Preview 的冻结世界来源证据损坏')
   }
+  const sourceManifest = await runtimeSourceManifestFromBuildRecordsV1({ build, brief })
   return {
     source: input.source,
     runtimePackage: preview.runtimePackage,
     packageHash: preview.packageHash,
     runtimeSourceHash: preview.packageHash,
+    ...(sourceManifest ? { sourceManifest } : {}),
   }
 }

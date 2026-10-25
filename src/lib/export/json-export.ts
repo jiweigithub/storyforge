@@ -637,11 +637,17 @@ export async function downloadJSON(data: ProjectExportData, filename: string): P
 }
 
 /** 导入当前格式项目 JSON，返回新项目 ID。 */
-export async function importProjectJSON(data: ProjectExportData): Promise<number> {
+export interface ProjectImportOptionsV1 {
+  /** Prepared deterministic DB work only. Runs in the existing registry import
+   * transaction after FK remapping; no model, network or external side effect. */
+  finalizeInTransaction?: (projectId: number) => Promise<void>
+}
+export async function importProjectJSON(data: ProjectExportData, options: ProjectImportOptionsV1 = {}): Promise<number> {
+  const capturedOptions = { finalizeInTransaction: options.finalizeInTransaction }
   // 预检必须发生在事务外、写库前；失败时保证项目表也不会出现半导入根记录。
   assertTrustedProjectBackup(data)
   // 严格导入、全表拓扑重映射与二进制校验只在作者实际选择导入时需要；按需加载可
   // 避免首页与日常写作静态携带完整恢复引擎，同时仍保留同一个公开 API/事务边界。
   const { deriveImportProjectJSON } = await import('./registry-import')
-  return deriveImportProjectJSON(data)
+  return deriveImportProjectJSON(data, capturedOptions)
 }

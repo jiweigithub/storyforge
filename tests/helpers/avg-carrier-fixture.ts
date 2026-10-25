@@ -79,6 +79,8 @@ export async function seedRelease() {
 
 export async function seedBuild() {
   const s = await seedRelease()
+  const {sourcePlan,confirmedBrief}=s.release.sourceContracts
+  if(sourcePlan.version!==1)throw new Error('Structural carrier fixture requires an actual legacy V1 source contract')
   const now = 1_700_000_000_000
   const revisionId = await db.worldRevisions.add({ ...s.scope, parentRevisionId: null, revision: 1,
     label: 'Source fixture', manifestJson: '{}', contentHash: HASH, createdAt: now, updatedAt: now }) as number
@@ -92,8 +94,10 @@ export async function seedBuild() {
   await db.productProductionBriefs.add({ ...s.scope, productionId, revision: 1, parentRevision: null,
     status: 'authorized', sourceWorldReleaseId: worldReleaseId, sourceWorldContentHash: HASH,
     userIntentSummary: 'Protocol test only', unresolvedJson: '[]', estimateJson: '{}', briefJson: '{}',
-    briefHash: HASH, sourcePlanJson: '{}', sourcePlanHash: HASH, confirmedBriefJson: '{}',
-    confirmedBriefHash: HASH, authorizedAt: now, createdAt: now })
+    briefHash: HASH, sourcePlanJson: canonicalProductProductionJsonV2({...sourcePlan,
+      worldReference:{...sourcePlan.worldReference,localReleaseRecordId:worldReleaseId}}), sourcePlanHash: sourcePlan.planHash,
+    confirmedBriefJson: canonicalProductProductionJsonV2(confirmedBrief),
+    confirmedBriefHash: confirmedBrief.confirmationHash, authorizedAt: now, createdAt: now })
   const buildId = await db.productBuilds.add({ ...s.scope, productionId, buildNumber: 1, briefRevision: 1,
     briefHash: HASH, parentBuildNumber: null, sourceProductReleaseId: null, status: 'preview-ready',
     resumeState: null, stateRevision: 1, controlEpoch: 1, planRevision: 1, planJson: '{}', planHash: HASH,

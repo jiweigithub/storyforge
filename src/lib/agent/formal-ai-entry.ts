@@ -96,6 +96,7 @@ export function parseFormalAIEntryRegistryV1(
   const rootKeys = Object.keys(root).sort()
   const expectedRootKeys = ['bindingVersion', 'entries', 'scope', 'version']
   if ('limitedTransports' in root) expectedRootKeys.push('limitedTransports')
+  if ('offlineEvaluations' in root) expectedRootKeys.push('offlineEvaluations')
   expectedRootKeys.sort()
   if (JSON.stringify(rootKeys) !== JSON.stringify(expectedRootKeys)) fail('registry 含未知或缺失字段')
   if (root.version !== 2 || root.bindingVersion !== 1 || root.scope !== 'formal-ai-execution-entry') {
@@ -180,7 +181,27 @@ export function parseFormalAIEntryRegistryV1(
   })
 
   if (transports.some((entry) => ids.has(entry.entryId))) fail('有限语音入口不得与正式入口重名')
+  if ('offlineEvaluations' in root) {
+    if (!Array.isArray(root.offlineEvaluations)) fail('离线评测入口必须是数组')
+    const offlineIds = new Set<string>()
+    const keys = ['adoptAllowed', 'boundary', 'caller', 'contract', 'entryId', 'reason', 'transport']
+    for (const raw of root.offlineEvaluations) {
+      const entry = asRecord(raw, '离线评测入口')
+      if (JSON.stringify(Object.keys(entry).sort()) !== JSON.stringify(keys)
+        || entry.adoptAllowed !== false || entry.boundary !== 'eval-only' || entry.transport !== 'local-codex-subscription') {
+        fail('离线评测入口不得获得作品采纳或正式执行权限')
+      }
+      const id = readString(entry, 'entryId', '离线评测入口')
+      if (!/^eval\.[a-z0-9]+(?:[.-][a-z0-9]+)*$/.test(id) || ids.has(id) || offlineIds.has(id)
+        || transports.some(transport => transport.entryId === id)) fail('离线评测入口身份无效或重复')
+      if (!/^scripts\/evaluate-[a-z-]+\.mjs$/.test(readString(entry, 'caller', '离线评测入口'))
+        || !/^scripts\/[a-z-]+-contract\.mjs$/.test(readString(entry, 'contract', '离线评测入口'))) fail('离线评测只能绑定仓库评测脚本')
+      readString(entry, 'reason', '离线评测入口')
+      offlineIds.add(id)
+    }
+  }
   // Transports cannot enter a frozen creative binding or acquire its write authority.
+  // Offline evaluations likewise have no binding in the creative executor.
   return { version: 2, bindingVersion: 1, scope: 'formal-ai-execution-entry', entries }
 }
 

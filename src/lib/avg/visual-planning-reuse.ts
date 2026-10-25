@@ -43,8 +43,10 @@ export function avgVisualReuseDescriptorV4(history:Awaited<ReturnType<typeof rea
 
 /** Every invocation proves the actual old adoption, original Run artifacts and
  * portable logical locators. No descriptor or cached UI row grants authority. */
-export async function readAvgVisualReuseHistoryV4(input:{scope:WorkspaceScope;build:ProductBuildRecordV1;
-  brief:ProductProductionBriefV3;task:ProductProductionPlanTaskV3;source:AvgVisualProposalReuseSourceV4;path?:AvgVisualReusePathV4}){
+type VisualReuseHistoryInputV4={scope:WorkspaceScope;build:ProductBuildRecordV1;
+  brief:ProductProductionBriefV3;task:ProductProductionPlanTaskV3;source:AvgVisualProposalReuseSourceV4;path?:AvgVisualReusePathV4}
+export function readAvgVisualReuseHistoryV4(input:VisualReuseHistoryInputV4){return readVisualReuseHistoryV4(input,true)}
+async function readVisualReuseHistoryV4(input:VisualReuseHistoryInputV4,currentMethod:boolean){
   const source=parseAvgVisualProposalReuseSourceV4(input.source),path=input.path??[]
   const identity=`${source.productionKey}:${source.buildNumber}:${source.artifact.artifactKey}`
   if(path.length>=32||path.includes(identity)||source.buildNumber>=input.build.buildNumber||input.brief.avgVisualPlanning?.version!==4
@@ -62,9 +64,9 @@ export async function readAvgVisualReuseHistoryV4(input:{scope:WorkspaceScope;bu
   const role=AVG_VISUAL_PLANNING_ROLES_V1.find(r=>r.subjectKind===kind)
   if(!role)throw new Error('[avg-visual-reuse] 来源岗位无效')
   const skill=getAgentSkillV1(role.skillId),request=history.original.modelRequest
-  if(!same(history.original.modelRun.contract.executionBindings,[{stepId:input.task.taskKey,...createAgentSkillExecutionBindingV1(skill)}])
+  if(currentMethod&&(!same(history.original.modelRun.contract.executionBindings,[{stepId:input.task.taskKey,...createAgentSkillExecutionBindingV1(skill)}])
     ||request.systemPrompt!==avgVisualPlanningMethodV1(role.subjectKind)||request.promptVersion!==skill.promptVersion
-    ||request.maximumOutputTokens!==role.outputTokens)throw new Error('[avg-visual-reuse] 原模型岗位方法已变化，不能自动复用')
+    ||request.maximumOutputTokens!==role.outputTokens))throw new Error('[avg-visual-reuse] 原模型岗位方法已变化，不能自动复用')
   return history
 }
 
@@ -100,7 +102,9 @@ export async function readAvgVisualReuseEvidenceV4(scope:WorkspaceScope,row:{pro
   const requestText=await readAgentRunArtifactExactV1({projectId:scope.projectId,artifactKind:'source-snapshot',contentHash:String(q.requestSnapshotHash)})
   if(await hashAvgVisualExactTextV1(requestText)!==q.requestSnapshotHash)throw new Error('[avg-visual-reuse] 本次确定性输入字节损坏')
   const request=avgRecord(JSON.parse(requestText),['schema','version','taskKey','targetArtifactKey','scopeHash','sourceInputHash','contextText','source','originalRequestHash','rawResponseHash'],'visual reuse input')
-  const history=await readAvgVisualReuseHistoryV4({scope,build,brief,task,source,path})
+  // Reading a completed zero-call producer proves its frozen method. Only
+  // preparing/executing another reuse must match today's tool schema.
+  const history=await readVisualReuseHistoryV4({scope,build,brief,task,source,path},false)
   const packet=assertAvgVisualReuseSemanticInputV4(String(request.contextText),history,source)
   if(request.schema!=='storyforge.avg.visual-reuse-input'||request.version!==1||request.taskKey!==task.taskKey
     ||request.targetArtifactKey!==source.artifact.artifactKey||request.scopeHash!==await hashProductProductionValueV2(brief.avgVisualPlanning.scope)

@@ -49,7 +49,7 @@ describe('Phase 3.1 · AI 说明书自动生成', () => {
     const manualText = CONTEXT_SOURCES.find(source => source.key === 'manualText')
     expect(manualText?.budgetTokens).toBe(100_000)
     expect(manual).toContain('| `manualText` | 用户指定内容 | manual | L0 | 100000 |')
-    expect(manual).toContain('| `fact-ledger` | `temporalFacts` | `FACT_PREDICATE_REGISTRY` |')
+    expect(manual).toContain('| `fact-ledger` | `temporalFacts` | `FACT_PREDICATE_REGISTRY + PROJECT_TABLES.worldSemantic.projector + FIELD_REGISTRY + source hash CAS` |')
   })
 
   it('semantic.md 引用的 moduleKey 必须真实存在(防 key 漂移)', () => {

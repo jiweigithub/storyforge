@@ -1,3 +1,4 @@
+import type { NarrativeDomainMetadataV1, NarrativeDomainFieldsV1 } from './narrative-domain'
 /**
  * CONSISTENCY-2 · 角色认知事件账本。
  *
@@ -13,7 +14,9 @@ export type KnowledgeEventStatus =
   | 'source-missing'
   | 'invalid-range'
 
-export interface KnowledgeLedgerEntry {
+type KnowledgeLedgerEntryNarrativeFieldsV1 = NarrativeDomainMetadataV1 & Pick<NarrativeDomainFieldsV1, 'narrativeEpistemicV1'>
+
+export interface KnowledgeLedgerEntry extends KnowledgeLedgerEntryNarrativeFieldsV1 {
   id?: number
   projectId: number
   workId?: number | null

@@ -134,9 +134,10 @@ export function formatCanonAssertionsContext(facts: readonly TemporalFact[]): st
 export async function readCanonAssertions(
   projectId: number,
   worldGroupId?: number | null,
+  suppliedScope?: WorkspaceScope,
 ): Promise<TemporalFact[]> {
   const rows = await readOwnedRows<TemporalFact>(
-    await resolveReadScopeLike(projectId),
+    suppliedScope ?? await resolveReadScopeLike(projectId),
     'temporalFacts',
     { owner: 'work' },
   )

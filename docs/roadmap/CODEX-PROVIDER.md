@@ -38,6 +38,8 @@
 
 只把最终答复消息当作者文本，排除 reasoning 和 commentary；有明确 final_answer phase 时增量返回，否则等消息完成。必须收到 `turn/completed` 且有非空文本才成功。失联/崩溃后部分文本仍不能当成功候选。客户端保留 pre-dispatch / request-dispatched / response-observed 边界，现有 durable Harness 继续决定恢复和采纳。
 
+失败诊断只保留白名单中的公开 `codexErrorInfo` 类型和有效数字 HTTP 状态码；原始 message、additionalDetails 和其它自由文本不离开连接层。终态 error 优先，仅当其缺失时使用同 thread/turn 的错误通知；其它线程或回合不能提供诊断或提前结束当前请求。未知类型明确记为 unclassified，不猜成登录或额度问题，也不由错误码触发重发。此诊断增量由 16 项本机桥接反例验证，完整交付状态另记。
+
 现有以 API 金额为必填统计的模型评测入口暂不接受 Codex；在共享客户端发送前明确阻止，不伪造评测美元费用。原生 tool_calls 不支持，Agent 继续走既有 text-json 协议；JSON schema 映射 `outputSchema`；`json_object` 映射为固定格式约束并在共享客户端严格解析为对象，非法结果直接停止、不自动修复重发。两者仍需原产品字段/schema 校验。温度和 API max_tokens 不发送；本地上下文预算使用保守 32K、预留 8K 输出，可由高级设置调整。这不是模型实际窗口或远端输出 token 硬上限。批量生产的金额闸门不得把未知订阅成本当作零成本放行。
 
 ## 验收
