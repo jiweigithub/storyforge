@@ -1,3 +1,4 @@
+import * as timingPlans from '../../src/lib/ttrpg/open-rule-plan'
 import { settleOpenPaidTurnsV1 } from '../helpers/open-ttrpg-paid-turns'
 import { resolveTtrpgOracleV1 } from '../../src/lib/ttrpg/oracle'
 import { setup as knowledgeSetup, start as startOperation } from '../helpers/open-ttrpg-knowledge'
@@ -5,7 +6,7 @@ import { openEnvelopeV1, OPEN_HUMAN_VIEWER } from '../helpers/open-ttrpg-session
 import { operationInput } from '../helpers/open-ttrpg-branch-recovery'
 import { setupPressureFixtureV1, nextPressureInputV1 as nextInput } from '../helpers/open-ttrpg-pressure'
 import { loadTtrpgOpenPlayerContextV1 } from '../../src/lib/ttrpg/open-player-context'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { db } from '../../src/lib/db/schema'
 import { readProductRuntimeState, parseProductRuntimeState, replayProductRuntimeEvents, applyProductRuntimeEvent } from '../../src/lib/product/runtime-core'
 import { advanceTtrpgOpenPressureV1, consultTtrpgOracleV1, resolveTtrpgOpenOperationRuleV1 } from '../../src/lib/ttrpg/runtime-commands'
@@ -23,7 +24,7 @@ async function assertReplay(sessionId: number) {
 }
 describe('R-TTRPGOPEN5 actual durable pressure owner', { timeout: 60000 }, () => {
   beforeEach(async () => { await db.delete(); await db.open() })
-  afterEach(() => db.close())
+  afterEach(() => { vi.restoreAllMocks(); db.close() })
   it('rejects pressure before mechanical/time receipts, then consumes every idle turn once and publishes a real signal', async () => {
     const { f, command } = await fixture()
     await expect(advanceTtrpgOpenPressureV1(await nextInput(command))).rejects.toThrow(/真实检定/)
@@ -69,7 +70,14 @@ describe('R-TTRPGOPEN5 actual durable pressure owner', { timeout: 60000 }, () =>
     expect(await readProductRuntimeState(f.sessionId)).toEqual(final)
     await assertReplay(f.sessionId)
   })
-  it('evaluates expiring action availability from the real per-turn condition receipts rather than the final state', async () => {
+  it.each([true, false])('evaluates real per-turn condition receipts (legacy timing=%s)', async legacyTiming => {
+    if (legacyTiming) {
+      const create = timingPlans.createTtrpgOpenRulePlanV1
+      vi.spyOn(timingPlans, 'createTtrpgOpenRulePlanV1').mockImplementation(async input => {
+        const plan = await create(input); Reflect.deleteProperty(plan, 'conditionTiming'); return plan
+      })
+    }
+
     const { f, command } = await fixture({}, pkg => {
       const c = pkg.ttrpg!, condition = c.rulePack.content.conditions[0], available = c.rulePack.content.actions[1]
       condition.defaultDurationRounds = 2
@@ -81,11 +89,11 @@ describe('R-TTRPGOPEN5 actual durable pressure owner', { timeout: 60000 }, () =>
     })
     await settleOpenPaidTurnsV1(command)
     const before = rt(await readProductRuntimeState(f.sessionId)).openRun!
-    expect(before.operations[0].pressureTurnConditions!.map(t => t.conditions.hero.length)).toEqual([1, 0, 0])
-    expect((await readProductRuntimeState(f.sessionId)).ttrpg!.product.conditions.hero).toEqual([])
+    expect(before.operations[0].pressureTurnConditions!.map(t => t.conditions.hero.length)).toEqual(legacyTiming ? [1, 0, 0] : [1, 1, 1])
+    expect((await readProductRuntimeState(f.sessionId)).ttrpg!.product.conditions.hero).toHaveLength(legacyTiming ? 0 : 1)
     await resumeTtrpgOpenPressureV1(command)
     const final = rt(await readProductRuntimeState(f.sessionId)).openRun!
-    expect(final.clocks[0].value).toBe(1)
+    expect(final.clocks[0].value).toBe(legacyTiming ? 1 : 3)
     expect(final.pressureCycles![0].tickQueue.map(t => t.atWorldTurn)).toEqual([1])
     await assertReplay(f.sessionId)
   })

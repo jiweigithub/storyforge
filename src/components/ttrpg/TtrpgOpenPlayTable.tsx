@@ -19,7 +19,7 @@ import TtrpgOpenManualAction from './TtrpgOpenManualAction'
 import { recoverTtrpgOpenTableResponseV1, resumeTtrpgOpenManualActionV1 } from '../../lib/ttrpg/open-table-service'
 import TtrpgOpenPrivateChoicePanel from './TtrpgOpenPrivateChoicePanel'
 import TtrpgOpenIntentReview from './TtrpgOpenIntentReview'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ProductRuntimeSession, ProductRuntimeState, WorkspaceScope } from '../../lib/types'
 import { useAIConfigStore } from '../../stores/ai-config'
 import { readTtrpgOpenTableV1, consentTtrpgOpenTableSeatV1, startTtrpgOpenTableV1, requestTtrpgOpenTableCandidateV1,
@@ -48,6 +48,7 @@ export default function TtrpgOpenPlayTable(props: TtrpgPlayTablePropsV1) {
   const hostingSignal = useRef<AbortSignal | null>(null)
   const activeViewer = useRef(''), revision = useRef(0), controller = useRef<AbortController | null>(null), live = useRef(true)
   const sessionId = props.session.id!, { projectId, worldId, workId } = props.scope
+  const authorityKey = JSON.stringify([props.session.runtimeSourceHash, props.state.ttrpg && 'authorization' in props.state.ttrpg ? props.state.ttrpg.authorization : null])
   const consultationOwner = JSON.stringify([projectId, worldId, workId, sessionId, viewerKey])
   const [consultationDisclosure, setConsultationDisclosure] = useState({ owner: '', open: false })
   useEffect(() => { setConsultationDisclosure({ owner: consultationOwner, open: false }) }, [consultationOwner])
@@ -59,7 +60,10 @@ export default function TtrpgOpenPlayTable(props: TtrpgPlayTablePropsV1) {
       if (next && live.current && revision.current === current) { setView(next) }
     } catch (cause) { if (live.current && revision.current === current) { setView(null);setError(cause instanceof Error ? cause.message : String(cause)) } }
   }, [projectId, worldId, workId, sessionId])
-  useEffect(() => { live.current = true;setView(null);void refresh();return () => { live.current = false;revision.current += 1;controller.current?.abort() } }, [refresh, viewerKey, props.state.lastSequence])
+  // Identity/source changes clear private views before paint. A new receipt in
+  // the same identity only refreshes data; it must not unmount active editors.
+  useLayoutEffect(() => { live.current = true;setView(null);return () => { live.current = false;revision.current += 1;controller.current?.abort() } }, [refresh, viewerKey, authorityKey])
+  useEffect(() => { void refresh() }, [refresh, viewerKey, authorityKey, props.state.lastSequence])
   const perform = async (job: (signal: AbortSignal) => Promise<void>) => {
     if (controller.current) return
     const abort = new AbortController();controller.current = abort;setBusy(true);props.onBusyChange?.(true);setError('');setNotice('')

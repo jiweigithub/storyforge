@@ -15,7 +15,7 @@ import TtrpgNarrationListeningSettings from './TtrpgNarrationListeningSettings'
 import TtrpgOpenIdentityKnowledgePanel from './TtrpgOpenIdentityKnowledgePanel'
 import TtrpgOpenTableConversation from './TtrpgOpenTableConversation'
 import TtrpgOpenPrivateChoicePanel from './TtrpgOpenPrivateChoicePanel'
-import { useCallback,useEffect,useRef,useState } from 'react'
+import { useCallback,useEffect,useLayoutEffect,useRef,useState } from 'react'
 import type { TtrpgPlayTablePropsV1 } from './TtrpgOpenPlayTable'
 import { readTtrpgOpenHostTableV1,startTtrpgOpenTableV1,changeTtrpgOpenTableSafetyV1,
   recordTtrpgOpenTableHumanNarrationV1,repairTtrpgOpenTableHumanNarrationV1,resumeTtrpgOpenTableV1,
@@ -30,13 +30,15 @@ export default function TtrpgOpenHostTable(props: TtrpgPlayTablePropsV1 & { view
   const [accepted,setAccepted] = useState(false),[draft,setDraft] = useState('')
   const live = useRef(true),generation = useRef(0),locked = useRef(false)
   const { projectId,worldId,workId } = props.scope,sessionId = props.session.id!,viewerKey = props.viewerKey
+  const authorityKey = JSON.stringify([props.session.runtimeSourceHash, props.state.ttrpg && 'authorization' in props.state.ttrpg ? props.state.ttrpg.authorization : null])
   const input = useCallback(() => ({ scope: { projectId,worldId,workId },sessionId,viewerKey }),[projectId,worldId,workId,sessionId,viewerKey])
   const refresh = useCallback(async () => {
     const token = ++generation.current
     try { const next = await readTtrpgOpenSettledViewV1(() => readTtrpgOpenHostTableV1(input()), () => live.current && token === generation.current);if (next && live.current && token === generation.current) setView(next) }
     catch (e) { if (live.current && token === generation.current) { setView(null);setError(e instanceof Error ? e.message : String(e)) } }
   },[input])
-  useEffect(() => { live.current = true;setView(null);void refresh();return () => { live.current = false;generation.current += 1 } },[refresh,props.state.lastSequence])
+  useLayoutEffect(() => { live.current = true;setView(null);return () => { live.current = false;generation.current += 1 } },[refresh,authorityKey])
+  useEffect(() => { void refresh() },[refresh,authorityKey,props.state.lastSequence])
   const perform = async (job: () => Promise<void>) => {
     if (locked.current) return
     locked.current = true;setBusy(true);setError('');setNotice('');props.onBusyChange?.(true)

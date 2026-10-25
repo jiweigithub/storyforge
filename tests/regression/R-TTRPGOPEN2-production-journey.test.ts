@@ -166,7 +166,7 @@ describe('R-TTRPGOPEN2 governed fresh production journey (isolated model transpo
       if (withSeatPlan && taskKey === 'ttrpg.open.rule-system') expect(JSON.parse(build.failureJson).detail).toContain('authoringSeatPlan')
       // Invalid model output consumes the original explicitly budgeted repair
       // attempt. A refresh must not grant a third call or hide that cost.
-      const expectedCalls = withSeatPlan && taskKey === 'ttrpg.open.rule-system' ? 2 : 1
+      const expectedCalls = withSeatPlan && taskKey === 'ttrpg.open.rule-system' && generation < 3 ? 2 : 1
       expect(calls.filter(key => key === taskKey), build.failureJson).toHaveLength(expectedCalls)
       const repeat = await run()
       expect(repeat.buildStatus).toBe('recovery-required')
@@ -180,7 +180,7 @@ describe('R-TTRPGOPEN2 governed fresh production journey (isolated model transpo
     const complete = await run()
     const diagnostic = (await db.productBuilds.where('productionId').equals(productionId).first())!
     expect(complete.terminal, diagnostic.failureJson).toBe(true)
-    expect(calls).toEqual(['ttrpg.open.source-facts', 'ttrpg.open.rule-system', ...(withSeatPlan ? ['ttrpg.open.rule-system'] : []), 'ttrpg.open.situation-layer', ...(withMedia || generation < 3 ? ['ttrpg.open.media-plan'] : [])])
+    expect(calls).toEqual(['ttrpg.open.source-facts', 'ttrpg.open.rule-system', ...(withSeatPlan && generation < 3 ? ['ttrpg.open.rule-system'] : []), 'ttrpg.open.situation-layer', ...(withMedia || generation < 3 ? ['ttrpg.open.media-plan'] : [])])
     const build = (await db.productBuilds.where('productionId').equals(productionId).first())!
     expect(build.rootTerminalReceiptHash).toMatch(/^[a-f0-9]{64}$/)
     const source = { kind: 'build' as const, productBuildId: build.id!, expectedPreviewHash: build.previewHash }

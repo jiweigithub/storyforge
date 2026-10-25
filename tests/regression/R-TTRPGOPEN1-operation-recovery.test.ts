@@ -1,3 +1,4 @@
+import * as timingPlans from '../../src/lib/ttrpg/open-rule-plan'
 import { settleOpenPaidTurnsV1 } from '../helpers/open-ttrpg-paid-turns'
 import { prepareTtrpgOpenPrivateChoiceDisclosureV1,discloseTtrpgOpenPrivateChoiceV1 } from '../../src/lib/ttrpg/runtime-commands'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -271,7 +272,14 @@ describe('R-TTRPGOPEN1 deterministic operations and causal time', () => {
     await assertReplay(fixture.sessionId)
   })
 
-  it('uses world ticks for open condition durations while leaving scripted round at zero', async () => {
+  it.each([true, false])('keeps old world-tick expiry and new actor-action timing distinct, with scripted round zero (legacy=%s)', async legacyTiming => {
+    if (legacyTiming) {
+      const create = timingPlans.createTtrpgOpenRulePlanV1
+      vi.spyOn(timingPlans, 'createTtrpgOpenRulePlanV1').mockImplementation(async input => {
+        const plan = await create(input); Reflect.deleteProperty(plan, 'conditionTiming'); return plan
+      })
+    }
+
     const fixture = await setup('existing-action', 'hero', runtimePackage => {
       const rule = runtimePackage.ttrpg!.rulePack.content
       rule.conditions[0].defaultDurationRounds = 1
@@ -285,7 +293,7 @@ describe('R-TTRPGOPEN1 deterministic operations and causal time', () => {
     expect((await runtime(fixture.sessionId)).runtime.product.conditions.hero).toHaveLength(1)
     await completeTtrpgOpenOperationStepV1({ ...await input(fixture.sessionId, 'mechanics.receipt'), stepKey: 'mechanics' })
     await finishMechanical(fixture.sessionId)
-    expect((await runtime(fixture.sessionId)).runtime.product.conditions.hero).toHaveLength(0)
+    expect((await runtime(fixture.sessionId)).runtime.product.conditions.hero).toHaveLength(legacyTiming ? 0 : 1)
     expect((await runtime(fixture.sessionId)).runtime.round).toBe(0)
     await assertReplay(fixture.sessionId)
   })

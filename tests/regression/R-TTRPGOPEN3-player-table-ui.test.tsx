@@ -65,6 +65,28 @@ describe('R-TTRPGOPEN3 real player desk identity and preview boundary', () => {
     await until(() => Boolean(playerChoice()))
     expect(host.textContent).not.toContain('HERO-PRIVATE-SCREEN');expect(host.querySelector('textarea')).toBeNull()
   })
+  it('retains the open panel across a real same-identity receipt refresh and clears private content at handoff', async () => {
+    const { f, props } = await fixture()
+    const read = vi.spyOn(table, 'readTtrpgOpenTableV1')
+    await act(async () => root.render(createElement(TtrpgOpenPlayTable, props)))
+    await until(() => Boolean(playerChoice()))
+    await act(async () => { const select = playerChoice()!;select.value = OPEN_HUMAN_VIEWER;select.dispatchEvent(new Event('change', { bubbles: true })) })
+    await act(async () => [...host.querySelectorAll('button')].find(b => b.textContent === '确认身份并进入')!.click())
+    await until(() => Boolean(host.querySelector('[data-testid="ttrpg-open-memory"] textarea')))
+    const card = host.querySelector<HTMLDetailsElement>('[data-testid="ttrpg-open-memory"]')!
+    const editor = card.querySelector('textarea')!
+    card.open = true
+    const reads = read.mock.calls.length
+    await table.changeTtrpgOpenTableSafetyV1({ scope: f.scope, sessionId: f.sessionId, viewerKey: OPEN_HUMAN_VIEWER, status: 'paused', reason: 'fixture explicit safety pause' })
+    const state = await readProductRuntimeState(f.sessionId)
+    expect(state.lastSequence).toBeGreaterThan(props.state.lastSequence)
+    await act(async () => root.render(createElement(TtrpgOpenPlayTable, { ...props, state })))
+    await until(() => read.mock.calls.length > reads)
+    expect(host.querySelector('[data-testid="ttrpg-open-memory"]')).toBe(card)
+    expect(card.open).toBe(true)
+    await act(async () => [...host.querySelectorAll('button')].find(b => b.textContent === '交接给另一位玩家')!.click())
+    expect(editor.isConnected).toBe(false);expect(host.textContent).not.toContain('HERO-PRIVATE-SCREEN')
+  })
   it('retries a concurrent display read without repeating a saved action or exposing private identity', async () => {
     const { f, props } = await fixture(), before = await readProductRuntimeState(f.sessionId)
     const actual = table.readTtrpgOpenTableV1

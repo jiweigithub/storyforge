@@ -1,3 +1,4 @@
+import { createProductProductionPlanV3 } from '../../src/lib/product-production/plan'
 /** Normal Plan, configured executor, fake native transport and real Run APIs.
  * No actual model, subscription request or independent author acceptance. */
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
@@ -21,7 +22,7 @@ beforeEach(async () => {
 })
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); db.close() })
 
-async function authorized() {
+async function authorized(profile: 2 | 3 = 3) {
   const { scope, productionId, brief } = await openProductionFixtureV1()
   const previous = (await db.productProductions.get(productionId))!
   expect((await executeProductProductionCommand({ scope, productionId, command: { type: 'save-brief-revision',
@@ -37,7 +38,7 @@ async function authorized() {
   const capabilityBindings = [{ requirementKey, adapterId: 'configured-text.v1', bindingHash: resolved.receipt.capabilityHash,
     provider: resolved.receipt.provider, model: resolved.receipt.model }]
   const executor = createConfiguredProductProductionExecutorV1({ production: (await db.productProductions.get(productionId))!, brief })
-  return { scope, productionId, brief, capabilityBindings, executor }
+  return { scope, productionId, brief, capabilityBindings, executor, ...(profile === 2 ? { suppliedPlan: await createProductProductionPlanV3({ brief, briefHash: row.briefHash, buildNumber: 1, ttrpgOpenExecutionProfile: 2 }) } : {}) }
 }
 async function requestEvidence(scope: { projectId: number }, runId: number, attempt = 1) {
   const snapshot = await readAgentRunV1(scope, runId)
@@ -113,7 +114,7 @@ it.each([false, true])('one authorized attempt saves exact owner before POST and
 }, 30000)
 
 it('known-output bounded repair retains independently readable original IDs for every attempt', async () => {
-  const data = await authorized(), fake = transport('completed', data.scope)
+  const data = await authorized(2), fake = transport('completed', data.scope)
   const result = await runProductProductionUntilBlockedV1(data)
   expect(result.buildStatus).toBe('recovery-required')
   expect(fake.requests.filter(r => r.url.endsWith('/requests') && r.method === 'POST')).toHaveLength(2)

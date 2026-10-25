@@ -131,10 +131,10 @@ export default function TtrpgOpenVoiceStudio(props:{input:api.TtrpgOpenAudioDesk
       await probeTtrpgOpenLocalVoiceProfileV1(currentTtrpgOpenVoiceProductProfileV1(narratorVoice))
       if(live.current)setMessage('所选声线已就绪。检查没有生成配音；选择原文并确认读法后才能开始。')
     })}>检查所选声线</button>
-    <details><summary>本机配音准备说明</summary>
+    <aside aria-label="本机配音准备说明"><p><strong>本机配音准备说明</strong></p>
       <p>免费配音需要当前电脑已安装语音运行库。沉稳男声和柔和女声使用 Qwen；当前本机合成支持 Apple 芯片的 Mac。普通网页和未配置运行库的电脑可先试听示例或导入已有音频。</p>
       <p>先在开局或音频设置里试听、选择声线和语速，再检查所选声线。生成后需试听、确认使用范围并加入本局音轨。生成失败时保留原任务，请先核对状态；文字游玩可继续。</p>
-    </details>
+    </aside>
     <fieldset disabled={busy||!props.view.canPlay}><legend>从原文准备配音</legend>
       <label>配音原文<select aria-label="配音原文" value={cause} onChange={e=>{clearDraft();setCause(e.target.value)}}><option value="">选择已完成的叙述</option>{props.view.causes.map(c=><option key={JSON.stringify(c.sourceRef)} value={JSON.stringify(c.sourceRef)}>{c.text.slice(0,60)}</option>)}</select></label>
       <label>配音范围<select aria-label="配音范围" value={audience} onChange={e=>{clearDraft();setAudience(e.target.value as typeof audience)}}><option value="party">本次全队</option>{props.view.privateControlAllowed&&<><option value="private">指定角色</option><option value="gm-only">仅主持</option></>}</select></label>

@@ -1,3 +1,4 @@
+import { createProductProductionPlanV3 } from '../../src/lib/product-production/plan'
 /** Real owner/DB/Harness and explicit fake native transport; no actual provider or author data. */
 import { beforeEach, afterEach, expect, it, vi } from "vitest"
 import { db } from "../../src/lib/db/schema"
@@ -25,7 +26,7 @@ beforeEach(async () => {
 })
 afterEach(()=>{vi.restoreAllMocks();vi.unstubAllGlobals();if(previousLocks)Object.defineProperty(navigator,'locks',previousLocks);else Reflect.deleteProperty(navigator,'locks');db.close()})
 
-async function authorized() {
+async function authorized(profile: 2 | 3 = 3) {
   const { scope, productionId, brief } = await openProductionFixtureV1()
   const previous = (await db.productProductions.get(productionId))!
   expect((await executeProductProductionCommand({ scope, productionId, command: { type: 'save-brief-revision',
@@ -41,7 +42,7 @@ async function authorized() {
   const capabilityBindings = [{ requirementKey, adapterId: 'configured-text.v1', bindingHash: resolved.receipt.capabilityHash,
     provider: resolved.receipt.provider, model: resolved.receipt.model }]
   const executor = createConfiguredProductProductionExecutorV1({ production: (await db.productProductions.get(productionId))!, brief })
-  return { scope, productionId, brief, capabilityBindings, executor }
+  return { scope, productionId, brief, capabilityBindings, executor, ...(profile === 2 ? { suppliedPlan: await createProductProductionPlanV3({ brief, briefHash: row.briefHash, buildNumber: 1, ttrpgOpenExecutionProfile: 2 }) } : {}) }
 }
 async function requestEvidence(scope: { projectId: number }, runId: number, attempt = 1) {
   const snapshot = await readAgentRunV1(scope, runId)
@@ -235,7 +236,7 @@ it('preserves captured bytes through the real author backup lifecycle but never 
 },30000)
 
 it('rejects a historical attempt when the same actual task Run has a newer failed attempt',async()=>{
- const data=await authorized(),fake=transport('completed',data.scope),result=await runProductProductionUntilBlockedV1(data)
+ const data=await authorized(2),fake=transport('completed',data.scope),result=await runProductProductionUntilBlockedV1(data)
  expect(fake.requests.filter(row=>row.method==='POST'&&row.url.endsWith('/requests'))).toHaveLength(2)
  const original=await requestEvidence(data.scope,fake.runId,1),count=fake.fetch.mock.calls.length
  const base={scope:data.scope,productionId:data.productionId,buildId:result.buildId,runId:fake.runId,taskKey:original.owner.taskKey,confirmation}

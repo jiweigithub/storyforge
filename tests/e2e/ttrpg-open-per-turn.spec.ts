@@ -1,6 +1,6 @@
 import { expect,test } from '@playwright/test'
 
-/** Real isolated IndexedDB/API; no live provider or human acceptance claim. */
+/** Current actor-action timing. Legacy world-tick assertions remain in the versioned regression and frozen replay fixture. No live provider. */
 test('a first-turn consequence survives reload and changes the next turn before further time is paid',async ({ page }) => {
   test.setTimeout(90000)
   await page.goto('./')
@@ -37,5 +37,5 @@ test('a first-turn consequence survives reload and changes the next turn before 
       conditionBasis: state.ttrpg.openRun.operations[0].pressureTurnConditions.map((t: any) => (t.conditions.hero ?? []).length),
       replayMatches: JSON.stringify(replayed) === JSON.stringify(state),repeatMatches: JSON.stringify(await api.readProductRuntimeState(f.command.sessionId)) === JSON.stringify(state) }
   },f)
-  expect(final).toEqual({ worldTurn: 3,clock: 1,paidTurns: [1,2,3],conditionBasis: [0,1,0],replayMatches: true,repeatMatches: true })
+  expect(final).toEqual({ worldTurn: 3,clock: 2,paidTurns: [1,2,3],conditionBasis: [0,1,1],replayMatches: true,repeatMatches: true })
 })
