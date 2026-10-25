@@ -43,3 +43,7 @@ dist-client-verification/
 
 # Frozen E2E Vite optimizer cache
 /.vite-e2e-cache/
+
+# Local Python inference/test bytecode
+__pycache__/
+*.py[cod]
