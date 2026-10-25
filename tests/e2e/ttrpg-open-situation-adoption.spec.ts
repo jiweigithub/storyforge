@@ -43,7 +43,9 @@ test('a session-owned generated situation reaches the player discovery UI withou
   await page.goto('./play/session/' + f.input.sessionId)
   await page.getByLabel('我的角色', { exact: true }).selectOption('viewer.seat.hero')
   await page.getByRole('button', { name: '确认身份并进入', exact: true }).click()
-  await expect(page.getByText('可以检查这里', { exact: true }).first()).toBeVisible()
+  // Directions display a numbered label and the exact hint in one paragraph.
+  await expect(page.getByRole('region', { name: '当前可知线索与方向', exact: true })
+    .getByText(/ · 可以检查这里$/).first()).toBeVisible()
   await expect(page.locator('body')).not.toContainText('PRIVATE-GM-SITUATION-SOURCE')
   await expect(page.locator('body')).not.toContainText('PRIVATE-GENERATED-SITUATION-GOAL')
   await expect(page.locator('body')).not.toContainText('有人刚刚来过')
