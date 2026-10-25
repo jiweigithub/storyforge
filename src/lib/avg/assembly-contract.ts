@@ -72,6 +72,7 @@ export function parseAvgAssemblyBriefV2(value: unknown): AvgAssemblyBriefV2 {
   const base = parseAvgAssemblyBriefV1({ ...baseInput, version: 1 })
   const mediaBatch = parseAvgVisualProductionBatchV1(rawBatch)
   const imageProcessing = hasProcessing ? parseAvgImageProcessingPlan(rawProcessing) : undefined
+  if(imageProcessing?.version===3)throw new Error('[avg-composite] 局部合成需要专业 V5 生产合同')
   if (imageProcessing && (!mediaBatch.visualReviewPolicy || imageProcessing.entries.some(e => !mediaBatch.requirements.some(r => r.requirementKey === e.requirementKey)))) throw new Error('[avg-process] 加工必须有准确冻结需求和独立视觉评审')
   if(imageProcessing)assertAvgImageProcessingRequirements(imageProcessing,mediaBatch.requirements)
   if (base.sceneKeys.length + 4 + (mediaBatch.visualReviewPolicy?3:2) * mediaBatch.requirements.length + (imageProcessing?.entries.length ?? 0) > 100) throw new Error('[avg-media] 场景、原始候选、加工、视觉评审、作者选择与终态 join 超过共享 100 任务上限')

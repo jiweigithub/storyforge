@@ -19,6 +19,10 @@ import { AVG_IMAGE_PROCESSOR_V1, parseAvgImageProcessingReceiptV1, assertAvgImag
   type AvgImageProcessingPlan, type AvgImageProcessingReceiptV1, type AvgProcessedImagePayloadV1,
   type AvgProcessedImageArtifactFieldsV1 } from './image-processing-contract'
 import type { AvgVisualProductionRequirementV1 } from './media-production-contract'
+import { assertAvgImageRegionCompositeReceiptV3, type AvgImageRegionCompositeReceiptV3 } from './image-region-composite-receipt'
+import { parseAvgProcessedImagePayloadV3, avgRegionCompositeRightsV3, type AvgProcessedImagePayloadV3 } from './image-processing-contract-v3'
+import { readAvgRegionRecipeReferenceV1 } from './image-region-composite-binding'
+import { parseAvgVisualProductionRequirementV2 } from './media-production-contract-v2'
 
 export const AVG_IMAGE_PROCESSOR_V2 = 'storyforge.avg.local-foreground-canvas.v2' as const
 export interface AvgForegroundProcessingObservationV1 extends AvgForegroundPixelObservationV1 {
@@ -39,13 +43,13 @@ export interface AvgImageProcessingReceiptV2 extends Omit<AvgImageProcessingRece
   processor: typeof AVG_IMAGE_PROCESSOR_V2
   foreground: AvgForegroundProcessingObservationAny
 }
-export type AvgImageProcessingReceipt = AvgImageProcessingReceiptV1 | AvgImageProcessingReceiptV2
+export type AvgImageProcessingReceipt = AvgImageProcessingReceiptV1 | AvgImageProcessingReceiptV2 | AvgImageRegionCompositeReceiptV3
 export interface AvgProcessedImagePayloadV2 extends Omit<AvgProcessedImagePayloadV1, 'version' | 'recipe' | 'receipt'> {
   version: 2
   recipe: AvgImageProcessingRecipeV2
   receipt: AvgImageProcessingReceiptV2
 }
-export type AvgProcessedImagePayload = AvgProcessedImagePayloadV1 | AvgProcessedImagePayloadV2
+export type AvgProcessedImagePayload = AvgProcessedImagePayloadV1 | AvgProcessedImagePayloadV2 | AvgProcessedImagePayloadV3
 const same = (a: unknown, b: unknown) => canonicalProductProductionJsonV2(a) === canonicalProductProductionJsonV2(b)
 
 /** Geometry projection only, without legacy execution, receipt or Run authority. */
@@ -116,7 +120,7 @@ export async function assertAvgImageProcessingReceiptV2(recipeInput: AvgImagePro
   return receipt
 }
 export async function assertAvgImageProcessingReceipt(recipe: AvgImageProcessingRecipe, value: unknown): Promise<AvgImageProcessingReceipt> {
-  return recipe.version === 1 ? assertAvgImageProcessingReceiptV1(recipe, value) : assertAvgImageProcessingReceiptV2(recipe, value)
+  return recipe.version === 1 ? assertAvgImageProcessingReceiptV1(recipe, value) : recipe.version === 2 ? assertAvgImageProcessingReceiptV2(recipe, value) : assertAvgImageRegionCompositeReceiptV3(recipe, value)
 }
 export async function parseAvgProcessedImagePayloadV2(value: unknown): Promise<AvgProcessedImagePayloadV2> {
   const r = avgRecord(avgProtocolBody(value), ['schema', 'version', 'requirementKey', 'raw', 'sourceAsset', 'recipe', 'receipt'], 'foreground processed image')
@@ -130,6 +134,7 @@ export async function parseAvgProcessedImagePayload(value: unknown): Promise<Avg
   const body = avgProtocolBody(value), version = body && typeof body === 'object' && 'version' in body ? body.version : null
   if (version === 1) return parseAvgProcessedImagePayloadV1(body)
   if (version === 2) return parseAvgProcessedImagePayloadV2(body)
+  if (version === 3) return parseAvgProcessedImagePayloadV3(body)
   throw new Error('[avg-process] 未登记的加工工件版本')
 }
 export async function assertAvgProcessedImageArtifact(brief:ProductProductionBriefV3,row:AvgProcessedImageArtifactFieldsV1){
@@ -145,7 +150,12 @@ export async function assertAvgProcessedImageArtifactFromDefinition<R extends Om
   if (payload.version === 2) {
     if (entry?.recipe.version !== 2 || !requirement) throw new Error('[avg-process] 缺少准确前景配方和冻结需求')
     assertAvgForegroundRequirementBinding(entry.recipe.foreground, requirement)
+  } else if(payload.version===3) {
+    if(entry?.recipe.version!==3||!requirement||!('references'in requirement)||!Array.isArray(requirement.references))throw new Error('[avg-composite] 合成缺少准确 V5 配方和身份参考')
+    const reference=readAvgRegionRecipeReferenceV1(entry.recipe,parseAvgVisualProductionRequirementV2(requirement))
+    if(!same(reference,payload.inputEvidence.base.reference))throw new Error('[avg-composite] 合成输入与当前冻结身份参考不一致')
   }
-  const metadata = assertAvgProcessedImageArtifactMetadataV1({ payload, entry, requirement, row, processor: payload.receipt.processor })
+  const metadata = assertAvgProcessedImageArtifactMetadataV1({ payload, entry, requirement, row, processor: payload.receipt.processor,
+    ...(payload.version===3?{rights:avgRegionCompositeRightsV3(payload)}:{}) })
   return { payload, ...metadata }
 }

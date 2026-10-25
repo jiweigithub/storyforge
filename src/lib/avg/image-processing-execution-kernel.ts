@@ -7,6 +7,7 @@ import type { ProductProductionTaskExecutionInputV1,ProductProductionTaskExecuti
 import { processAvgImageBytesV1,processAvgImageBytesV2 } from './image-processing'
 import type { AvgImageProcessingPlan, AvgImageProcessingRequirement } from './image-processing-contract'
 import { parseAvgProcessedImagePayload } from './image-processing-contract-v2'
+import { executeAvgBoundedRegionCompositionV3 } from './image-region-composite-execution'
 
 /** Physical execution only. The versioned caller proves the exact original
  * Brief/compiled task/raw/recipe/claim, then rechecks them after processing.
@@ -17,7 +18,9 @@ export async function executeAvgBoundedImageProcessingV1(input:{
   requirement:AvgImageProcessingRequirement;
   recheck:()=>Promise<void>;quality:(receiptHash:string)=>Record<string,unknown>
 }):Promise<ProductProductionTaskExecutionResultV1>{
-  const {request,raw,entry,task}=input,blob=raw.row.blobObjectId===null?null:await db.mediaBlobObjects.get(raw.row.blobObjectId)
+  const {request,raw,entry,task}=input
+  if(entry.recipe.version===3)return executeAvgBoundedRegionCompositionV3(input)
+  const blob=raw.row.blobObjectId===null?null:await db.mediaBlobObjects.get(raw.row.blobObjectId)
   if(!blob||!await assertRecordInScope(request.scope,'mediaBlobObjects',blob,{owner:'work'})||blob.contentHash!==raw.asset.contentHash
     ||blob.mimeType!==raw.asset.mimeType||blob.byteSize!==raw.asset.byteSize)throw new Error('[avg-process] 加工原图缺少准确同作品字节')
   if(input.requirement.requirementKey!==entry.requirementKey)throw new Error('[avg-process] 加工需求与准确配方目标不一致')

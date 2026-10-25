@@ -32,6 +32,7 @@ export function parseAvgVisualPlanningBriefV4(value: unknown): AvgVisualPlanning
   if (r.schema !== 'storyforge.avg.visual-planning-brief' || r.version !== 4) throw new Error('[avg-visual-plan] 专业视觉 Brief 版本无效')
   const assembly = parseAvgAssemblyBriefV1(r.assembly), scope = parseAvgVisualPlanningScopeV1(r.scope)
   const imageProcessing=hasProcessing?parseAvgImageProcessingPlan(r.imageProcessing):undefined
+  if(imageProcessing?.version===3)throw new Error('[avg-composite] V4 Brief 不能解释 V3 局部合成方案')
   if(imageProcessing)assertAvgImageProcessingRequirements(imageProcessing,scope.templates.map(t=>({...t.parameters,invariants:t.requiredDetails,forbiddenDepictions:t.forbiddenDepictions})))
   const imageBinding=parseAvgVisualImageBindingV4(r.imageBinding)
   assertAvgVisualPlanningAssemblyTargetsV1(assembly,scope)

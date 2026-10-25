@@ -54,7 +54,7 @@ export default function ImageProcessingPlanPanel({scope,workspace,draftRevision,
     if(dirty&&editRevision!==revisionKey)throw new Error('[avg-process] 编辑期间草稿或专业方案已变化，请撤销未保存的加工后重新核对')
     const entries:Array<AvgImageProcessingPlan['entries'][number]>=(plan?.entries??[]).filter(e=>e.requirementKey!==key)
     if(!remove)entries.push({requirementKey:key,recipe})
-    const next=entries.length?parseAvgImageProcessingPlan({schema:'storyforge.avg.image-processing-plan',version:entries.some(e=>e.recipe.version===2)?2:1,entries}):null
+    const next=entries.length?parseAvgImageProcessingPlan({schema:'storyforge.avg.image-processing-plan',version:entries.some(e=>e.recipe.version===3)?3:entries.some(e=>e.recipe.version===2)?2:1,entries}):null
     if(visual){
       const {prepareAvgVisualImageProcessingV4,prepareAvgVisualImageProcessingV5}=await import('../../lib/avg/visual-processing-workspace')
       await (visual.version===5?prepareAvgVisualImageProcessingV5:prepareAvgVisualImageProcessingV4)({scope,productionId:details!.production.id!,expectedBriefHash:details!.brief!.briefHash,expectedDraftRevision:draftRevision,
@@ -67,7 +67,7 @@ export default function ImageProcessingPlanPanel({scope,workspace,draftRevision,
     {!editAllowed&&<p>当前制作方案已冻结。修改配方前请先保留当前版本，并在制作页明确准备新版本。</p>}
     <fieldset className="avg-form" disabled={disabled||!editAllowed}>
       <label>加工目标<select aria-label="加工目标" value={key} disabled={dirty} onChange={e=>setKey(e.target.value)}>{requirements.map(r=><option key={r.requirementKey} value={r.requirementKey}>{r.name}</option>)}</select></label>
-      {(canEdit||recipe.version===2)&&supportsAvgForegroundRequirementV1(r)&&<label><input type="checkbox" checked={recipe.version===2} onChange={e=>{
+      {recipe.version!==3&&(canEdit||recipe.version===2)&&supportsAvgForegroundRequirementV1(r)&&<label><input type="checkbox" checked={recipe.version===2} onChange={e=>{
         if(e.target.checked)edit({...recipe,version:2,background:null,foreground:{schema:'storyforge.avg.foreground-policy',version:1,
           method:'reserved-magenta',reservedColor:'#FF00FF',subjectUsesReservedColor:false,algorithm:DECLARED_MAGENTA_ALPHA_MATTING_ID_V1,declaration:''}})
         else if(recipe.version===2){const {foreground:_foreground,...canvas}=recipe;edit({...canvas,version:1})}
@@ -101,6 +101,7 @@ export default function ImageProcessingPlanPanel({scope,workspace,draftRevision,
         {recipe.foreground.version===6&&<p>仅适用于均匀亮灰底色、居中且不透明的单个人物。先检查原图背景，再将与画面外缘连通的亮灰区域从分割和边缘细化中排除；背景不稳定或需要削减过多主体时会拒绝加工并保留原件。肤色、发丝、白衣和镂空处仍须对照原图检查，评审通过后才能独立选用。</p>}
         <label>{sam2?'本机模型处理与作者审阅声明':'保留底色与主体用色声明'}<textarea maxLength={2000} value={recipe.foreground.declaration}
           onChange={e=>{if(recipe.version===2)edit({...recipe,foreground:{...recipe.foreground,declaration:e.target.value}})}}/></label></>}
+      {recipe.version===3?<p>局部表情合成使用原身份参考 v{recipe.baseReference.assetVersion}，画布 {recipe.width} × {recipe.height}，已确认区域 {recipe.regions.length} 项。加工只改变这些表情区域，保持底图画布、透明度和区域外像素。</p>:<>
       <label>加工画布宽<input type="number" min={32} max={4096} value={recipe.width} onChange={e=>edit({...recipe,width:Number(e.target.value)})}/></label>
       <label>加工画布高<input type="number" min={32} max={4096} value={recipe.height} onChange={e=>edit({...recipe,height:Number(e.target.value)})}/></label>
       <label>画布适配<select value={recipe.fit} onChange={e=>edit({...recipe,fit:e.target.value as 'contain'|'cover'})}><option value="contain">完整放入并留边</option><option value="cover">填满画布并裁去超出部分</option></select></label>
@@ -110,6 +111,7 @@ export default function ImageProcessingPlanPanel({scope,workspace,draftRevision,
       {recipe.crop&&(['x','y','width','height'] as const).map((field,index)=><label key={field}>{['裁切左侧（%）','裁切顶部（%）','裁切宽度（%）','裁切高度（%）'][index]}<input type="number" min={field==='width'||field==='height'?0.01:0} max={100} step={0.01} value={recipe.crop![field]/100} onChange={e=>edit({...recipe,crop:{...recipe.crop!,[field]:Math.round(Number(e.target.value)*100)}})}/></label>)}
       <label><input type="checkbox" checked={!!recipe.background} disabled={recipe.version===2} onChange={e=>edit({...recipe,background:e.target.checked?{red:255,green:255,blue:255,alpha:255}:null})}/>明确填充画布底色</label>
       {recipe.background&&(['red','green','blue','alpha'] as const).map((field,index)=><label key={field}>{['底色红','底色绿','底色蓝','底色不透明度（0～255）'][index]}<input type="number" min={0} max={255} value={recipe.background![field]} onChange={e=>edit({...recipe,background:{...recipe.background!,[field]:Number(e.target.value)}})}/></label>)}
+      </>}
       <label>允许的加工与用途说明<textarea value={recipe.declaration} maxLength={2000} onChange={e=>edit({...recipe,declaration:e.target.value})}/></label>
       <p>最终选图仍须满足该需求的 {r.width} × {r.height} 最小尺寸、画幅和透明要求；裁掉主体或放大变糊须记录返修。</p>
       <button className="lf-action" disabled={!dirty||!recipe.declaration.trim()||recipe.version===2&&!recipe.foreground.declaration.trim()} onClick={()=>save()}>保存本项加工配方</button>

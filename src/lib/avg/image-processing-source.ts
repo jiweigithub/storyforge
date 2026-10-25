@@ -13,6 +13,8 @@ import { readAvgImageRecoverySourceV1 } from './media-recovery'
 import { parseProductProductionBriefV3 } from '../product-production/contracts'
 import { readAvgImageDefinitionV3 } from './media-production-definition'
 import type { AvgVisualProductionRequirementV1 } from './media-production-contract'
+import { readAvgRegionCompositeInputsV1 } from './image-region-composite-source'
+import { verifyAvgRegionCompositeWorkerV1 } from './image-region-composite-worker-client'
 
 export interface AvgInspectedProcessedImageV1<R extends Omit<AvgVisualProductionRequirementV1,'references'>=AvgVisualProductionRequirementV1> {
   payload:AvgProcessedImagePayload;asset:FrozenRuntimeMediaAssetV2;requirement:R
@@ -50,6 +52,25 @@ export async function inspectAvgProcessedImageBytesV1<R extends Omit<AvgVisualPr
   const blob=input.processed.blobObjectId===null?null:await db.mediaBlobObjects.get(input.processed.blobObjectId)
   if(!blob||!await assertRecordInScope(input.scope,'mediaBlobObjects',blob,{owner:'work'})||blob.contentHash!==image.asset.contentHash
     ||blob.mimeType!==image.asset.mimeType||blob.byteSize!==image.asset.byteSize)throw new Error('[avg-process] 加工图缺少同作品准确字节')
+  if(image.payload.version===3){
+    const payload=image.payload
+    const verify=async()=>{
+      const build=await db.productBuilds.get(input.raw.buildId)
+      if(!build)throw new Error('[avg-composite] 合成输入 Build 缺失')
+      const stored=await db.productProductionBriefs.where('[productionId+revision]').equals([build.productionId,build.briefRevision]).first()
+      if(!stored)throw new Error('[avg-composite] 合成输入 Brief 缺失')
+      const brief=parseProductProductionBriefV3(stored.briefJson),plan=JSON.parse(build.planJson)
+      const production=await db.productProductions.get(build.productionId)
+      const historical=production?.currentBuildNumber!==build.buildNumber||build.controlEpoch!==input.raw.controlEpoch
+        ||['cancelled','failed','recovery-required','paused','preview-ready','release-ready','released'].includes(build.status)
+      const source=await readAvgRegionCompositeInputsV1({scope:input.scope,recipe:payload.recipe,
+        raw:{buildId:build.id!,artifactKey:input.raw.artifactKey,version:input.raw.version,contentHash:input.raw.contentHash},
+        source:historical?{mode:'historical',frozen:{expectedBuildRevision:build.stateRevision,expectedBriefHash:build.briefHash,expectedPlanHash:build.planHash,controlEpoch:plan.controlEpoch}}:{mode:'current',brief}})
+      if(canonicalProductProductionJsonV2(source.evidence)!==canonicalProductProductionJsonV2(payload.inputEvidence))throw new Error('[avg-composite] 合成来源与实际两输入证明不同')
+      await verifyAvgRegionCompositeWorkerV1({...source.input,data:await readVerifiedMediaBlobObjectData(blob),receipt:payload.receipt})
+    }
+    if(Dexie.currentTransaction)await Dexie.waitFor(Dexie.ignoreTransaction(verify),120_000);else await verify()
+  }
   const inspect=async()=>inspectAvgImageBytesV1({data:await readVerifiedMediaBlobObjectData(blob),...image.asset})
   const measured=Dexie.currentTransaction?await Dexie.waitFor(Dexie.ignoreTransaction(inspect),20_000):await inspect()
   if(measured.hasAlpha!==image.payload.receipt.output.hasAlpha)throw new Error('[avg-process] 加工回执与实际透明像素不符')

@@ -134,6 +134,7 @@ export async function processAvgImageBytesV2(input: AvgImageByteInput & { recipe
 export async function processAvgImageBytes(input: AvgImageByteInput & { recipe: AvgImageProcessingRecipe;
   frozenRequirement?: Parameters<typeof assertAvgForegroundRequirementBinding>[1]
 }) {
+  if(input.recipe.version===3)throw new Error('[avg-composite] 局部合成需要准确双输入来源与专用后台流程')
   if (input.recipe.version === 1) return processAvgImageBytesV1({ data: input.data, source: input.source, recipe: input.recipe, signal: input.signal })
   if (!input.frozenRequirement) throw new Error('[avg-process] 前景加工缺少准确冻结需求')
   return processAvgImageBytesV2({ data: input.data, source: input.source, recipe: input.recipe, signal: input.signal, frozenRequirement: input.frozenRequirement })

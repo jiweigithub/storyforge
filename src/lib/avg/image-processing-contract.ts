@@ -6,6 +6,8 @@ import { readAvgImageDefinitionV3 } from './media-production-definition'
 import type { AvgVisualProductionRequirementV1 } from './media-production-contract'
 import { parseAvgForegroundPolicy, compileAvgForegroundRequirement, assertAvgForegroundRequirementBinding,
   AVG_RESERVED_MAGENTA_INVARIANT_V1, AVG_RESERVED_MAGENTA_FORBIDDEN_V1, type AvgForegroundPolicy } from './image-foreground-contract'
+import { parseAvgImageRegionCompositeRecipeV3, type AvgImageRegionCompositeRecipeV3 } from './image-region-composite-contract'
+export type { AvgImageRegionCompositeRecipeV3 as AvgImageProcessingRecipeV3 } from './image-region-composite-contract'
 export { parseAvgForegroundPolicyV1, compileAvgForegroundRequirementV1, assertAvgForegroundRequirementBindingV1 } from './image-foreground-contract'
 export type { AvgForegroundPolicyV1 } from './image-foreground-contract'
 
@@ -31,13 +33,18 @@ export interface AvgImageProcessingRecipeV2 extends Omit<AvgImageProcessingRecip
   version: 2
   foreground: AvgForegroundPolicy
 }
-export type AvgImageProcessingRecipe = AvgImageProcessingRecipeV1 | AvgImageProcessingRecipeV2
+export type AvgLegacyImageProcessingRecipe = AvgImageProcessingRecipeV1 | AvgImageProcessingRecipeV2
+export type AvgImageProcessingRecipe = AvgLegacyImageProcessingRecipe | AvgImageRegionCompositeRecipeV3
 export interface AvgImageProcessingPlanV2 {
   schema: 'storyforge.avg.image-processing-plan'
   version: 2
+  entries: Array<{ requirementKey: string; recipe: AvgLegacyImageProcessingRecipe }>
+}
+export interface AvgImageProcessingPlanV3 {
+  schema: 'storyforge.avg.image-processing-plan'; version: 3
   entries: Array<{ requirementKey: string; recipe: AvgImageProcessingRecipe }>
 }
-export type AvgImageProcessingPlan = AvgImageProcessingPlanV1 | AvgImageProcessingPlanV2
+export type AvgImageProcessingPlan = AvgImageProcessingPlanV1 | AvgImageProcessingPlanV2 | AvgImageProcessingPlanV3
 export interface AvgImageProcessingGeometryV1 {
   source: { x: number; y: number; width: number; height: number }
   destination: { x: number; y: number; width: number; height: number }
@@ -101,6 +108,7 @@ export function parseAvgImageProcessingRecipe(value: unknown): AvgImageProcessin
   const version = body && typeof body === 'object' && 'version' in body ? body.version : null
   if (version === 1) return parseAvgImageProcessingRecipeV1(body)
   if (version === 2) return parseAvgImageProcessingRecipeV2(body)
+  if (version === 3) return parseAvgImageRegionCompositeRecipeV3(body)
   throw new Error('[avg-process] 未登记的加工配方版本')
 }
 export function parseAvgImageProcessingPlanV2(value: unknown): AvgImageProcessingPlanV2 {
@@ -108,16 +116,29 @@ export function parseAvgImageProcessingPlanV2(value: unknown): AvgImageProcessin
   if (r.schema !== 'storyforge.avg.image-processing-plan' || r.version !== 2) throw new Error('[avg-process] 未登记的前景加工方案')
   const entries = avgUnique(avgList(r.entries, 'processing.entries', value => {
     const e = avgRecord(value, ['requirementKey', 'recipe'], 'processing entry')
-    return { requirementKey: avgKey(e.requirementKey, 'processing.requirementKey'), recipe: parseAvgImageProcessingRecipe(e.recipe) }
+    const recipe = parseAvgImageProcessingRecipe(e.recipe)
+    if (recipe.version === 3) throw new Error('[avg-process] V2 方案不能解释局部合成配方')
+    return { requirementKey: avgKey(e.requirementKey, 'processing.requirementKey'), recipe }
   }, 8), e => e.requirementKey, 'processing entries')
   if (!entries.some(e => e.recipe.version === 2)) throw new Error('[avg-process] 前景加工方案必须包含明确的新版本配方')
   return { schema: r.schema, version: 2, entries }
+}
+export function parseAvgImageProcessingPlanV3(value: unknown): AvgImageProcessingPlanV3 {
+  const r = avgRecord(avgProtocolBody(value), ['schema', 'version', 'entries'], 'region composition plan')
+  if (r.schema !== 'storyforge.avg.image-processing-plan' || r.version !== 3) throw new Error('[avg-process] 未登记的局部合成方案')
+  const entries = avgUnique(avgList(r.entries, 'processing.entries', value => {
+    const e = avgRecord(value, ['requirementKey', 'recipe'], 'processing entry')
+    return { requirementKey: avgKey(e.requirementKey, 'processing.requirementKey'), recipe: parseAvgImageProcessingRecipe(e.recipe) }
+  }, 8), e => e.requirementKey, 'processing entries')
+  if (!entries.some(e => e.recipe.version === 3)) throw new Error('[avg-process] V3 方案必须含明确局部合成配方')
+  return { schema: r.schema, version: 3, entries }
 }
 export function parseAvgImageProcessingPlan(value: unknown): AvgImageProcessingPlan {
   const body = avgProtocolBody(value)
   const version = body && typeof body === 'object' && 'version' in body ? body.version : null
   if (version === 1) return parseAvgImageProcessingPlanV1(body)
   if (version === 2) return parseAvgImageProcessingPlanV2(body)
+  if (version === 3) return parseAvgImageProcessingPlanV3(body)
   throw new Error('[avg-process] 未登记的加工方案版本')
 }
 /** The same physical output constraints for each actual product definition;
@@ -130,7 +151,7 @@ function assertAvgImageProcessingCanvasRequirements(plan:AvgImageProcessingPlan,
     const r=requirements.find(r=>r.requirementKey===entry.requirementKey),p=entry.recipe
     if(!r)throw new Error('[avg-process] 加工缺少准确冻结需求')
     if(p.width<r.width||p.height<r.height||Math.abs((p.width/p.height)/(r.width/r.height)-1)>0.02)throw new Error('[avg-process] 加工画布不满足冻结需求的最小尺寸或画幅，请先修订配方')
-    if(r.alpha==='required'&&p.background?.alpha===255)throw new Error('[avg-process] 必需透明需求不能使用不透明底色填充')
+    if(r.alpha==='required'&&p.version!==3&&p.background?.alpha===255)throw new Error('[avg-process] 必需透明需求不能使用不透明底色填充')
   }
 }
 export type AvgImageProcessingRequirement = Pick<AvgVisualProductionRequirementV1,
@@ -142,6 +163,9 @@ export function assertAvgImageProcessingRequirements(plan:AvgImageProcessingPlan
   for(const {requirementKey,recipe} of plan.entries)if(recipe.version===2){
     const requirement=requirements.find(r=>r.requirementKey===requirementKey)!
     assertAvgForegroundRequirementBinding(recipe.foreground,requirement)
+  }else if(recipe.version===3){
+    const requirement=requirements.find(r=>r.requirementKey===requirementKey)!
+    if(requirement.mediaKind!=='character-expression')throw new Error('[avg-process] 局部合成只允许角色表情需求')
   }
 }
 
@@ -244,7 +268,7 @@ export type AvgProcessedImageArtifactFieldsV1=Pick<ProductBuildArtifactRecordV1,
   'artifactKey'|'kind'|'mediaKind'|'payloadJson'|'metadataJson'|'rightsJson'|'contentHash'|'mimeType'|'byteSize'|'blobObjectId'>
 export async function assertAvgProcessedImageArtifactV1(brief:ProductProductionBriefV3,row:AvgProcessedImageArtifactFieldsV1){
   const definition=readAvgImageDefinitionV3(brief),plan=definition.imageProcessing
-  if(plan?.version===2)throw new Error('[avg-process] V1加工读取不能解释前景方案')
+  if(plan&&plan.version!==1)throw new Error('[avg-process] V1加工读取不能解释新版本方案')
   return assertAvgProcessedImageArtifactFromDefinitionV1({...definition,imageProcessing:plan},row)
 }
 /** Pure payload/recipe/metadata checks. The caller supplies a separately
@@ -266,6 +290,7 @@ export function assertAvgProcessedImageArtifactMetadataV1<R extends Omit<AvgVisu
   requirement: R | undefined
   row: AvgProcessedImageArtifactFieldsV1
   processor: string
+  rights?: unknown
 }) {
   const { payload, entry, requirement, row, processor } = input
   if (!entry || !requirement || !same(entry.recipe, payload.recipe) || payload.sourceAsset.assetKey !== requirement.assetKey || payload.sourceAsset.kind !== requirement.mediaKind
@@ -275,7 +300,7 @@ export function assertAvgProcessedImageArtifactMetadataV1<R extends Omit<AvgVisu
   const expected = { ...payload.sourceAsset, version: payload.sourceAsset.version + 1, contentHash: output.contentHash, blobContentHash: output.contentHash,
     byteSize: output.byteSize, mimeType: output.mimeType, width: output.width, height: output.height, source: processor }
   if (!same(asset, expected) || row.contentHash !== output.contentHash || row.mimeType !== output.mimeType || row.byteSize !== output.byteSize
-    || !row.blobObjectId || !same(JSON.parse(row.rightsJson), { origin: 'local-processing', sourceContentHash: payload.raw.contentHash,
+    || !row.blobObjectId || !same(JSON.parse(row.rightsJson), input.rights ?? { origin: 'local-processing', sourceContentHash: payload.raw.contentHash,
       sourceLicense: payload.sourceAsset.license, declaration: entry.recipe.declaration })) throw new Error('[avg-process] 加工输出元数据或权利记录不一致')
   return { asset, requirement }
 }

@@ -1,7 +1,7 @@
 import { describe,expect,it } from 'vitest'
-import { clearUnusedAvgVisualConsumerSlotsV1,prepareAvgVisualPlanningSourceDraftV4 } from '../../src/lib/avg/visual-planning-scope-draft'
+import { clearUnusedAvgVisualConsumerSlotsV1,prepareAvgVisualPlanningSourceDraftV4,prepareAvgVisualPlanningSourceDraftV5 } from '../../src/lib/avg/visual-planning-scope-draft'
 import { avgVisualPlanningTemplateRequirementsV1 } from '../../src/lib/avg/visual-planning-contract'
-import { assertAvgMediaConsumerDeclarationsV1,validateAvgVisualProductionBatchSourceV1 } from '../../src/lib/avg/media-source'
+import { assertAvgMediaConsumerDeclarationsV1,hashAvgMediaSourceInputV1,validateAvgVisualProductionBatchSourceV1 } from '../../src/lib/avg/media-source'
 import { avgProfessionalFamilyScopeFixtureV4 } from '../helpers/avg-professional-family-scope-fixture'
 import { avgInventoryMediaFixture } from '../helpers/avg-inventory-media-fixture'
 
@@ -62,6 +62,16 @@ describe('AVG professional family source draft prepares only exact prospective c
 
 
 describe('retiring an exact visual scope clears only its unused item proposals',()=>{
+  it('freezes the V5 expression source after exact unused item declarations are retired',async()=>{
+    const first=avgProfessionalFamilyScopeFixtureV4('v5-retired'),planning={...first.planning,version:2 as const}
+    const original=structuredClone(first.workspace),prepared=await prepareAvgVisualPlanningSourceDraftV5({workspace:first.workspace,planning})
+    expect(prepared.scope.sourceInputHash).not.toBe(await hashAvgMediaSourceInputV1(original))
+    const before=structuredClone(prepared.workspace),next=await prepareAvgVisualPlanningSourceDraftV5({workspace:prepared.workspace,
+      planning:{...planning,templates:planning.templates.filter(t=>t.parameters.mediaKind==='character-expression')},previous:prepared.scope})
+    expect(next.workspace).toEqual(original)
+    expect(next.scope.sourceInputHash).toBe(await hashAvgMediaSourceInputV1(original))
+    expect(prepared.workspace).toEqual(before)
+  })
   it('clears base and conditional display proposals without mutating inputs or gameplay',async()=>{
     const input=avgProfessionalFamilyScopeFixtureV4('retire')
     if(input.workspace.systemPlan.version!==2)throw new Error('Expected native inventory')

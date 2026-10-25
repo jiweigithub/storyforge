@@ -747,6 +747,16 @@ export async function prepareAvgAssemblyBriefV1(input: { scope: WorkspaceScope; 
   let visualAdapter:import('./media-reference-contract').AvgImageAdapterIdV4='agnes.image-2.1-flash.v1'
   if(input.visualPlanning){
     const existing=draft.productionId?await readProductProductionDetailsV1(input.scope,draft.productionId,['avg']):null
+    let retired:ProductProductionBriefV3['avgVisualPlanning']
+    if(existing?.build&&!existing.build.previewHash){
+      const build=existing.build,row=existing.briefHistory.find(r=>r.revision===build.briefRevision&&r.briefHash===build.briefHash)
+      const old=row?parseProductProductionBriefV3(row.briefJson).avgVisualPlanning:undefined
+      if(old){
+        if(!['cancelled','failed','recovery-required'].includes(build.status))throw new Error('[avg-visual-plan] 原制作仍在执行，不能撤销其物件显示声明')
+        await assertAvgVisualPlanningRestartKnownV4(input.scope,build)
+        retired=old
+      }
+    }
     if(existing?.brief){
       const saved=parseProductProductionBriefV3(existing.brief.briefJson).avgVisualPlanning
       if(saved){
@@ -756,8 +766,8 @@ export async function prepareAvgAssemblyBriefV1(input: { scope: WorkspaceScope; 
     }
     const source=await import('./visual-planning-scope-draft')
     workspace=input.visualPlanning.version===2
-      ?(await source.prepareAvgVisualPlanningSourceDraftV5({workspace,planning:input.visualPlanning,previous:existing?unstartedAvgVisualPlanningScopesV5(existing):[]})).workspace
-      :(await source.prepareAvgVisualPlanningSourceDraftV4({workspace,planning:input.visualPlanning,previous:existing?unstartedAvgVisualPlanningScopes(existing):[]})).workspace
+      ?(await source.prepareAvgVisualPlanningSourceDraftV5({workspace,planning:input.visualPlanning,previous:[...(existing?unstartedAvgVisualPlanningScopesV5(existing):[]),...(retired?.version===5?[retired.scope]:[])]})).workspace
+      :(await source.prepareAvgVisualPlanningSourceDraftV4({workspace,planning:input.visualPlanning,previous:[...(existing?unstartedAvgVisualPlanningScopes(existing):[]),...(retired?.version===4?[retired.scope]:[])]})).workspace
   }
   const planningServices=input.visualPlanning?await import('./visual-planning-workspace'):null
   const visual=input.visualPlanning?(input.visualPlanning.version===2
@@ -902,7 +912,7 @@ export async function prepareAvgAssemblyBriefV1(input: { scope: WorkspaceScope; 
       }
       // A later stopped batch may have no selected output of its own. The
       // source reader above still proves every saved older choice and pixel.
-      if(input.visualStageContinuation&&!inherited.presentation.inheritedImages?.some(entry=>(entry.source.version===2||entry.source.version===3||entry.source.version===4||entry.source.version===5||entry.source.version===6||entry.source.version===7||entry.source.version===8)
+      if(input.visualStageContinuation&&!inherited.presentation.inheritedImages?.some(entry=>(entry.source.version===2||entry.source.version===3||entry.source.version===4||entry.source.version===5||entry.source.version===6||entry.source.version===7||entry.source.version===8||entry.source.version===9)
         &&entry.source.productionKey===details.production.productionKey&&entry.source.raw.buildNumber<=details.build!.buildNumber))throw new Error('[avg-visual-retain] 当前演出没有准确已采用的专业旧图')
       const continuationCommandId=input.visualStageContinuation?`avg.keep.${await hashProductProductionValueV2({schema:'storyforge.avg.visual-stage-continuation',version:1,
         productionKey:details.production.productionKey,buildNumber:details.build.buildNumber,briefHash:details.build.briefHash,planHash:details.build.planHash,workspace:inherited})}`:undefined

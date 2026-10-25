@@ -94,6 +94,8 @@ const entrypoints = [
   // AVG-04A.27a.1 is an experimental headless pixel/straight-PNG foundation.
   // No formal Plan, producer/adoption or UI admission is enabled by this API.
   'src/lib/avg/image-region-composite.ts',
+  // Fixed dedicated compute/verification bootstrap, loaded through new Worker.
+  'src/lib/avg/image-region-composite.worker.ts',
   // AVG foreground processing starts this dedicated Worker through a fixed
   // new URL(..., import.meta.url), not a main-window module import.
   'src/lib/avg/image-foreground.worker.ts',

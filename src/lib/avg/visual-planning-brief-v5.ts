@@ -5,6 +5,7 @@ import { assertAvgVisualPlanningAssemblyTargetsV1,parseAvgVisualImageBindingV4,a
 import { assertAvgImageProcessingRequirements,parseAvgImageProcessingPlan } from './image-processing-contract'
 import { parseAvgVisualRawReuseSourcesV5,type AvgVisualRawReuseSourceV5 } from './visual-image-reuse-contract'
 import { parseAvgVisualProposalReuseSourcesV5,type AvgVisualProposalReuseSourceV5 } from './visual-planning-reuse-contract'
+import { readAvgRegionRecipeReferenceV1 } from './image-region-composite-binding'
 
 /** V5 reuses only a separately proved V5/raw2 source. V4 proof packets remain
  * structurally incompatible and cannot claim the new per-reference policy. */
@@ -22,6 +23,11 @@ export function parseAvgVisualPlanningBriefV5(value:unknown):AvgVisualPlanningBr
   assertAvgVisualPlanningAssemblyTargetsV1(assembly,scope)
   const imageProcessing=hasProcessing?parseAvgImageProcessingPlan(r.imageProcessing):undefined
   if(imageProcessing)assertAvgImageProcessingRequirements(imageProcessing,scope.templates.map(t=>({...t.parameters,invariants:t.requiredDetails,forbiddenDepictions:t.forbiddenDepictions})))
+  for(const entry of imageProcessing?.entries??[])if(entry.recipe.version===3){
+    const template=scope.templates.find(t=>t.parameters.requirementKey===entry.requirementKey)!
+    readAvgRegionRecipeReferenceV1(entry.recipe,{mediaKind:template.parameters.mediaKind,
+      references:scope.referenceCatalog.filter(r=>template.allowedReferenceKeys.includes(r.referenceKey)).map(r=>r.reference)})
+  }
   const rawReuse=hasReuse?parseAvgVisualRawReuseSourcesV5(r.rawReuse,scope.templates.map(t=>t.parameters.requirementKey)):undefined
   const proposalReuse=hasProposalReuse?parseAvgVisualProposalReuseSourcesV5(r.proposalReuse,scope):undefined
   return {schema:r.schema,version:5,assembly,scope,imageBinding,...(imageProcessing?{imageProcessing}:{}),...(proposalReuse?{proposalReuse}:{}),...(rawReuse?{rawReuse}:{})}

@@ -3,6 +3,7 @@ import { avgHash, avgKey, avgNumber, avgRecord } from './protocol-validation'
 import { parseAvgRetainedRawProofV1, type AvgRetainedRawProofV1 } from './media-recovery-contract'
 import { parseAvgGeneratedReferenceSourceV4,parseAvgLocalProcessingProducerProofV1,type AvgGeneratedReferenceSourceV4 } from './visual-processed-source-contract'
 import { parseAvgVisualRawReuseSourceV5,type AvgVisualRawReuseSourceV5 } from './visual-image-reuse-contract'
+import { parseAvgGeneratedReferenceSourceV9, type AvgGeneratedReferenceSourceV9 } from './visual-region-source-contract'
 
 /** Portable origin, never a host-local Build/Run/Blob locator. Outbound and
  * derivative consent still belong to each later reference request. */
@@ -79,7 +80,7 @@ export interface AvgGeneratedReferenceSourceV7 {
 export interface AvgGeneratedReferenceSourceV8 extends Omit<AvgGeneratedReferenceSourceV7,'version'> {
   version:8;processing:AvgGeneratedReferenceSourceV4['processing']
 }
-export type AvgGeneratedImageSource=AvgGeneratedReferenceSourceV1|AvgGeneratedReferenceSourceV2|AvgGeneratedReferenceSourceV3|AvgGeneratedReferenceSourceV4|AvgGeneratedReferenceSourceV5|AvgGeneratedReferenceSourceV6|AvgGeneratedReferenceSourceV7|AvgGeneratedReferenceSourceV8
+export type AvgGeneratedImageSource=AvgGeneratedReferenceSourceV1|AvgGeneratedReferenceSourceV2|AvgGeneratedReferenceSourceV3|AvgGeneratedReferenceSourceV4|AvgGeneratedReferenceSourceV5|AvgGeneratedReferenceSourceV6|AvgGeneratedReferenceSourceV7|AvgGeneratedReferenceSourceV8|AvgGeneratedReferenceSourceV9
 
 /** Structural original HTTP proof only. Every consumer must independently
  * verify the actual portable producer and bytes; parsing grants no use. */
@@ -199,6 +200,7 @@ export function parseAvgGeneratedReferenceSourceV8(value:unknown):AvgGeneratedRe
 }
 
 export function parseAvgGeneratedImageSource(value:unknown):AvgGeneratedImageSource {
+  if(value&&typeof value==='object'&&'version'in value&&value.version===9)return parseAvgGeneratedReferenceSourceV9(value)
   if(value&&typeof value==='object'&&'version'in value&&value.version===8)return parseAvgGeneratedReferenceSourceV8(value)
   if(value&&typeof value==='object'&&'version'in value&&value.version===7)return parseAvgGeneratedReferenceSourceV7(value)
   if(value&&typeof value==='object'&&'version'in value&&value.version===6)return parseAvgGeneratedReferenceSourceV6(value)

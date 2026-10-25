@@ -30,6 +30,7 @@ export async function executeAvgImageProcessingTaskV1(input:ProductProductionTas
     }
     const raw=await readRaw(),blob=raw.row.blobObjectId===null?null:await db.mediaBlobObjects.get(raw.row.blobObjectId)
     if(!blob||!await assertRecordInScope(input.scope,'mediaBlobObjects',blob,{owner:'work'})||blob.contentHash!==raw.asset.contentHash)throw new Error('[avg-process] 原图字节缺失或跨作品')
+    if(entry.recipe.version===3)throw new Error('[avg-composite] 旧制作执行器不能解释双输入局部合成')
     const pixels={data:await readVerifiedMediaBlobObjectData(blob),source:{contentHash:raw.asset.contentHash,mimeType:raw.asset.mimeType,width:raw.asset.width!,height:raw.asset.height!},signal:input.signal}
     const result=entry.recipe.version===1?await processAvgImageBytesV1({...pixels,recipe:entry.recipe})
       :await processAvgImageBytesV2({...pixels,recipe:entry.recipe,frozenRequirement:raw.payload.requirement})

@@ -12,6 +12,8 @@ import { parseAvgGeneratedReferenceSourceV1, parseAvgGeneratedReferenceSourceV2,
 import { AVG_IMAGE_REFERENCE_CAPABILITY_V1, type AvgMediaReferenceV1 } from './media-reference-contract'
 import { parseAvgGeneratedReferenceSourceV4 } from './visual-processed-source-contract'
 import { parseAvgMediaReferencesV2, type AvgMediaReferenceV2 } from './media-reference-contract-v2'
+import { parseAvgGeneratedReferenceSourceV9 } from './visual-region-source-contract'
+import { parseAvgImageRegionCompositeReceiptV3 } from './image-region-composite-receipt'
 
 type Evidence = Awaited<ReturnType<typeof readAvgAdoptedGeneratedReferenceChoiceV1>>
 const sourceOf = (e: Evidence) => parseAvgGeneratedReferenceSourceV1({ schema:'storyforge.avg.generated-reference-source',version:1,
@@ -79,17 +81,31 @@ const sourceOfV5=(e:Awaited<ReturnType<typeof readAvgAdoptedGeneratedReferenceCh
   schema:'storyforge.avg.generated-reference-source',version:5,productionKey:e.productionKey,requirementKey:e.choice.requirementKey,
   raw:e.rawProof,compilation:e.compilation,choice:{...e.artifact,authorReceiptHash:e.authorReceiptHash},review:e.review})
 
-const sourceOfProcessedV5=(e:Awaited<ReturnType<typeof readAvgAdoptedProcessedVisualChoiceV5>>)=>parseAvgGeneratedReferenceSourceV6({
+const sourceOfProcessedV5=(e:Awaited<ReturnType<typeof readAvgAdoptedProcessedVisualChoiceV5>>)=>{
+  if(JSON.parse(e.image.payloadJson).version===3)throw new Error('[avg-composite] 旧来源6不能解释局部合成图')
+  return parseAvgGeneratedReferenceSourceV6({
   schema:'storyforge.avg.generated-reference-source',version:6,productionKey:e.productionKey,requirementKey:e.choice.requirementKey,
-  raw:e.rawProof,processing:e.processingProof,compilation:e.compilation,choice:{...e.artifact,authorReceiptHash:e.authorReceiptHash},review:e.review})
+  raw:e.rawProof,processing:e.processingProof,compilation:e.compilation,choice:{...e.artifact,authorReceiptHash:e.authorReceiptHash},review:e.review})}
 
 const sourceOfRevalidatedV5=(e:Awaited<ReturnType<typeof readAvgAdoptedRevalidatedImageChoiceV5>>)=>parseAvgGeneratedReferenceSourceV7({
   schema:'storyforge.avg.generated-reference-source',version:7,productionKey:e.productionKey,requirementKey:e.choice.requirementKey,
   raw:e.rawProof,original:e.rawReuseSource,compilation:e.compilation,choice:{...e.artifact,authorReceiptHash:e.authorReceiptHash},review:e.review})
-const sourceOfProcessedRevalidatedV5=(e:Awaited<ReturnType<typeof readAvgAdoptedProcessedVisualChoiceV5>>)=>parseAvgGeneratedReferenceSourceV8({
+const sourceOfProcessedRevalidatedV5=(e:Awaited<ReturnType<typeof readAvgAdoptedProcessedVisualChoiceV5>>)=>{
+  if(JSON.parse(e.image.payloadJson).version===3)throw new Error('[avg-composite] 旧来源8不能解释局部合成图')
+  return parseAvgGeneratedReferenceSourceV8({
   schema:'storyforge.avg.generated-reference-source',version:8,productionKey:e.productionKey,requirementKey:e.choice.requirementKey,
   raw:e.rawProof,original:e.rawReuseSource,processing:e.processingProof,compilation:e.compilation,
-  choice:{...e.artifact,authorReceiptHash:e.authorReceiptHash},review:e.review})
+  choice:{...e.artifact,authorReceiptHash:e.authorReceiptHash},review:e.review})}
+const sourceOfComposedV5=(e:Awaited<ReturnType<typeof readAvgAdoptedProcessedVisualChoiceV5>>)=>{
+  const payload=JSON.parse(e.image.payloadJson)
+  if(payload.version!==3)throw new Error('[avg-composite] 来源9要求准确局部合成图')
+  const receipt=parseAvgImageRegionCompositeReceiptV3(payload.receipt)
+  return parseAvgGeneratedReferenceSourceV9({schema:'storyforge.avg.generated-reference-source',version:9,
+    productionKey:e.productionKey,requirementKey:e.choice.requirementKey,raw:e.rawProof,original:e.rawReuseSource??null,
+    processing:e.processingProof,compilation:e.compilation,choice:{...e.artifact,authorReceiptHash:e.authorReceiptHash},review:e.review,
+    composition:{recipeHash:receipt.recipeHash,processingReceiptHash:receipt.receiptHash,baseReferenceHash:receipt.inputProof.baseReferenceHash,
+      baseGeneratedSourceHash:receipt.inputProof.baseGeneratedSourceHash,inputProofHash:receipt.inputProof.inputProofHash}})
+}
 
 const sourceOfRevalidatedV4=(e:Awaited<ReturnType<typeof readAvgAdoptedRevalidatedImageChoiceV4>>)=>parseAvgGeneratedReferenceSourceV3({
   schema:'storyforge.avg.generated-reference-source',version:3,productionKey:e.productionKey,requirementKey:e.choice.requirementKey,
@@ -111,7 +127,7 @@ export async function prepareAvgAdoptedGeneratedImageV2(input:{scope:WorkspaceSc
     if(JSON.parse(brief.briefJson).avgVisualPlanning.imageProcessing?.entries.some((e:{requirementKey:string})=>row.artifactKey===`avg.media.choice.${e.requirementKey}`)){
       const evidence=await readAvgAdoptedProcessedVisualChoiceV5({scope,buildId:row.buildId,controlEpoch:row.controlEpoch,
         artifactKey:row.artifactKey,version:row.version,contentHash:row.contentHash})
-      return {asset:evidence.choice.asset,source:evidence.rawReuseSource?sourceOfProcessedRevalidatedV5(evidence):sourceOfProcessedV5(evidence),
+      return {asset:evidence.choice.asset,source:JSON.parse(evidence.image.payloadJson).version===3?sourceOfComposedV5(evidence):evidence.rawReuseSource?sourceOfProcessedRevalidatedV5(evidence):sourceOfProcessedV5(evidence),
         referenceOnly:evidence.choice.referenceOnly,sourceWorldContentHash:evidence.sourceWorldContentHash}
     }
     if(JSON.parse(brief.briefJson).avgVisualPlanning.rawReuse?.some((e:{requirementKey:string})=>row.artifactKey===`avg.media.choice.${e.requirementKey}`)){
@@ -149,6 +165,7 @@ export async function readAvgAdoptedGeneratedImageV2(input:{scope:WorkspaceScope
   if(!build?.id||build.briefHash!==source.raw.briefHash||build.planHash!==source.raw.planHash||!await assertRecordInScope(scope,'productBuilds',build,{owner:'work'}))throw new Error('[avg-visual-history] 原图版本已变化')
   const boundary={scope,buildId:build.id,controlEpoch:source.raw.controlEpoch,...source.choice}
   const {evidence,proved}=await(async()=>{
+    if(source.version===9){const e=await readAvgAdoptedProcessedVisualChoiceV5(boundary);return {evidence:e,proved:sourceOfComposedV5(e)}}
     if(source.version===6){const e=await readAvgAdoptedProcessedVisualChoiceV5(boundary);return {evidence:e,proved:sourceOfProcessedV5(e)}}
     if(source.version===8){const e=await readAvgAdoptedProcessedVisualChoiceV5(boundary);return {evidence:e,proved:sourceOfProcessedRevalidatedV5(e)}}
     if(source.version===7){const e=await readAvgAdoptedRevalidatedImageChoiceV5(boundary);return {evidence:e,proved:sourceOfRevalidatedV5(e)}}

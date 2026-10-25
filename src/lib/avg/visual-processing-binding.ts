@@ -24,9 +24,12 @@ export async function inspectAvgVisualProcessingBinding<R extends Omit<AvgVisual
   artifact:AvgProcessedImageArtifactFieldsV1&Pick<ProductBuildArtifactRecordV1,'qualityJson'|'requirementKey'>
 }){
   const {task,raw,artifact:a,version}=input,image=await assertAvgProcessedImageArtifactFromDefinition<R>(input.definition,a)
+  const composed=image.payload.version===3
+  if(composed&&version!==2)throw new Error('[avg-composite] 只有准确 V5 编译来源可以解释局部合成')
   const same=(a:unknown,b:unknown)=>canonicalProductProductionJsonV2(a)===canonicalProductProductionJsonV2(b)
   const q=avgRecord(JSON.parse(a.qualityJson),['schema','version','noProviderRequest','decoderVerified','processingReceiptHash','rawProducerReceiptHash',
-    'sourceCompilation','sourceRule','sourceScripts','sourceContextHash'],version===1?'V4 processing evidence':'V5 processing evidence')
+    'sourceCompilation','sourceRule','sourceScripts','sourceContextHash',...(composed?['inputProof']:[])],version===1?'V4 processing evidence':'V5 processing evidence')
+  const expectedQuality=avgVisualProcessingQuality(version,input.binding,raw,image.payload.receipt.receiptHash,avgHash(q.sourceContextHash,'processing context hash'))
   if(!task||task.kind!=='avg-media-image-process'||task.executionMode!=='deterministic'||task.contextProfile!==(version===1?'avg-visual-planning-v4':'avg-visual-planning-v5')
     ||task.skillId!==null||task.capabilityRequirementKeys.length||task.maxAttempts!==1||task.reuse!==null
     ||task.budgetReservation.modelCalls!==0||task.budgetReservation.mediaCalls!==0||task.budgetReservation.maximumCostUsd!==0
@@ -34,6 +37,6 @@ export async function inspectAvgVisualProcessingBinding<R extends Omit<AvgVisual
     ||!task.inputArtifactKeys.includes(raw.artifactKey)||!task.inputArtifactKeys.includes(input.binding.compilation.artifactKey)
     ||a.requirementKey!==null||!same(image.payload.raw,{artifactKey:raw.artifactKey,version:raw.version,contentHash:raw.contentHash,producerReceiptHash:raw.producerReceiptHash})
     ||!same(image.payload.sourceAsset,input.original)
-    ||!same(q,avgVisualProcessingQuality(version,input.binding,raw,image.payload.receipt.receiptHash,avgHash(q.sourceContextHash,'processing context hash'))))throw new Error('[avg-process] 加工图没有绑定准确原图、配方、当前编译与零调用任务')
+    ||!same(q,composed&&image.payload.version===3?{...expectedQuality,version:3,inputProof:image.payload.receipt.inputProof}:expectedQuality))throw new Error('[avg-process] 加工图没有绑定准确原图、配方、当前编译与零调用任务')
   return {...image,sourceContextHash:q.sourceContextHash as string}
 }

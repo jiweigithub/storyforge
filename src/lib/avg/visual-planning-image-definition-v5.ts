@@ -5,6 +5,8 @@ import { hashProductProductionValueV2 } from '../product-production/hash'
 import { verifyAcceptedProductBuildArtifactV1 } from '../product-production/artifact-store'
 import { readAvgConfirmedVisualArtifactsV5, readAvgSystemPlanForCompilationV1, readAvgFrozenVisualSourceInputsV4 } from './author-artifacts'
 import { assertAvgVisualPlanningProposalV2 } from './media-source-v2'
+import { readAvgRegionRecipeReferenceV1 } from './image-region-composite-binding'
+import { readAvgRegionCompositeBaseV1 } from './image-region-composite-source'
 import { AVG_VISUAL_REQUIREMENTS_ARTIFACT_V4 } from './visual-planning-plan'
 import { verifyAvgReferenceBytesV1 } from './media-reference-contract'
 import { readAvgDraftReferenceBytesV2 } from './editor-service'
@@ -39,6 +41,8 @@ export async function readAvgCompiledImageDefinitionV5(input: {
     || !same(JSON.parse(compilation.qualityJson), { schema: 'storyforge.avg.visual-compilation-evidence', version: 2,
       scopeHash: await hashProductProductionValueV2(planning.scope), inputs })) throw new Error('[avg-visual-image] 需求工件未绑定准确已采用输入')
   for (const requirement of proposal.batch.requirements) {
+    const recipe=planning.imageProcessing?.entries.find(e=>e.requirementKey===requirement.requirementKey)?.recipe
+    if(recipe?.version===3){readAvgRegionRecipeReferenceV1(recipe,requirement);await readAvgRegionCompositeBaseV1(scope,recipe,requirement)}
     for (const reference of requirement.references) await verifyAvgReferenceBytesV1(reference, await readAvgDraftReferenceBytesV2(scope, reference,requirement.family))
   }
   const current = await db.productBuilds.get(build.id)
