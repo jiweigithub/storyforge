@@ -142,7 +142,20 @@ export function planTextOpenWorldRouteV1(input: {
   destinationLocationKey: string
   openEdgeKeys?: readonly string[]
 }): TextOpenWorldRoutePlanV1 | null {
-  const modules = parseTextOpenWorldModulesV1(input.runtimePackage)
+  return planTextOpenWorldRouteFromModulesV1({
+    ...input,
+    modules: parseTextOpenWorldModulesV1(input.runtimePackage),
+  })
+}
+
+/** Reuse the caller's already validated catalog within one projection. */
+export function planTextOpenWorldRouteFromModulesV1(input: {
+  modules: TextOpenWorldParsedModulesV1
+  fromLocationKey: string
+  destinationLocationKey: string
+  openEdgeKeys?: readonly string[]
+}): TextOpenWorldRoutePlanV1 | null {
+  const { modules } = input
   const locationByKey = new Map(modules.world.locations.map(location => [location.key, location]))
   if (!locationByKey.has(input.fromLocationKey)) fail(`出发地点不存在:${input.fromLocationKey}`)
   if (!locationByKey.has(input.destinationLocationKey)) fail(`目标地点不存在:${input.destinationLocationKey}`)

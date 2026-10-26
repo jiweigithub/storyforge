@@ -9,7 +9,6 @@ import {
   inspectTextOpenWorldCheckpointV1,
 } from '../../src/lib/open-world/checkpoints'
 import { verifyTextOpenWorldVNextSessionBindingV1 } from '../../src/lib/open-world/session-binding'
-import { acceptTextOpenWorldSourcePinBundleV1 } from '../../src/lib/open-world/source-pin'
 import {
   putMediaBlobObject,
   readProductMediaBlobData,
@@ -36,13 +35,7 @@ function bytes(value: string): ArrayBuffer {
 }
 
 async function seedPublishedCreatorWorkspace() {
-  const fixture = await createTextOpenWorldCreatorReleaseFixtureV1('world-release')
-  await acceptTextOpenWorldSourcePinBundleV1({
-    scope: fixture.scope,
-    buildId: fixture.creator.buildId,
-    controlEpoch: fixture.creator.controlEpoch,
-    bundle: fixture.pinBundle,
-  })
+  const fixture = await createTextOpenWorldCreatorReleaseFixtureV1('world-release', 1, { portableRoot: true })
   const now = Date.now()
   const release: ProductRelease = {
     ...fixture.scope,
@@ -294,7 +287,7 @@ describe('TOW-G7-12 · 正式发布数据全生命周期', () => {
 
     const oldVersion = structuredClone(backup)
     oldVersion.version = 13
-    await expect(importProjectJSON(oldVersion)).rejects.toThrow(/只接受 v14、v15 或当前备份版本 v16/)
+    await expect(importProjectJSON(oldVersion)).rejects.toThrow(`当前备份版本 v${CURRENT_BACKUP_VERSION}`)
     expect(await db.projects.count()).toBe(before)
   }, 120_000)
 })

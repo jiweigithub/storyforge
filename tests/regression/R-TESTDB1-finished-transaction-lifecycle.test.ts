@@ -33,6 +33,12 @@ async function all(database: IDBDatabase, store = 'a') {
   expect(await complete).toBe('complete'); return rows
 }
 
+async function retained(value: IDBFactory, name: string) {
+  await new Promise<void>(resolve => setImmediate(resolve))
+  const databases = (value as IDBFactory & { _databases: Map<string, { transactions: unknown[] }> })._databases
+  return databases.get(name)!.transactions
+}
+
 describe('R-TESTDB1 finished-transaction cleanup preserves public IndexedDB semantics', () => {
   for (const prune of [false, true]) {
     it(`serializes overlapping writes and preserves queued read visibility (cleanup=${prune})`, async () => {
@@ -116,11 +122,11 @@ describe('R-TESTDB1 finished-transaction cleanup preserves public IndexedDB sema
       transaction.objectStore('a').put({ id: i, value: i }); expect(await complete).toBe('complete'); held = transaction
     }
     expect(await all(database)).toHaveLength(200)
-    expect(f.lifecycle!.stats.removedFinished).toBeGreaterThanOrEqual(200)
-    expect(f.lifecycle!.stats.maximumRetained).toBeLessThan(10)
+    expect(f.lifecycle!.mode).toBe('native-6.2.6')
+    expect(await retained(f.value, 'retention')).toHaveLength(0)
     expect(() => held!.objectStore('a').get(0)).toThrow()
   })
-  it('restores the factory method and leaves borrowed calls and unsupported versions unchanged', async () => {
+  it('leaves native factory methods, borrowed calls and unsupported versions unchanged', async () => {
     const a = new IDBFactory(), b = new IDBFactory(), original = a.open
     expect(() => installFakeIdbTransactionLifecycleV1(a, 'unknown')).toThrow(/version/)
     expect(a.open).toBe(original)
@@ -128,15 +134,15 @@ describe('R-TESTDB1 finished-transaction cleanup preserves public IndexedDB sema
     expect(installFakeIdbTransactionLifecycleV1(a)).toBe(lifecycle)
     const request = Reflect.apply(a.open, b, ['borrowed'])
     const database = await result(request); connections.push(database)
-    expect(lifecycle.stats.removedFinished).toBe(0)
+    expect(a.open).toBe(original)
     lifecycle.dispose(); expect(a.open).toBe(original); expect(Object.hasOwn(a, 'open')).toBe(false)
   })
-  it('does not decorate a late open after disposal or remove a later installation', async () => {
+  it('does not mutate a late native open after disposal or remove a later guard', async () => {
     const value = new IDBFactory(), first = installFakeIdbTransactionLifecycleV1(value)
     const pending = open(value, 'late')
     first.dispose()
     const database = await pending
-    expect(first.stats.removedFinished).toBe(0)
+    expect(await retained(value, 'late')).toHaveLength(0)
     const second = installFakeIdbTransactionLifecycleV1(value)
     first.dispose()
     expect(installFakeIdbTransactionLifecycleV1(value)).toBe(second)
@@ -144,7 +150,7 @@ describe('R-TESTDB1 finished-transaction cleanup preserves public IndexedDB sema
     const transaction = connection.transaction('a', 'readwrite'), complete = done(transaction)
     transaction.objectStore('a').put({ id: 1, value: 1 }); expect(await complete).toBe('complete')
     expect(await all(database)).toEqual([{ id: 1, value: 1 }])
-    expect(second.stats.removedFinished).toBeGreaterThan(0)
+    expect(await retained(value, 'late')).toHaveLength(0)
     second.dispose()
   })
   it('fails closed on unknown factory layout and preserves another owner replacement', () => {

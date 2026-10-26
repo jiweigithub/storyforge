@@ -118,7 +118,7 @@ describe('NOVEL-PROFILE-1 / SHORT-1 · Work 分类与短篇边界', () => {
     const wrongVersion = structuredClone(backup) as any
     wrongVersion.version = 9
     const beforeWrongVersion = await db.projects.count()
-    await expect(importProjectJSON(wrongVersion)).rejects.toThrow('只接受 v14、v15 或当前备份版本 v16')
+    await expect(importProjectJSON(wrongVersion)).rejects.toThrow(`当前备份版本 v${CURRENT_BACKUP_VERSION}`)
     expect(await db.projects.count()).toBe(beforeWrongVersion)
 
     const invalid = structuredClone(backup) as any

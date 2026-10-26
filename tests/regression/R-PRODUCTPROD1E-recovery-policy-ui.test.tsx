@@ -27,6 +27,11 @@ const serviceMocks = vi.hoisted(() => ({
   > => null),
   progressBarrier: null as Promise<void> | null,
   readProgressCompleted: vi.fn(),
+  repairCandidates: vi.fn(),
+  itemRepairCandidates: vi.fn(),
+  economyRepairCandidates: vi.fn(),
+  npcRepairCandidates: vi.fn(),
+  sceneRepairCandidates: vi.fn(),
 }))
 
 vi.mock('../../src/lib/product-production/service', async importOriginal => {
@@ -43,6 +48,16 @@ vi.mock('../../src/lib/product-production/service', async importOriginal => {
     },
   }
 })
+
+vi.mock('../../src/lib/open-world/quest-finalize-author-repair', () => ({ readTextOpenWorldQuestFinalizeRepairCandidatesV1: serviceMocks.repairCandidates }))
+
+vi.mock('../../src/lib/open-world/item-reward-author-repair', () => ({ readTextOpenWorldItemRewardRepairCandidatesV1: serviceMocks.itemRepairCandidates }))
+
+vi.mock('../../src/lib/open-world/catalog-author-repair', () => ({
+  readTextOpenWorldCraftingEconomyRepairCandidatesV1: serviceMocks.economyRepairCandidates,
+  readTextOpenWorldNpcRuntimeRepairCandidatesV1: serviceMocks.npcRepairCandidates,
+  readTextOpenWorldSceneScriptsRepairCandidatesV1: serviceMocks.sceneRepairCandidates,
+}))
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
@@ -251,6 +266,7 @@ describe('PRODUCT-PROD-1E · recovery policy UI', () => {
   beforeEach(async () => {
     serviceMocks.setPaused.mockClear()
     serviceMocks.retryBlocker.mockClear()
+    serviceMocks.repairCandidates.mockReset()
     serviceMocks.progressBarrier = null
     serviceMocks.readProgressCompleted.mockClear()
     localStorage.clear()
@@ -376,6 +392,48 @@ describe('PRODUCT-PROD-1E · recovery policy UI', () => {
         note: '纠正两次历史事件混淆', authorDraftJson: '{"revised":"明确区分两次事件"}',
       },
     })
+  }, 20_000)
+
+  it.each([
+    ['p8f.quest-finalize', 'quest-finalize-repair-candidates', 'objectives'],
+    ['p8.catalog.items-rewards', 'item-reward-repair-candidates', 'contract'],
+    ['p8.catalog.crafting-economy', 'crafting-economy-repair-candidates', 'contract'],
+    ['p8.catalog.npc-runtime', 'npc-runtime-repair-candidates', 'contract'],
+    ['p9.scene-scripts', 'scene-scripts-repair-candidates', 'contract'],
+  ] as const)('%s作者修订须先读取候选，提交带来源指纹且读取不派发模型', async (taskKey, testId, section) => {
+    const owned = await seedCurrentProductWorld('任务履约作者候选 UI')
+    const f = await createRecoveryProduction({ scope: owned.scope, worldReleaseId: owned.release.id!,
+      title: '任务履约作者修订', taskKey, sequence: 1 })
+    const readCandidates = { 'p8f.quest-finalize': serviceMocks.repairCandidates,
+      'p8.catalog.items-rewards': serviceMocks.itemRepairCandidates, 'p8.catalog.crafting-economy': serviceMocks.economyRepairCandidates,
+      'p8.catalog.npc-runtime': serviceMocks.npcRepairCandidates, 'p9.scene-scripts': serviceMocks.sceneRepairCandidates }[taskKey]
+    readCandidates.mockResolvedValue({ buildId: f.buildId, controlEpoch: f.controlEpoch,
+      contextSelectionHash: 'a'.repeat(64), section, page: 0, pageSize: 5,
+      total: 1, rows: [{ objectiveNumber: 1, title: '正式制作', candidates: [{ candidateNumber: 1, kind: 'recipe' }] }] })
+    await act(async () => root.render(createElement(ProductProductionStudio, { scope: owned.scope,
+      initialProductionId: f.productionId, initialProduct: 'text-open-world', allowedProducts: ['text-open-world'] })))
+    await waitFor(() => expect(host.querySelector(`[data-testid="${testId}"]`)).toBeTruthy())
+    await setTextareaValue(textarea(host, '作者修订的完整任务 JSON')!, '{"schema":"author-quest-candidate","version":6}')
+    await act(async () => button(host, '修正后继续制作').click())
+    await waitFor(() => expect(host.textContent).toContain('请先读取当前修订候选'))
+    expect(serviceMocks.retryBlocker).not.toHaveBeenCalled()
+    await act(async () => button(host, '读取所选候选').click())
+    await waitFor(() => expect(host.textContent).toContain('正式制作'))
+    expect(serviceMocks.retryBlocker).not.toHaveBeenCalled()
+    expect(readCandidates).toHaveBeenCalledWith(expect.objectContaining({
+      scope: owned.scope, productionId: f.productionId, expectedBuildId: f.buildId, expectedControlEpoch: f.controlEpoch }))
+    await act(async () => button(host, '修正后继续制作').click())
+    await waitFor(() => expect(serviceMocks.retryBlocker).toHaveBeenCalledTimes(1))
+    expect(JSON.parse(serviceMocks.retryBlocker.mock.calls[0]![0].authorDraftJson)).toMatchObject({
+      version: 6, authorContextSelectionHash: 'a'.repeat(64) })
+    serviceMocks.retryBlocker.mockClear()
+    await setRecoveryTask(f, taskKey === 'p8f.quest-finalize' ? 'p8.catalog.items-rewards' : 'p8f.quest-finalize')
+    await act(async () => ariaButton(host, '刷新当前 Production').click())
+    await waitFor(() => expect(host.querySelector(`[data-testid="${testId}"]`)).toBeNull())
+    await setTextareaValue(textarea(host, '作者修订的完整任务 JSON')!, '{"schema":"next-task"}')
+    await act(async () => button(host, '修正后继续制作').click())
+    await waitFor(() => expect(host.textContent).toContain('请先读取当前修订候选'))
+    expect(serviceMocks.retryBlocker).not.toHaveBeenCalled()
   }, 20_000)
 
   it('P1和V2只允许原输入重试，P2才显示并提交修复要求与作者JSON', async () => {

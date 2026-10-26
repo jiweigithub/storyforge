@@ -24,7 +24,9 @@ type VersionedVerifiedRuntimeSource = Omit<ResolvedProductRuntimeSourceWithTtrpg
 import { assertProductRuntimeSourceSnapshotV2, runtimeSourceManifestFromBuildRecordsV1,
   runtimeSourceManifestFromReleaseV1 } from '../product/runtime-source-manifest'
 
-export async function productRuntimeSourceForSessionV1(session: ProductRuntimeSession): Promise<ProductRuntimeSourceV1> {
+export async function productRuntimeSourceForSessionV1(
+  session: Pick<ProductRuntimeSession, 'productReleaseId' | 'productBuildId'>,
+): Promise<ProductRuntimeSourceV1> {
   if (session.productReleaseId != null) return { kind: 'release', productReleaseId: session.productReleaseId }
   if (session.productBuildId != null) {
     const build = await db.productBuilds.get(session.productBuildId)

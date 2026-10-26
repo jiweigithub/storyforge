@@ -908,6 +908,10 @@ async function validateCurrentBackup(data: ProjectExportData): Promise<void> {
   await assertTtrpgNarrativeMemoryBackupV1(value)
   await assertTtrpgStageOpeningBackupV1(value)
   await assertTtrpgOpenContinuationBackupV1(value)
+  if (PROJECT_TABLES.some(spec => spec.portableData?.kind === 'product-build-root-budget')) {
+    const { verifyPortableProductBuildRootBudgetEvidenceV1 } = await import('../product-production/root-budget-evidence-portability')
+    await verifyPortableProductBuildRootBudgetEvidenceV1(value as unknown as ProjectExportData)
+  }
   await validateIndependentCreationBackup(value)
   for (const spec of PROJECT_TABLES) {
     if (!spec.exportable || spec.name === 'projects' || spec.name === 'worlds' || spec.name === 'works') continue

@@ -11,8 +11,7 @@ import { projectTtrpgOpenMemoryRowV1, assertTtrpgOpenMemoryLocatorV1 } from './o
 import { stableProductRuntimeJsonV1 as stable } from '../product/runtime-values'
 import { cloneTtrpgOpenAudioMediaV1 } from './open-audio-media'
 import { runtimeInstanceTablesV1, transactionTablesForReferenceCascade } from '../registry/lifecycle'
-import { prepareReleasedProductRuntimeSessionRecordV1, preparePreviewProductRuntimeSessionRecordV1,
-  insertPreparedProductRuntimeSessionV1, type CreateProductRuntimeSessionInput } from '../product/runtime-core'
+import type { CreateProductRuntimeSessionInput } from '../product/runtime-core'
 
 /** Open TTRPG owns cutpoint authorization, source CAS and media/memory cloning. */
 export async function createTtrpgRuntimeOwnedBranchV1(input: {
@@ -24,6 +23,9 @@ export async function createTtrpgRuntimeOwnedBranchV1(input: {
   if (parent.kind !== 'ttrpg' || childInput.kind !== 'ttrpg' || parent.id == null) {
     throw new Error('[ttrpg] open 分支不属于跑团实例')
   }
+  // Preparing a real branch needs source verification; replay imports stay pure.
+  const { prepareReleasedProductRuntimeSessionRecordV1, preparePreviewProductRuntimeSessionRecordV1,
+    insertPreparedProductRuntimeSessionV1 } = await import('../product/runtime-core')
   const release = parent.productReleaseId == null ? null : await db.productReleases.get(parent.productReleaseId)
   const build = parent.productBuildId == null ? null : await db.productBuilds.get(parent.productBuildId)
   const lineage = { parentSessionId: parent.id, parentThroughSequence: throughSequence }
