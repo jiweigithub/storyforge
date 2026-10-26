@@ -9,6 +9,7 @@ import { buildOpenAIEndpoint } from './openai-endpoint'
 import { getAIConfigPresetSessionApiKey, useAIConfigStore } from '../../stores/ai-config'
 import { resolveAIConfigForTask, type AITaskKind } from './task-routing'
 import { AICompletionResponseErrorV1, inspectCompletionResponseV1, requireCompletionTextV1 } from './completion-response'
+import { allowsSamplingTemperature } from './provider-model-lifecycle'
 
 /** 调用元信息（用于消耗统计分类） */
 export interface AICallMeta {
@@ -250,7 +251,7 @@ function buildRequest(
       && ['agnes-2.5-flash', 'agnes-3.0-flash'].includes(config.model)) {
       body.chat_template_kwargs = { enable_thinking: options.thinkingMode === 'enabled' }
     }
-    if (config.temperature !== undefined) body.temperature = config.temperature
+    if (config.temperature !== undefined && allowsSamplingTemperature(config)) body.temperature = config.temperature
     // maxTokens > 0 才传，0 = 不限制（由模型自身决定）
     if (config.maxTokens && config.maxTokens > 0) body.max_tokens = config.maxTokens
   }
