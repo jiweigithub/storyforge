@@ -3,7 +3,7 @@
   "version": 1,
   "status": "in-progress",
   "scope": "AVG product development and S3 integration; story design deferred; no main merge/deployment",
-  "integrationBase": "69e2a928a3685ed7849d9a45d74395c6a6b38b18",
+  "integrationBase": "ddd673ebb417a95074ddfde0dc555e665bdd84d7",
   "newModelOrMediaRequests": 0,
   "demo": {
     "releaseUid": "PR-avg-avg.assembly.e5c0a014-7586-4115-9b10-7c5df01627aa-v1-57c475fe2343726fa7809a8c",
@@ -151,7 +151,7 @@
       "newTestsAdded": 0
     },
     "baselineObservationsUnchanged": true,
-    "finalFullCI": "pending canonical hosted workflow on merged candidate; no new full local invocation",
+    "finalFullCI": "pending canonical workflow after new ddd merged candidate; no new full local run",
     "serialIsolatedE2E": "pending existing hosted core and AVG media workflows; no new matrix",
     "documentPreflightFailure": {
       "session": 8618,
@@ -550,6 +550,107 @@
       "exitCode": 134,
       "repair": "Only current and previous-version Mac build steps receive NODE_OPTIONS --max-old-space-size=4096; application launch/smoke steps and runtime unchanged. Release workflow downloads already-built web assets and does not compile on Mac.",
       "status": "pending hosted Mac build"
+    },
+    "upstreamDDDIntegration": {
+      "headBeforeMerge": "a87b6de15b578ea3fb8022857962a9673482a8fc",
+      "base": "ddd673ebb417a95074ddfde0dc555e665bdd84d7",
+      "hostedRunsForPriorHead": 0,
+      "reason": "Main advanced after prior integration; four generated-document/frozen-receipt conflicts prevented PR workflows. Live Git ref verified; PR baseRefOid metadata still showed older69e2.",
+      "conflicts": 4,
+      "resolution": "Retain both dated histories, officially regenerate metrics and new dated receipts with final manifest pointer set before measuring.",
+      "avgRuntimeLogicChanged": false,
+      "inheritedUpstream": "Chapter prompt UI/theme and author hint delivery plus their existing regression/browser fixes.",
+      "baselineRefresh": {
+        "files": 3,
+        "tests": 110,
+        "failed": 0,
+        "comparison": [
+          {
+            "receipt": "baseline",
+            "observationsAndCorpusUnchanged": true,
+            "changedInputHashes": [
+              "tests/acceptance/narrative-world/manifest-v1.json",
+              "tests/e2e/helpers/narrative-v4-production.ts",
+              "tests/regression/R-NW-1B-corpus.test.ts",
+              "tests/regression/R-NW-1A-ir-codec.test.ts"
+            ],
+            "verifiedHashes": 292
+          },
+          {
+            "receipt": "ir-contract",
+            "observationsAndCorpusUnchanged": true,
+            "changedInputHashes": [
+              "tests/regression/R-NW-1A-ir-codec.test.ts"
+            ],
+            "verifiedHashes": 17
+          },
+          {
+            "receipt": "domain-projection",
+            "observationsAndCorpusUnchanged": true,
+            "changedInputHashes": [
+              "tests/regression/R-NW-1B-corpus.test.ts"
+            ],
+            "verifiedHashes": 27
+          }
+        ]
+      },
+      "precommitChecks": [
+        {
+          "command": "npm run check:architecture",
+          "exitCode": 0,
+          "seconds": 6.99
+        },
+        {
+          "command": "npm run check:required-tables",
+          "exitCode": 0,
+          "seconds": 0.13
+        },
+        {
+          "command": "npm run check:ai-manual",
+          "exitCode": 0,
+          "seconds": 0.49
+        },
+        {
+          "command": "npm run check:ai-entry-registry",
+          "exitCode": 0,
+          "seconds": 0.84
+        },
+        {
+          "command": "npm run check:docs",
+          "exitCode": 0,
+          "seconds": 0.49
+        },
+        {
+          "command": "npm run check:project-metrics",
+          "exitCode": 0,
+          "seconds": 0.44
+        },
+        {
+          "command": "npm run check:agent-freshness",
+          "exitCode": 0,
+          "seconds": 0.68
+        },
+        {
+          "command": "npm run lint",
+          "exitCode": 0,
+          "seconds": 30.97
+        },
+        {
+          "command": "npx tsc --noEmit",
+          "exitCode": 0,
+          "seconds": 38.18
+        },
+        {
+          "command": "npm run build",
+          "exitCode": 0,
+          "seconds": 76.63
+        },
+        {
+          "command": "npm run check:bundle-size",
+          "exitCode": 0,
+          "seconds": 0.5
+        }
+      ]
     }
   },
   "limitations": [
@@ -557,5 +658,9 @@
     "no independent human hearing or commercial art acceptance",
     "final CI/E2E and commit/push remain open"
   ],
-  "previousIntegrationBase": "63af1fba36e55d9a4205a4350416a46ffd361c3f"
+  "previousIntegrationBase": "69e2a928a3685ed7849d9a45d74395c6a6b38b18",
+  "integrationBaseHistory": [
+    "63af1fba36e55d9a4205a4350416a46ffd361c3f",
+    "69e2a928a3685ed7849d9a45d74395c6a6b38b18"
+  ]
 }
