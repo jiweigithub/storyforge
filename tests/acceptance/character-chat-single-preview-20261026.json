@@ -125,6 +125,15 @@
       "commands": [
         "npm run ci",
         "npm run ci:e2e"
+      ],
+      "history": [
+        {
+          "head": "7dcee8849ce1d83c09fe36e39df8de48c4bca16d",
+          "workflowRun": 40265029926,
+          "result": "failed before tests",
+          "reason": "ARCHITECTURE source-line metrics were two lines behind the final runtime integration fix",
+          "repair": "Official gen:project-metrics; check:project-metrics passed; application source unchanged"
+        }
       ]
     },
     "nativeExperiencePackage": {
