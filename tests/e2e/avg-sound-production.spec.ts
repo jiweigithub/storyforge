@@ -155,12 +155,15 @@ test('native publisher-page V2 original audio keeps unknown hearing through actu
   }
   await expect(panel.getByRole('button', { name: '将原声音列为待确认选择', exact: true })).toBeDisabled()
   const original = await page.evaluate(async scope => {
+    const nativeContext = new AudioContext()
+    const nativeDecodeSampleRateHz = nativeContext.sampleRate
+    await nativeContext.close()
     const load = new Function('p', 'return import(p)') as (p: string) => Promise<any>
     const [{ db }, drafts, media] = await Promise.all([load('/storyforge/src/lib/db/schema.ts'), load('/storyforge/src/lib/avg/draft-service.ts'), load('/storyforge/src/lib/product-production/media-blob-store.ts')])
     const draft = await drafts.readAvgDraftV1(scope), build = await db.productBuilds.where('productionId').equals(draft.productionId).first()
     const rows = await db.productBuildArtifacts.where('buildId').equals(build.id).toArray(), row = rows.find((r: any) => r.artifactKey === 'avg.sound.raw.native.ambience' && r.status === 'accepted')
     const data = await media.readVerifiedMediaBlobObjectData(await db.mediaBlobObjects.get(row.blobObjectId))
-    return { raw: JSON.parse(row.payloadJson), quality: JSON.parse(row.qualityJson), contentHash: row.contentHash, dataHash: await media.sha256MediaData(data),
+    return { raw: JSON.parse(row.payloadJson), quality: JSON.parse(row.qualityJson), contentHash: row.contentHash, dataHash: await media.sha256MediaData(data), nativeDecodeSampleRateHz,
       noReviewOrChoice: !rows.some((r: any) => r.artifactKey.startsWith('avg.review.audio.') || r.artifactKey.startsWith('avg.sound.choice.')),
       hasKey: !!(await load('/storyforge/src/stores/ai-config.ts')).useAIConfigStore.getState().config.apiKey,
       witness: (window as any).__avgNativeSoundWitness }
@@ -168,7 +171,7 @@ test('native publisher-page V2 original audio keeps unknown hearing through actu
   expect(original.hasKey).toBe(false); expect(original.noReviewOrChoice).toBe(true)
   expect(original.contentHash).toBe(actual.source.memberHash); expect(original.dataHash).toBe(actual.source.memberHash)
   expect(original.raw.providerResult).toEqual(actual.result); expect(original.raw.requirement.dispatch.source).toEqual(actual.source)
-  expect(original.raw.measurement).toMatchObject({ mimeType: 'audio/ogg', byteSize: actual.data.byteLength, durationMs: 3991, channelCount: 2, decodedSampleRateHz: 48000 })
+  expect(original.raw.measurement).toMatchObject({ mimeType: 'audio/ogg', byteSize: actual.data.byteLength, durationMs: 3991, channelCount: 2, decodedSampleRateHz: original.nativeDecodeSampleRateHz })
   expect(original.quality).toMatchObject({ hearing: 'unobserved', authorAdopted: false })
   expect(original.witness.sources.some((r: any) => r.ended && r.rate === 1 && !r.loop && Math.abs(r.duration - 3.990666666666667) < .01)).toBe(true)
   await page.setViewportSize({ width: 390, height: 844 })
@@ -377,6 +380,7 @@ test('native original sound plan, actual continuous audition, independent author
   await release.getByRole('button', { name: '验证全部冻结媒资', exact: true }).click()
   await expect(release.getByRole('status').filter({ hasText: '全部冻结媒资已实际解码' })).toBeVisible({ timeout: 60_000 })
   await release.getByRole('button', { name: '准备本地原型版本', exact: true }).click()
+  await expect(release.getByRole('status').filter({ hasText: '本地原型版本已准备，请核对后保存。' })).toBeVisible({ timeout: 60_000 })
   await expect(release.getByRole('button', { name: '确认保存本地原型版本', exact: true })).toBeDisabled()
   await release.getByRole('checkbox', { name: '我已核对版本，将它保存为本地原型', exact: true }).check()
   await release.getByRole('button', { name: '确认保存本地原型版本', exact: true }).click()

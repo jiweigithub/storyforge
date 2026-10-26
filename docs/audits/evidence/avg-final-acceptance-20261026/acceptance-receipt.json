@@ -419,6 +419,137 @@
         "standaloneBrowserTestsExecuted": 0,
         "frozenBaselineInputsUnchanged": true
       }
+    },
+    "hostedAttemptEb82": {
+      "head": "eb82f045ba758f0c74b67fc3d35f6a71c13cca9a",
+      "tree": "5c23cf13265fe114cc1014508b87930636683e76",
+      "mergeTreeVerifiedEqual": true,
+      "runId": 40383555618,
+      "avgJobId": 121785821537,
+      "avgJobConclusion": "failure",
+      "reports": {
+        "audio-processing": {
+          "startTime": "2026-10-26T19:06:59.719Z",
+          "duration": 73311.777,
+          "expected": 4,
+          "skipped": 0,
+          "unexpected": 0,
+          "flaky": 0
+        },
+        "sound-closed": {
+          "startTime": "2026-10-26T19:08:36.832Z",
+          "duration": 27050.075,
+          "expected": 1,
+          "skipped": 3,
+          "unexpected": 0,
+          "flaky": 0
+        },
+        "sound-preparation": {
+          "startTime": "2026-10-26T19:09:28.153Z",
+          "duration": 61657.143,
+          "expected": 3,
+          "skipped": 1,
+          "unexpected": 0,
+          "flaky": 0
+        },
+        "sound-production": {
+          "startTime": "2026-10-26T19:10:54.060Z",
+          "duration": 406311.386,
+          "expected": 3,
+          "skipped": 0,
+          "unexpected": 3,
+          "flaky": 0
+        }
+      },
+      "rootFailures": [
+        {
+          "kind": "remaining native decoder assertion",
+          "file": "tests/e2e/avg-sound-production.spec.ts",
+          "expected": 48000,
+          "actual": 44100,
+          "repair": "Read independent native AudioContext sampleRate; preserve OGG bytes/hash/duration/channels/unknown hearing checks. Intentional mock fixture rate stays unchanged."
+        },
+        {
+          "kind": "publication preparation readiness",
+          "snapshot": "Still showing 正在核对预览和素材，请稍候 with disabled preparation controls after five seconds",
+          "repair": "Reviewed all3 matching sound/visual confirmation sites: two already await the prepared status; add the same existing60s 本地原型版本已准备 await at the single missing sound publication site, retaining the disabled-before-author-ack assertion."
+        }
+      ],
+      "cascade": "Explicit inheritance file missing because preceding native publication did not produce the required success export; no replacement or fabricated backup.",
+      "artifact": {
+        "id": 12681520402,
+        "bytes": 71629936,
+        "sha256": "d9b53f8cbcebc3ee644dbd7208e677924b408eb74962fbae7e923e807da13a8a"
+      },
+      "runtimeSourceChangedByRepairs": false,
+      "status": "pending corrected candidate",
+      "termination": "cancellation requested after concrete E2E failure and corrected candidate ready",
+      "repairStaticValidation": {
+        "checks": [
+          {
+            "argv": [
+              "npx",
+              "eslint",
+              "tests/e2e/avg-sound-production.spec.ts"
+            ],
+            "exitCode": 0,
+            "seconds": 1.2
+          },
+          {
+            "argv": [
+              "npx",
+              "playwright",
+              "test",
+              "tests/e2e/avg-sound-production.spec.ts",
+              "--list"
+            ],
+            "exitCode": 0,
+            "seconds": 0.61
+          },
+          {
+            "argv": [
+              "ruby",
+              "-ryaml",
+              "-e",
+              "YAML.parse_file('.github/workflows/clients.yml')"
+            ],
+            "exitCode": 0,
+            "seconds": 0.09
+          },
+          {
+            "argv": [
+              "npm",
+              "run",
+              "check:docs"
+            ],
+            "exitCode": 0,
+            "seconds": 0.5
+          }
+        ],
+        "onlyChanged": [
+          ".github/workflows/clients.yml",
+          "docs/audits/evidence/avg-final-acceptance-20261026/acceptance-receipt.json",
+          "docs/roadmap/AVG-WORK-PACKAGE-CARDS.md",
+          "tests/e2e/avg-sound-production.spec.ts"
+        ],
+        "runtimeUnchangedFrom": "eb82f045ba758f0c74b67fc3d35f6a71c13cca9a",
+        "frozenBaselineInputsUnchanged": true,
+        "localBrowserTestsExecuted": 0
+      }
+    },
+    "macCompilerMemoryFailure": {
+      "head": "eb82f045ba758f0c74b67fc3d35f6a71c13cca9a",
+      "runId": 40383555608,
+      "jobs": [
+        121785813351,
+        121785813380
+      ],
+      "bothArchitectures": "arm64 and x64",
+      "command": "tsc -b",
+      "observedHeapMB": 2031,
+      "exitCode": 134,
+      "repair": "Only current and previous-version Mac build steps receive NODE_OPTIONS --max-old-space-size=4096; application launch/smoke steps and runtime unchanged. Release workflow downloads already-built web assets and does not compile on Mac.",
+      "status": "pending hosted Mac build"
     }
   },
   "limitations": [
