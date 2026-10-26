@@ -1,3 +1,4 @@
+import Dexie from 'dexie'
 import { db } from '../db/schema'
 import type { FrozenRuntimeMediaAssetV2, ProductProductionBriefV3, WorkspaceScope } from '../types'
 import { assertRecordInScope } from '../workspace/scope'
@@ -42,7 +43,8 @@ async function readRaw(input: AvgRegionCompositeSourceReadV1) {
     const boundary={scope:input.scope,buildId:input.raw.buildId,...input.source.frozen}
     const compiled=await readAvgHistoricalCompiledImageDefinitionV5(boundary)
     if(compiled.planning.rawReuse?.some(source=>input.raw.artifactKey===`avg.media.raw.${source.requirementKey}`)){
-      const {readAvgVisualRawReuseEvidenceV5}=await import('./visual-image-revalidation-v5')
+      const load=()=>import('./visual-image-revalidation-v5')
+      const {readAvgVisualRawReuseEvidenceV5}=await(Dexie.currentTransaction?Dexie.waitFor(Dexie.ignoreTransaction(load)):load())
       const source=await readAvgVisualRawReuseEvidenceV5({scope:input.scope,compiled,artifact:input.raw})
       return {row:source.raw,build:compiled.build,production:compiled.production,asset:source.asset,payload:source.payload,requirement:source.requirement}
     }
@@ -73,7 +75,8 @@ export async function readAvgRegionCompositeInputsV1(input: AvgRegionCompositeSo
   const blob = raw.row.blobObjectId === null ? null : await db.mediaBlobObjects.get(raw.row.blobObjectId)
   if (!blob || !await assertRecordInScope(input.scope, 'mediaBlobObjects', blob, { owner: 'work' })
     || blob.contentHash !== source.contentHash || blob.byteSize !== source.byteSize || blob.mimeType !== source.mimeType) throw new Error('[avg-composite] 原图缺少同作品准确字节')
-  const sourceData = await readVerifiedMediaBlobObjectData(blob)
+  const readBytes=()=>readVerifiedMediaBlobObjectData(blob)
+  const sourceData = Dexie.currentTransaction?await Dexie.waitFor(Dexie.ignoreTransaction(readBytes),20_000):await readBytes()
   const rawRef = { artifactKey: raw.row.artifactKey, version: raw.row.version, contentHash: raw.row.contentHash, producerReceiptHash: raw.row.producerReceiptHash }
   if (!rawRef.producerReceiptHash) throw new Error('[avg-composite] 原图缺少已知 producer 回执')
   const evidence: AvgRegionInputEvidenceV1 = { schema: 'storyforge.avg.region-input-evidence', version: 1, raw: {

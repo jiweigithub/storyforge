@@ -67,9 +67,15 @@ export async function inspectAvgProcessedImageBytesV1<R extends Omit<AvgVisualPr
         raw:{buildId:build.id!,artifactKey:input.raw.artifactKey,version:input.raw.version,contentHash:input.raw.contentHash},
         source:historical?{mode:'historical',frozen:{expectedBuildRevision:build.stateRevision,expectedBriefHash:build.briefHash,expectedPlanHash:build.planHash,controlEpoch:plan.controlEpoch}}:{mode:'current',brief}})
       if(canonicalProductProductionJsonV2(source.evidence)!==canonicalProductProductionJsonV2(payload.inputEvidence))throw new Error('[avg-composite] 合成来源与实际两输入证明不同')
-      await verifyAvgRegionCompositeWorkerV1({...source.input,data:await readVerifiedMediaBlobObjectData(blob),receipt:payload.receipt})
+      const bytes=()=>readVerifiedMediaBlobObjectData(blob)
+      const data=Dexie.currentTransaction?await Dexie.waitFor(Dexie.ignoreTransaction(bytes),20_000):await bytes()
+      const pixels=()=>verifyAvgRegionCompositeWorkerV1({...source.input,data,receipt:payload.receipt})
+      if(Dexie.currentTransaction)await Dexie.waitFor(Dexie.ignoreTransaction(pixels),120_000);else await pixels()
     }
-    if(Dexie.currentTransaction)await Dexie.waitFor(Dexie.ignoreTransaction(verify),120_000);else await verify()
+    // Author adoption holds an rw transaction on these source tables. Its DB
+    // reads must retain that transaction; moving them out waits on our own
+    // write lock. Only the pure worker computation leaves the transaction.
+    await verify()
   }
   const inspect=async()=>inspectAvgImageBytesV1({data:await readVerifiedMediaBlobObjectData(blob),...image.asset})
   const measured=Dexie.currentTransaction?await Dexie.waitFor(Dexie.ignoreTransaction(inspect),20_000):await inspect()

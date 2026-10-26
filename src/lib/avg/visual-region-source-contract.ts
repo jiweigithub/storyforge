@@ -3,6 +3,7 @@ import { parseAvgVisualRawProducerProofV5, parseAvgImageRevalidationProducerProo
   type AvgGeneratedReferenceSourceV5, type AvgGeneratedReferenceSourceV7, type AvgGeneratedReferenceSourceV8 } from './media-generated-reference-contract'
 import { parseAvgVisualRawReuseSourceV5 } from './visual-image-reuse-contract'
 import { parseAvgLocalProcessingProducerProofV1 } from './visual-processed-source-contract'
+import { avgMediaChoiceArtifactKeyV1, avgVisualReviewArtifactKeyV1 } from './media-production-contract'
 
 /** Distinct composed-image lineage. Older sources cannot acquire this
  * meaning from the existence of a similarly shaped processing proof. */
@@ -32,7 +33,7 @@ export function parseAvgGeneratedReferenceSourceV9(value: unknown): AvgGenerated
   const p = avgRecord(r.composition, ['recipeHash', 'processingReceiptHash', 'baseReferenceHash', 'baseGeneratedSourceHash', 'inputProofHash'], 'composed physical witness')
   return { schema: r.schema, version: 9, productionKey, requirementKey, raw, original, processing,
     compilation: { artifactKey: c.artifactKey, version: avgNumber(c.version, 'composed compilation version', 1, 1e9), contentHash: avgHash(c.contentHash, 'composed compilation hash') },
-    choice: author(r.choice, `avg.media.choice.${requirementKey}`), review: author(r.review, `avg.media.visual-review.${requirementKey}`),
+    choice: author(r.choice, avgMediaChoiceArtifactKeyV1(requirementKey)), review: author(r.review, avgVisualReviewArtifactKeyV1(requirementKey)),
     composition: { recipeHash: avgHash(p.recipeHash, 'composition recipeHash'), processingReceiptHash: avgHash(p.processingReceiptHash, 'composition receiptHash'),
       baseReferenceHash: avgHash(p.baseReferenceHash, 'composition baseReferenceHash'), baseGeneratedSourceHash: avgHash(p.baseGeneratedSourceHash, 'composition baseSourceHash'), inputProofHash: avgHash(p.inputProofHash, 'composition inputProofHash') } }
 }

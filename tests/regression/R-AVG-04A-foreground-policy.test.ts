@@ -42,7 +42,12 @@ describe('AVG explicit reserved-backdrop foreground foundation', () => {
     expect(() => parseAvgImageProcessingRecipeV2(oldRecipe)).toThrow()
     expect(() => parseAvgImageProcessingRecipe({ ...oldRecipe, foreground: policy })).toThrow()
     expect(() => parseAvgImageProcessingRecipeV2({ ...next, background: { red: 255, green: 255, blue: 255, alpha: 128 } })).toThrow(/alpha/)
-    expect(() => parseAvgImageProcessingRecipe({ ...next, version: 3 })).toThrow(/版本/)
+    // V3 is now registered, but retagging V2 fields cannot create its two-input
+    // recipe. Legacy readers remain strict and unknown versions still fail.
+    expect(() => parseAvgImageProcessingRecipeV1({ ...next, version: 3 })).toThrow()
+    expect(() => parseAvgImageProcessingRecipeV2({ ...next, version: 3 })).toThrow()
+    expect(() => parseAvgImageProcessingRecipe({ ...next, version: 3 })).toThrow(/region composite recipe/)
+    expect(() => parseAvgImageProcessingRecipe({ ...next, version: 4 })).toThrow(/版本/)
   })
 
   it('requires a genuine new recipe in a mixed V2 plan and rejects duplicate targets or legacy smuggling', () => {

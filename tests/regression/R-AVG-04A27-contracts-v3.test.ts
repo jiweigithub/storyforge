@@ -49,10 +49,11 @@ describe('AVG composition V3 contracts and V9 portable source — scalar evidenc
         taskKey: `avg.media.process.${requirementKey}`, artifactKey: `avg.media.processed.${requirementKey}`, contentHash: payload.receipt.output.contentHash, processingEvidenceHash: h },
       compilation: { artifactKey: 'avg.media.compiled-visual-requirements', version: 1, contentHash: h },
       choice: { artifactKey: `avg.media.choice.${requirementKey}`, version: 1, contentHash: h, authorReceiptHash: h },
-      review: { artifactKey: `avg.media.visual-review.${requirementKey}`, version: 1, contentHash: h, authorReceiptHash: h },
+      review: { artifactKey: `avg.review.visual.${requirementKey}`, version: 1, contentHash: h, authorReceiptHash: h },
       composition: { recipeHash: payload.receipt.recipeHash, processingReceiptHash: payload.receipt.receiptHash,
         baseReferenceHash: payload.receipt.inputProof.baseReferenceHash, baseGeneratedSourceHash: payload.receipt.inputProof.baseGeneratedSourceHash, inputProofHash: payload.receipt.inputProof.inputProofHash } }
     expect(parseAvgGeneratedImageSource(value)).toEqual(parseAvgGeneratedReferenceSourceV9(value))
+    expect(() => parseAvgGeneratedReferenceSourceV9({ ...value, review: { ...value.review, artifactKey: `avg.media.visual-review.${requirementKey}` } })).toThrow()
     expect(() => parseAvgGeneratedReferenceSourceV6(value)).toThrow(); expect(() => parseAvgGeneratedReferenceSourceV8(value)).toThrow()
     expect(() => parseAvgGeneratedReferenceSourceV9({ ...value, composition: { ...value.composition, inferred: true } })).toThrow()
     expect(() => parseAvgGeneratedReferenceSourceV9({ ...value, processing: { ...value.processing, buildNumber: 1 } })).toThrow()

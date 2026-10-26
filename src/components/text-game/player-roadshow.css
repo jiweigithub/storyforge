@@ -251,13 +251,16 @@
   .avg-panel .avg-saves article { align-items: flex-start; flex-direction: column; }
 }
 
-/* Portrait reading keeps the authored art frame above the dialogue. Reserve
- * actual space for wrapped controls instead of overlaying a short 16:9 stage. */
+/* Keep the authored art frame above the dialogue. Actor-only foregrounds
+ * may use the taller stage; CG/overlays retain their original shared frame. */
 @media (max-width: 760px) and (orientation: portrait) {
   .avg-playing .avg-main { display: flex; flex-direction: column; }
   .avg-playing .avg-toolbar { position: relative; flex: none; padding: 12px 13px; }
-  .avg-playing .avg-stage { position: relative; inset: auto; flex: 1; width: 100%; }
+  .avg-playing .avg-stage { position: relative; inset: auto; flex: 1; width: 100%; container-type: size; }
   .avg-playing .avg-stage-scene { inset: 0 0 auto; aspect-ratio: inherit; }
+  .avg-playing .avg-background img,.avg-playing .avg-cg img,.avg-playing .avg-overlay img { object-fit: contain; }
+  .avg-playing .avg-stage-scene[data-character-layout="portrait-expanded"] .avg-actor { top: 8cqh; bottom: auto; height: 78cqh; }
+  .avg-playing .avg-stage-scene[data-character-layout="portrait-expanded"][data-actor-count="1"] .avg-actor { width: 100cqw; }
   .avg-playing .avg-scene-title { top: 16px; padding: 12px 18px; }
 }
 
