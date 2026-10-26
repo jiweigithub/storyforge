@@ -880,13 +880,9 @@ export function evaluateProductProductionAuthorizationReadinessV1(input: {
     .map(requirement => requirement.requirementKey)
   const requiresImage = input.brief.capabilityRequirements
     .some(requirement => requirement.required && requirement.mediaClass === 'image')
-  // Chat previews still require their pictures and author confirmation. The
-  // configured executor binds the built-in SVG adapter for this exact mode.
-  const usesChatPreviewImages = input.brief.qualityProfile === 'prototype'
-    && input.brief.intent?.productType === 'character-interaction'
   const requiresAudio = input.brief.capabilityRequirements
     .some(requirement => requirement.required && ['music', 'sfx'].includes(requirement.mediaClass))
-  if (requiresImage && !usesChatPreviewImages && !input.readiness.image.ready && !input.readiness.mediaRelayReady) {
+  if (requiresImage && !input.readiness.image.ready && !input.readiness.mediaRelayReady) {
     blockerMessages.push(input.readiness.image.issue || '全局 Agnes 图片能力尚未就绪。')
   }
   if (requiresAudio && !input.readiness.mediaRelayReady) {
@@ -1764,6 +1760,11 @@ export async function runAuthorizedProductProductionV1(input: {
     || creatorMediaPlan?.mode === 'provider-generate'
   for (const requirement of brief.capabilityRequirements) {
     if (!['image', 'music', 'sfx'].includes(requirement.mediaClass)) continue
+    // A chat preview is a real illustrated experience. Its quality profile
+    // changes acceptance gates, never permission to substitute placeholder art.
+    const requiresChatImageProvider = brief.intent.productType === 'character-interaction'
+      && requirement.mediaClass === 'image'
+    const useProviderForRequirement = useExternalMedia || requiresChatImageProvider
     if (requirement.mediaClass === 'image'
       && creatorMediaPlan?.mode === 'author-import'
       && creatorMediaPlan.capability.requirementKey === requirement.requirementKey) {
@@ -1792,15 +1793,15 @@ export async function runAuthorizedProductProductionV1(input: {
       const resolved = await resolveAuthoredImagePackCapabilityV1({ requirement, manifestUrl: authoredImagePackUrl })
       mediaCapabilities.set(requirement.requirementKey, resolved)
       capabilityBindings.push(resolved.binding)
-    } else if (requirement.mediaClass === 'image' && useExternalMedia && agnesImageReadiness.ready) {
+    } else if (requirement.mediaClass === 'image' && useProviderForRequirement && agnesImageReadiness.ready) {
       const resolved = await resolveConfiguredAgnesImageCapabilityV1({ projectId: scope.projectId, requirement })
       mediaCapabilities.set(requirement.requirementKey, resolved)
       capabilityBindings.push(resolved.binding)
-    } else if (useExternalMedia && relayUrl != null) {
+    } else if (useProviderForRequirement && relayUrl != null) {
       const resolved = await resolveTrustedRelayMediaCapabilityV1({ requirement, relayUrl })
       mediaCapabilities.set(requirement.requirementKey, resolved)
       capabilityBindings.push(resolved.binding)
-    } else if (brief.qualityProfile === 'commercial-candidate') {
+    } else if (requiresChatImageProvider || brief.qualityProfile === 'commercial-candidate') {
       throw new Error(`[product-production-service] capability-unbound: ${requirement.mediaClass === 'image'
         ? agnesImageReadiness.issue || '全局 Agnes 图片能力尚未就绪。'
         : '商业音乐与音效可信中继尚未绑定。'}`)

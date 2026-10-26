@@ -4,19 +4,38 @@ import {installChatVoiceFixture, type VoiceWindow} from './helpers/character-cha
 
 // One author/player journey. Only the frozen world and provider/device outputs
 // are fixtures; chat creation, confirmation, publication and actions use the UI.
-for (const width of [390, 1440]) test(`single story from blank Work to illustrated voiced conversation and restoration at ${width}px`, async ({page, browser}, info) => {
+for (const {width, imageFailure} of [{width: 390, imageFailure: false}, {width: 1440, imageFailure: false}, {width: 1440, imageFailure: true}]) test(imageFailure
+  ? 'illustrated chat retains a provider failure without replacing it with SVG'
+  : `single story from blank Work to illustrated voiced conversation and restoration at ${width}px`, async ({page, browser}, info) => {
   test.setTimeout(240_000)
   page.setDefaultTimeout(30_000)
   await page.setViewportSize({width, height: 844})
   await installChatVoiceFixture(page)
   await page.addInitScript(() => {
     localStorage.setItem('storyforge_guide_completed', 'e2e')
-    localStorage.setItem('storyforge-ai-config', JSON.stringify({provider: 'openai', baseUrl: 'https://chat-journey.invalid/v1', model: 'test', maxTokens: 16000, apiKey: ''}))
+    localStorage.setItem('storyforge-ai-config', JSON.stringify({provider: 'agnes', baseUrl: 'https://chat-journey.invalid/v1', model: 'agnes-2.5-flash', maxTokens: 16000, apiKey: ''}))
     sessionStorage.setItem('storyforge-ai-api-key-session', 'isolated-test-key')
   })
   const calls: string[] = []
+  const imageCalls: string[] = []
   let actionCount = 0
   await page.route('https://chat-journey.invalid/**', async route => {
+    if (route.request().url().endsWith('/images/generations')) {
+      const request = route.request().postDataJSON()
+      expect(request.model).toBe('agnes-image-2.1-flash')
+      imageCalls.push(request.ratio)
+      if (imageFailure) return route.fulfill({status: 503, contentType: 'application/json', body: JSON.stringify({error: {message: 'Isolated image provider failure'}})})
+      // A PNG provider response exercises the actual registered transport,
+      // byte validation and blob path. It is not evidence of generated artwork.
+      const png = await page.evaluate(portrait => {
+        const canvas = document.createElement('canvas')
+        canvas.width = portrait ? 768 : 1536; canvas.height = 1024
+        const ctx = canvas.getContext('2d')!
+        ctx.fillStyle = '#496787'; ctx.fillRect(64, 64, canvas.width - 128, canvas.height - 128)
+        return canvas.toDataURL('image/png').split(',')[1]
+      }, request.ratio === '3:4')
+      return route.fulfill({contentType: 'application/json', body: JSON.stringify({created: 1, task_id: `fixture.image.${imageCalls.length}`, data: [{b64_json: png}]})})
+    }
     if (await fulfillChatActionChoiceFixture(route)) {calls.push('choice'); return}
     const prompt = JSON.stringify(route.request().postDataJSON().messages)
     const opening = prompt.includes('初始情境编辑'), review = prompt.includes('开场的语义审查者')
@@ -87,7 +106,28 @@ for (const width of [390, 1440]) test(`single story from blank Work to illustrat
   await page.reload()
   await page.getByRole('button', {name: '选择「旧账本」并继续', exact: true}).click()
   const media = page.getByTestId('chat-media-selection')
+  if (imageFailure) {
+    await expect.poll(() => page.evaluate(async () => {
+      const load = new Function('p', 'return import(p)'), {db} = await load('/storyforge/src/lib/db/schema.ts')
+      const build = await db.productBuilds.toCollection().last()
+      return {status: build?.status, taskKey: JSON.parse(build?.failureJson || '{}').taskKey}
+    }), {timeout: 30_000}).toEqual({status: 'recovery-required', taskKey: 'media.visual'})
+    expect(imageCalls).toEqual(['3:4'])
+    expect(await page.evaluate(async () => {
+      const load = new Function('p', 'return import(p)'), {db} = await load('/storyforge/src/lib/db/schema.ts')
+      return {blobs: await db.mediaBlobObjects.count(), releases: await db.productReleases.count()}
+    })).toEqual({blobs: 0, releases: 0})
+    await expect(media).toHaveCount(0)
+    return
+  }
   await expect(media.getByRole('img')).toHaveCount(2, {timeout: 30_000})
+  expect(imageCalls).toEqual(['3:4', '3:2'])
+  const imageHashes = await page.evaluate(async () => {
+    const load = new Function('p', 'return import(p)'), {db} = await load('/storyforge/src/lib/db/schema.ts')
+    return (await db.mediaBlobObjects.toArray()).map((row: {contentHash: string; mimeType: string}) => ({hash: row.contentHash, mimeType: row.mimeType})).sort((a: {hash: string}, b: {hash: string}) => a.hash.localeCompare(b.hash))
+  })
+  expect(imageHashes).toHaveLength(2)
+  expect(imageHashes.every((image: {mimeType: string}) => image.mimeType === 'image/png')).toBe(true)
   await media.getByRole('button', {name: '确认这些图片与用途并继续', exact: true}).click()
   await expect(page.getByRole('button', {name: '复验并原子发布', exact: true})).toBeEnabled({timeout: 30_000})
   await page.getByRole('button', {name: '复验并原子发布', exact: true}).click()
@@ -97,6 +137,8 @@ for (const width of [390, 1440]) test(`single story from blank Work to illustrat
   await expect(messages).toContainText('我先自己核对旧账本，你可以安心休息。', {timeout: 30_000})
   await expect(messages.getByRole('img')).toHaveCount(1)
   await expect.poll(() => messages.evaluate(el => getComputedStyle(el).backgroundImage)).toContain('blob:')
+  await page.getByText('查看画面', {exact: true}).click()
+  await expect(page.getByLabel('当前人物与场景', {exact: true}).getByRole('img')).toHaveCount(2)
   await page.getByRole('button', {name: '朗读', exact: true}).click()
   const voice = page.getByTestId('chat-voice-controls')
   await voice.locator('summary').first().click()
@@ -140,6 +182,14 @@ for (const width of [390, 1440]) test(`single story from blank Work to illustrat
     await expect.poll(() => restored.getByRole('region', {name: '对话记录', exact: true}).evaluate(el => getComputedStyle(el).backgroundImage)).toContain('blob:')
     await restored.reload()
     await expect(restored.getByLabel('发送给角色的消息', {exact: true})).toBeVisible()
+    await restored.getByText('查看画面', {exact: true}).click()
+    await restored.getByLabel('发送给角色的消息', {exact: true}).fill('看着图片也能继续说话。')
+    await restored.getByRole('button', {name: '仅保存消息', exact: true}).click()
+    await expect(restored.getByRole('region', {name: '对话记录', exact: true})).toContainText('看着图片也能继续说话。')
+    expect(await restored.evaluate(async () => {
+      const load = new Function('p', 'return import(p)'), {db} = await load('/storyforge/src/lib/db/schema.ts')
+      return (await db.mediaBlobObjects.toArray()).map((row: {contentHash: string; mimeType: string}) => ({hash: row.contentHash, mimeType: row.mimeType})).sort((a: {hash: string}, b: {hash: string}) => a.hash.localeCompare(b.hash))
+    })).toEqual(imageHashes)
     expect(restorationCalls).toBe(0)
   } finally {await isolated.close()}
 })

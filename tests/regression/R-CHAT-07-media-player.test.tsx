@@ -4,7 +4,7 @@ import {createRoot, type Root} from 'react-dom/client'
 import {db} from '../../src/lib/db/schema'
 import {useCharacterInteractionPlayerStore as store} from '../../src/stores/character-interaction-player'
 import {useChatMedia, type ChatMediaView} from '../../src/components/character-interaction/useChatMedia'
-import ChatMedia, {ChatImage} from '../../src/components/character-interaction/ChatMedia'
+import ChatMedia, {ChatImage, ChatMediaGallery} from '../../src/components/character-interaction/ChatMedia'
 import * as source from '../../src/lib/product-production/preview-source'
 import {readProductRuntimeState} from '../../src/lib/character-interaction/runtime-api'
 import {seedChatMediaPlayerFixture} from '../helpers/chat-media-fixture'
@@ -13,7 +13,7 @@ let host: HTMLDivElement, root: Root, view: ChatMediaView
 const made = vi.fn(), revoked = vi.fn()
 function Probe(props: Parameters<typeof useChatMedia>[0]) {
   view = useChatMedia(props)
-  return createElement('div', {}, createElement(ChatMedia, {media: view}), createElement(ChatImage, {image: view.avatars.guard, fallback: '头像文字回退'}))
+  return createElement('div', {}, createElement(ChatMedia, {media: view, open: true, panelId: 'probe-media', onToggle: () => undefined}), createElement(ChatMediaGallery, {media: view, id: 'probe-media'}), createElement(ChatImage, {image: view.avatars.guard, fallback: '头像文字回退'}))
 }
 beforeEach(async () => {
   db.close(); await db.delete(); await db.open()

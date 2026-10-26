@@ -27,18 +27,20 @@ import {evaluateProductProductionAuthorizationReadinessV1, inspectProductProduct
 beforeEach(async () => {db.close(); await db.delete(); await db.open()})
 afterEach(() => db.close())
 
-it('allows built-in preview pictures at the real authorization gate while retaining external image requirements', async () => {
+it('requires a real image provider for illustrated chat at every quality level', async () => {
   const {brief, scope} = await illustrated('only')
   const readiness = inspectProductProductionCapabilityReadinessV1({projectId: scope.projectId})
   readiness.text = {...readiness.text, ready: true, issue: null}
   readiness.image = {...readiness.image, ready: false, issue: 'No external image provider configured'}
   readiness.mediaRelayReady = false
-  const preview = evaluateProductProductionAuthorizationReadinessV1({brief, readiness})
-  expect(preview).toMatchObject({ready: true, requiredMediaRequirementKeys: ['media.visual']})
-  for (const qualityProfile of ['internal', 'commercial-candidate'] as const) {
+  for (const qualityProfile of ['prototype', 'internal', 'commercial-candidate'] as const) {
     expect(evaluateProductProductionAuthorizationReadinessV1({brief: {...brief, qualityProfile}, readiness}))
       .toMatchObject({ready: false, blockerCode: 'capability-unbound', requiredMediaRequirementKeys: ['media.visual']})
+    expect(evaluateProductProductionAuthorizationReadinessV1({brief: {...brief, qualityProfile}, readiness: {...readiness, image: {...readiness.image, ready: true, issue: null}}}).ready).toBe(true)
+    expect(evaluateProductProductionAuthorizationReadinessV1({brief: {...brief, qualityProfile}, readiness: {...readiness, mediaRelayReady: true}}).ready).toBe(true)
   }
+  const textBrief = {...brief, capabilityRequirements: brief.capabilityRequirements.filter(item => item.mediaClass !== 'image')}
+  expect(evaluateProductProductionAuthorizationReadinessV1({brief: textBrief, readiness}).ready).toBe(true)
   expect(evaluateProductProductionAuthorizationReadinessV1({brief, readiness: {...readiness, text: {...readiness.text, ready: false}}}).ready).toBe(false)
 })
 

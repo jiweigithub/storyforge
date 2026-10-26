@@ -1,10 +1,10 @@
 import {expect, test} from '@playwright/test'
 
-for (const width of [390, 1440]) test(`author confirms actual chat images before assembly at ${width}px`, async ({page}, info) => {
+for (const width of [390, 1440]) test(`legacy chat image confirmation remains readable before assembly at ${width}px`, async ({page}, info) => {
   await page.setViewportSize({width, height: 844})
   await page.addInitScript(() => {
     localStorage.setItem('storyforge_guide_completed', 'e2e')
-    localStorage.setItem('storyforge-ai-config', JSON.stringify({provider: 'openai', model: 'test', baseUrl: 'https://chat-production.invalid/v1', apiKey: ''}))
+    localStorage.setItem('storyforge-ai-config', JSON.stringify({provider: 'agnes', model: 'agnes-2.5-flash', baseUrl: 'https://chat-production.invalid/v1', apiKey: ''}))
     sessionStorage.setItem('storyforge-ai-api-key-session', 'isolated-test-key')
   })
   let externalCalls = 0
