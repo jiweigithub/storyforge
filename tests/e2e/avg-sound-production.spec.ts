@@ -338,6 +338,7 @@ test('native original sound plan, actual continuous audition, independent author
   }, s.scope)
   expect(copy.projectId).not.toBe(s.scope.projectId); expect(copy.workId).not.toBe(s.scope.workId)
   await page.goto(`./avg/production?project=${copy.projectId}&work=${copy.workId}&assembly=1`)
+  await expect(page.getByRole('button', { name: '试玩此预览', exact: true })).toBeVisible({ timeout: 30_000 })
   await expect(page.getByRole('button', { name: '试玩此预览', exact: true })).toBeDisabled()
   await page.getByRole('button', { name: '复验导入声音证明', exact: true }).click()
   await expect(page.getByRole('status').filter({ hasText: '导入声音完成记录已在当前作品复验' })).toBeVisible({ timeout: 60_000 })

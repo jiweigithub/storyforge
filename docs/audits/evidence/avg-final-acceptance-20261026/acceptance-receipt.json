@@ -549,7 +549,24 @@
       "observedHeapMB": 2031,
       "exitCode": 134,
       "repair": "Only current and previous-version Mac build steps receive NODE_OPTIONS --max-old-space-size=4096; application launch/smoke steps and runtime unchanged. Release workflow downloads already-built web assets and does not compile on Mac.",
-      "status": "pending hosted Mac build"
+      "status": "pending hosted Mac build",
+      "repairResult": {
+        "head": "ba785f0d6be5cbe99b930c7e1dea5b8136fe88b5",
+        "runId": 40391012122,
+        "jobs": [
+          {
+            "id": 121811681764,
+            "architecture": "arm64",
+            "conclusion": "success"
+          },
+          {
+            "id": 121811681555,
+            "architecture": "x64",
+            "conclusion": "success"
+          }
+        ],
+        "scope": "Both complete existing Mac build/launch/previous-version replacement and backup-restore jobs passed."
+      }
     },
     "upstreamDDDIntegration": {
       "headBeforeMerge": "a87b6de15b578ea3fb8022857962a9673482a8fc",
@@ -651,6 +668,75 @@
           "seconds": 0.5
         }
       ]
+    },
+    "hostedAttemptBa785": {
+      "head": "ba785f0d6be5cbe99b930c7e1dea5b8136fe88b5",
+      "runId": 40391012112,
+      "avgJobId": 121811681680,
+      "avgJobConclusion": "failure",
+      "soundProduction": {
+        "passed": 4,
+        "failed": 2,
+        "flaky": 0,
+        "root": "Imported-copy route still showed 打开功能… when the five-second disabled assertion ran before the trial button mounted.",
+        "cascade": "Dependent explicit inheritance lacked the preceding success backup.",
+        "repair": "At the single missing route readiness site, await the actual trial button visible up to30s, then retain its disabled-before-imported-proof-reverification assertion. Other matching goto/disabled sites already wait through positive UI actions."
+      },
+      "artifact": {
+        "id": 12685255973,
+        "bytes": 58241372,
+        "sha256": "2b033f5b97176db679fd9222d263f4f0b25a8725c0f6417bc3b192c3ad7c4578"
+      },
+      "fullCIVerify": "still running; preserved to terminal, no local full-CI restart",
+      "targetedExistingChain": {
+        "stats": {
+          "startTime": "2026-10-26T20:16:40.077Z",
+          "duration": 123193.364,
+          "expected": 2,
+          "skipped": 0,
+          "unexpected": 0,
+          "flaky": 0
+        },
+        "cases": [
+          {
+            "title": "native original sound plan, actual continuous audition, independent author choices and original Preview remain usable without a text Key",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "durationMs": 81916,
+                "retry": 0
+              }
+            ]
+          },
+          {
+            "title": "native explicit sound inheritance creates a separately adopted revision and release with original audio and no generation requests",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "durationMs": 34963,
+                "retry": 0
+              }
+            ]
+          }
+        ],
+        "backup": {
+          "file": "original-sound-native-release.json",
+          "bytes": 8075712,
+          "sha256": "e187910d7b40bca7106df87df2b2f908d7038fd4759213d2502b64b584e64594",
+          "wrapperKeys": [
+            "schema",
+            "version",
+            "backup",
+            "expected",
+            "backupSHA256"
+          ]
+        },
+        "paidModelCalls": 0,
+        "scope": "Only the two existing failed import/reverify/publication and dependent explicit inheritance cases; isolated snapshot/browser, no retry",
+        "runtimeSourceUnchangedFrom": "ba785f0d6be5cbe99b930c7e1dea5b8136fe88b5"
+      }
     }
   },
   "limitations": [
