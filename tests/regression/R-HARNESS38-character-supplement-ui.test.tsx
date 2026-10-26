@@ -221,3 +221,28 @@ describe('R-HARNESS38 · 角色补全入口接入主 Agent Harness', () => {
     }
   })
 })
+
+
+it('清空补全候选必填文本时显示校验提示、保留原候选并阻止误采纳，修正后可保存', async () => {
+  const candidate = pendingCandidate()
+  const original = candidate.event.content
+  mocks.copilot.pendingCandidates = [candidate]
+  const { host } = await renderAction()
+  await openDialog(host)
+  const input = host.querySelector<HTMLTextAreaElement>('textarea[aria-label="补全候选-性格"]')!
+  const change = async (value: string) => act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(input, value)
+    input.dispatchEvent(new Event('change', { bubbles: true }))
+  })
+  await change('')
+  expect(host.querySelector('[role="alert"]')).not.toBeNull()
+  expect(mocks.copilot.updateCandidate).not.toHaveBeenCalled()
+  expect(candidate.event.content).toBe(original)
+  const adopt = Array.from(host.querySelectorAll('button')).find(button => button.textContent?.includes('确认写入'))!
+  expect(adopt.disabled).toBe(true)
+  expect(mocks.copilot.adoptCandidate).not.toHaveBeenCalled()
+  await change('作者补充：谨慎但勇敢。')
+  expect(mocks.copilot.updateCandidate).toHaveBeenCalledWith(88, expect.stringContaining('谨慎但勇敢'))
+  expect(host.querySelector('[role="alert"]')).toBeNull()
+  expect(adopt.disabled).toBe(false)
+})
