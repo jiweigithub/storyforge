@@ -229,9 +229,13 @@ export default function AdventureGamePlayer(props: {
   }, [])
 
   useEffect(() => {
-    void store.load(props.scope, props.worldGroupId, props.initialSessionId == null).then(async () => {
-      if (props.initialSessionId != null) await store.select(props.initialSessionId)
+    let active = true
+    // Resolve the library before the explicit route session; never briefly open
+    // whichever unrelated session happened to be selected in a previous page.
+    void store.load(props.scope, props.worldGroupId, true).then(async () => {
+      if (active && props.initialSessionId != null) await store.select(props.initialSessionId)
     })
+    return () => { active = false; store.cancelPendingLoad() }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.scope.projectId, props.scope.worldId, props.scope.workId, props.worldGroupId, props.initialSessionId])
 
