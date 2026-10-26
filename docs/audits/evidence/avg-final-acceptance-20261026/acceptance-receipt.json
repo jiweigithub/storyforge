@@ -345,6 +345,80 @@
           "seconds": 0.51
         }
       ]
+    },
+    "hostedAttempt9f4": {
+      "head": "9f4f12080f722f1acbff02c5782e27ec211183f7",
+      "tree": "01b2284ea5de063fd03e29b9a272d9672ff054b1",
+      "mergeTreeVerifiedEqual": true,
+      "runId": 40379985332,
+      "avgJobId": 121773307188,
+      "avgJobConclusion": "failure",
+      "nativeAudioStep": {
+        "passed": 2,
+        "failed": 1,
+        "flaky": 1,
+        "failure": "WAV input/output assertions passed at 48000Hz; native browser decodedSampleRateHz was 44100Hz, conflicting with hardcoded 48000 expectation.",
+        "repair": "Compare both decoder measurements to an independent native AudioContext sampleRate; preserve exact file header/sample-count/duration/gain/hash/worker/cancellation/zero-write assertions."
+      },
+      "voiceEntry": {
+        "firstAttempt": "Expected region absent while snapshot status showed 打开功能…",
+        "retry": "passed",
+        "repair": "Only this explicit lazy-feature readiness wait set to 30000ms; full test and product performance deadlines unchanged."
+      },
+      "artifact": {
+        "id": 12677921892,
+        "sha256": "2edad4ff8dd18ba02103a5084caf4263060339b5e50b913ea4c18da055a3b35b",
+        "bytes": 3259376
+      },
+      "runtimeSourceChangedByRepair": false,
+      "finalStatus": "pending corrected candidate",
+      "workflowStatus": "completed",
+      "workflowConclusion": "cancelled",
+      "supersededReason": "Known native-audio test error and observed lazy-entry readiness failure; superseded by E2E-only correction, not observation timeout.",
+      "repairStaticValidation": {
+        "runtimeSourceUnchangedFrom": "9f4f12080f722f1acbff02c5782e27ec211183f7",
+        "onlyChanged": [
+          "docs/audits/evidence/avg-final-acceptance-20261026/acceptance-receipt.json",
+          "docs/roadmap/AVG-WORK-PACKAGE-CARDS.md",
+          "tests/e2e/avg-audio-processing.spec.ts",
+          "tests/e2e/avg-voice-production.spec.ts"
+        ],
+        "checks": [
+          {
+            "argv": [
+              "npx",
+              "eslint",
+              "tests/e2e/avg-audio-processing.spec.ts",
+              "tests/e2e/avg-voice-production.spec.ts"
+            ],
+            "exitCode": 0,
+            "seconds": 1.05
+          },
+          {
+            "argv": [
+              "npx",
+              "playwright",
+              "test",
+              "tests/e2e/avg-audio-processing.spec.ts",
+              "tests/e2e/avg-voice-production.spec.ts",
+              "--list"
+            ],
+            "exitCode": 0,
+            "seconds": 0.76
+          },
+          {
+            "argv": [
+              "npm",
+              "run",
+              "check:docs"
+            ],
+            "exitCode": 0,
+            "seconds": 0.54
+          }
+        ],
+        "standaloneBrowserTestsExecuted": 0,
+        "frozenBaselineInputsUnchanged": true
+      }
     }
   },
   "limitations": [

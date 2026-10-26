@@ -48,6 +48,9 @@ test('native PCM gain preserves the source and timeline, decodes actual output b
     }
     window.Worker = ObservedWorker
     try {
+    const nativeContext = new AudioContext()
+    const nativeDecodeSampleRateHz = nativeContext.sampleRate
+    await nativeContext.close()
     const sourceHash = await blob.sha256MediaData(data)
     const recipe = { schema: 'storyforge.avg.audio-processing-recipe', version: 1, gainMilliDb: -6000, maximumDurationMs: 1000,
       sampleRatePolicy: 'preserve', channelPolicy: 'preserve', timelinePolicy: 'preserve', overflowPolicy: 'reject',
@@ -63,7 +66,7 @@ test('native PCM gain preserves the source and timeline, decodes actual output b
     let stopped = false
     try { await processing.processAvgAudioPcmWaveWithWorkerV1({ ...input, signal: controller.signal }) }
     catch (error) { stopped = (error as Error).name === 'AbortError' }
-    return { receipt: output.receipt, original: original.measurement, derived: derived.measurement,
+    return { receipt: output.receipt, original: original.measurement, derived: derived.measurement, nativeDecodeSampleRateHz,
       rawUnchanged: await blob.sha256MediaData(data) === sourceHash,
       outputHashMatches: await blob.sha256MediaData(derived.data) === output.receipt.output.contentHash,
       workerMatchesDirect: await blob.sha256MediaData(direct.data) === output.receipt.output.contentHash
@@ -74,8 +77,10 @@ test('native PCM gain preserves the source and timeline, decodes actual output b
   expect(result.receipt).toMatchObject({ version: 1, processor: 'storyforge.avg.pcm16-gain.v1', source: {
     sampleRateHz: 48_000, sampleCount: 24_000, durationMs: 500, channelCount: 2 },
   output: { sampleRateHz: 48_000, sampleCount: 24_000, durationMs: 500, channelCount: 2, fullScaleSampleCount: 0 } })
-  expect(result.original).toMatchObject({ durationMs: 500, channelCount: 2, decodedSampleRateHz: 48_000 })
-  expect(result.derived).toMatchObject({ durationMs: 500, channelCount: 2, decodedSampleRateHz: 48_000 })
+  // The default browser decoder uses the host AudioContext rate. The exact
+  // 48 kHz WAV container/sample-count assertions above remain independent.
+  expect(result.original).toMatchObject({ durationMs: 500, channelCount: 2, decodedSampleRateHz: result.nativeDecodeSampleRateHz })
+  expect(result.derived).toMatchObject({ durationMs: 500, channelCount: 2, decodedSampleRateHz: result.nativeDecodeSampleRateHz })
   expect(Math.abs(result.derived.integratedLufs - result.original.integratedLufs + 6)).toBeLessThan(0.05)
   expect(Math.abs(result.derived.truePeakDbtp - result.original.truePeakDbtp + 6)).toBeLessThan(0.05)
   expect(result.rawUnchanged && result.outputHashMatches && result.storeUnchanged && result.stopped && result.workerMatchesDirect).toBe(true)

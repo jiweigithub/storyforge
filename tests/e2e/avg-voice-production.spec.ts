@@ -126,7 +126,8 @@ async function seedVoice(page: Page, unknown = false, withImage = false, batchSi
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [{ b64_json: seed.png }] }) })
   })
   await page.goto(`./avg/production?project=${seed.scope.projectId}&work=${seed.scope.workId}`)
-  await expect(page.getByRole('region', { name: '系统与效果组装（实验）', exact: true })).toBeVisible()
+  // The frozen dev server may still be compiling this lazy feature on first entry.
+  await expect(page.getByRole('region', { name: '系统与效果组装（实验）', exact: true })).toBeVisible({ timeout: 30_000 })
   await page.getByRole('button', { name: '素材', exact: true }).click()
   if (withImage) {
     const imageEditor = page.getByRole('region', { name: '图片生产（实验）', exact: true })
