@@ -1,6 +1,6 @@
 # StoryForge 文档权威与归档规则
 
-> 版本：2.5.2 · 生效：2026-10-13
+> 版本：2.5.3 · 生效：2026-10-26
 > 本文回答“哪些文档仍可指导开发”。未列入现行清单的历史材料，不得作为设计或施工权威。
 
 ## 1. 裁决层级
@@ -78,6 +78,8 @@
 - `docs/roadmap/COMPLETED.md`
 
 ### 2.3 机器事实与质量证据
+
+- `docs/audits/TEXT-OPEN-WORLD-PR134-STAGE-SUMMARY-20261026.md`：L4 开放世界 PR134 阶段交接；记录已合并能力、真实预览通关、待办和恢复入口，不改变产品契约或代替真人/Release验收。
 
 - `docs/AI-FUNCTIONS-MANUAL.generated.md`：代码生成，不手改。
 - `docs/AI-FUNCTIONS-MANUAL.semantic.md`：生成清单的人工语义注解。
