@@ -80,9 +80,11 @@ describe.each([2, 3] as const)('R-TTRPGOPEN2 normal author production adoption p
     expect(prepared.intent.packageHash).toBe(original.packageHash)
     expect((await publishProductProductionV1(f)).receipt.releaseVersion).toBe(1)
   })
-  it('recovers after immutable carry commits but the new Plan commit fails, without discarding content or repeating a paid call', async () => {
+  it('rolls back immutable carry with a failed Plan commit and resumes without discarding content or repeating a paid call', async () => {
     const f = await seedOpenBrowserProductionV1()
     await runOpenBrowserProductionV1(f);await runOpenBrowserProductionV1(f,true)
+    const previousBuild = (await db.productBuilds.where('productionId').equals(f.productionId).first())!
+    const previousArtifacts = await db.productBuildArtifacts.where('buildId').equals(previousBuild.id!).toArray()
     const update = db.productBuilds.update.bind(db.productBuilds)
     let failed = false
     const spy = vi.spyOn(db.productBuilds,'update').mockImplementation(async (key,changes) => {
@@ -94,7 +96,14 @@ describe.each([2, 3] as const)('R-TTRPGOPEN2 normal author production adoption p
     await expect(runOpenBrowserProductionV1(f,true)).rejects.toThrow('SIMULATED_PLAN_COMMIT_INTERRUPTED')
     spy.mockRestore()
     const build = (await db.productBuilds.where('productionId').equals(f.productionId).first())!
-    expect((await db.productBuildArtifacts.where('buildId').equals(build.id!).toArray()).some(r => r.controlEpoch === build.controlEpoch && r.status === 'carried-forward')).toBe(true)
+    // Plan and epoch carry share one transaction: interruption preserves the
+    // original rows and Plan instead of leaving a partially committed carry.
+    expect(build.planRevision).toBe(previousBuild.planRevision)
+    expect(build.planJson).toBe(previousBuild.planJson)
+    expect(build.planHash).toBe(previousBuild.planHash)
+    const interruptedArtifacts = await db.productBuildArtifacts.where('buildId').equals(build.id!).toArray()
+    expect(interruptedArtifacts).toEqual(previousArtifacts)
+    expect(interruptedArtifacts.some(r => r.controlEpoch === build.controlEpoch && r.status === 'carried-forward')).toBe(false)
     const resumed = await runOpenBrowserProductionV1(f)
     expect(resumed.terminal).toBe(true);expect(resumed.modelCalls).toBe(profile === 2 ? 4 : 3)
     expect((await publishProductProductionV1(f)).receipt.releaseVersion).toBe(1)
