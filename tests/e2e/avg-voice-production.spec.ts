@@ -170,7 +170,7 @@ async function seedVoice(page: Page, unknown = false, withImage = false, batchSi
   return { seed, bodies, imageBodies }
 }
 
-async function reviewAndChoose(page: Page, configure = true, expectedCards = 1) {
+async function reviewAndChoose(page: Page, configure = true, expectedCards = 1, checkNarrowLayout = false) {
   const review = page.getByRole('region', { name: '配音审听与选择', exact: true })
   if (!await review.isVisible()) await page.getByRole('button', { name: '查看并审听此句', exact: true }).click()
   await expect(review.getByRole('button', { name: '从头开启新一轮审听', exact: true })).toBeEnabled()
@@ -185,12 +185,32 @@ async function reviewAndChoose(page: Page, configure = true, expectedCards = 1) 
     await review.getByLabel(label, { exact: true }).selectOption('pass')
   }
   for (const field of await review.getByLabel('观察依据', { exact: true }).all()) await field.fill('工程控制断言，非真实台词/人声或专业听感结论')
-  await review.getByLabel('本轮审听依据', { exact: true }).fill('真实浏览器播放工程 PCM；本测试合成评审只验证采用通路，不作为人声、艺术或商业质量验收')
+  await review.getByLabel('本轮审听依据', { exact: true }).fill('真实浏览器播放工程 PCM；本测试合成评审只验证采用通路，不作为人声、艺术或商业质量验收'
+    + (checkNarrowLayout ? `；工程长来源标识：${'q'.repeat(96)}` : ''))
   await expect(page.getByRole('button', { name: '制作与试玩', exact: true })).toBeDisabled()
   await expect(page.getByRole('button', { name: '查看并审听此句', exact: true })).toHaveCount(expectedCards)
   for (const button of await page.getByRole('button', { name: '查看并审听此句', exact: true }).all()) await expect(button).toBeDisabled()
   await review.getByRole('button', { name: '保存为待确认审听记录', exact: true }).click()
   await review.getByRole('button', { name: '确认这份审听记录', exact: true }).click()
+  if (checkNarrowLayout) {
+    const originalViewport = page.viewportSize()!
+    await review.getByText('已确认审听记录 v1', { exact: true }).click()
+    for (const width of [320, 390]) {
+      await page.setViewportSize({ width, height: 844 })
+      // The outer shell clips horizontal overflow: document.scrollWidth alone
+      // can pass while the inner review, fields and source text are cut off.
+      await expect.poll(() => review.evaluate(element => {
+        const viewport = innerWidth, main = element.closest('.lf-content')!
+        const nodes = [element, ...element.querySelectorAll('p,details,fieldset,input,textarea,select,button,audio')]
+        return { innerOverflow: main.scrollWidth > main.clientWidth + 1,
+          clipped: nodes.filter(node => node.getClientRects().length).some(node => {
+            const rect = node.getBoundingClientRect()
+            return rect.left < -1 || rect.right > viewport + 1
+          }) }
+      })).toEqual({ innerOverflow: false, clipped: false })
+    }
+    await page.setViewportSize(originalViewport)
+  }
   await review.getByRole('button', { name: '将这版配音列为待确认选择', exact: true }).click()
   await review.getByRole('button', { name: '确认采用这版配音', exact: true }).click()
   await expect(review.getByText(/已采用配音 v1/)).toBeVisible()
@@ -225,7 +245,7 @@ test(variant.title, async ({ page }, info) => {
     const returnedWave = Buffer.from(s.seed.wave, 'base64'); returnedWave[100] ^= 1
     expect(rawBefore.contentHash).toBe(createHash('sha256').update(returnedWave).digest('hex'))
   }
-  await reviewAndChoose(page)
+  await reviewAndChoose(page, true, 1, true)
   await page.reload()
   await page.evaluate(async () => {
     const load = new Function('p', 'return import(p)') as (p: string) => Promise<any>

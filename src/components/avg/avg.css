@@ -1,7 +1,7 @@
 .avg-app .lf-content {
   min-width: 0;
 }
-.avg-assembly { display: grid; gap: 16px; min-width: 0; }
+.avg-assembly { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; min-width: 0; }
 .avg-assembly .lf-paper { margin-bottom: 0; }
 .avg-assembly fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 .avg-assembly-row, .avg-assembly-candidate { padding: 16px 0; border-bottom: 1px solid var(--skin-border, #cfddc9); }
@@ -12,6 +12,8 @@
 .avg-sound-requirements .avg-assembly-row > p { grid-column: 1 / -1; }
 .avg-sound-production h5 { font-size: 16px; margin: 18px 0 10px; }
 .avg-sound-production { min-width: 0; overflow-wrap: anywhere; }
+.avg-voice-review { min-width: 0; overflow-wrap: anywhere; }
+.avg-voice-audition audio { display: block; width: 100%; max-width: 480px; }
 .avg-sound-plan fieldset.avg-assembly-row { margin: 12px 0; padding: 12px 0; }
 .avg-sound-plan .avg-form > fieldset, .avg-sound-review .avg-form > .avg-assembly-row { grid-column: 1 / -1; }
 .avg-assembly-media-row { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin: 8px 0; overflow-wrap: anywhere; }
