@@ -46,7 +46,9 @@ test('文字冒险顶部入口、制作页和其他产品往返保留工作区�
   await expect(page.getByTestId('adventure-game-player')).toBeVisible()
   await expect(workspace).toHaveValue(String(fixture.scope.projectId))
 
-  await page.goto(`./adventure/play?${query}&session=${fixture.sessionId}`)
+  await page.locator('summary').filter({ hasText: '冒险存档' }).click()
+  await page.getByRole('button', { name: /^导航回归游戏 .*可继续/ }).click()
+  await expect(page).toHaveURL(new RegExp(`adventure/play\\?[^#]*[?&]session=${fixture.sessionId}(?:&|$)`))
   await expect(page.getByRole('button', { name: '退出游戏', exact: true })).toBeVisible()
   await page.reload()
   await expect(page.getByRole('button', { name: '退出游戏', exact: true })).toBeVisible()

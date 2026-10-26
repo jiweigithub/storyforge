@@ -92,12 +92,12 @@ export default function AdventureLibrary(props: {
       const id = item.source.kind === 'build'
         ? await store.startPreview(item.source.productBuildId)
         : await store.start(item.source.productReleaseId)
-      if (mounted.current) props.onOpenSession(id)
+      props.onOpenSession(id)
     } catch (cause) { if (mounted.current) setLocalError(cause instanceof Error ? cause.message : String(cause)) }
   }
   const open = async (id: number) => {
     await store.select(id)
-    if (mounted.current && useAdventureGamePlayerStore.getState().selectedSessionId === id) props.onOpenSession(id)
+    if (useAdventureGamePlayerStore.getState().selectedSessionId === id) props.onOpenSession(id)
   }
   const endings = featured?.manifest?.narrative.nodes.filter(node => node.kind === 'ending').length ?? 0
   return <div className="adventure-showcase" data-testid="adventure-game-player">

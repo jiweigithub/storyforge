@@ -608,7 +608,11 @@ export default function AdventureGamePlayer(props: {
 
   if (!selected || !adventure || !manifest || !location) return <AdventureLibrary
     scope={props.scope} error={error} onRemoveSession={removeSession}
-    onOpenSession={id => props.onOpenSession?.(id)}
+    onOpenSession={id => {
+      // Selecting a save replaces the library before its promise resolves.
+      // The player, which survives that switch, owns navigation cancellation.
+      if (playerMounted.current && useAdventureGamePlayerStore.getState().selectedSessionId === id) props.onOpenSession?.(id)
+    }}
   />
 
   return <div
