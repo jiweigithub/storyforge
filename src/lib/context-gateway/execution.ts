@@ -4,7 +4,7 @@ import { AGENT_TOOL_SCHEMA_HASH_V1 } from '../agent/execution-binding'
 import { runReadOnlyAgent, type AgentModelAdapter, type ReadOnlyAgentResult } from '../agent/runner'
 import type { AgentSkillDefinitionV1 } from '../agent/skill-registry'
 import type { AgentToolResult } from '../agent/types'
-import { hashCanonicalValue } from '../agent/run/hash'
+import { canonicalStringify, hashCanonicalValue } from '../agent/run/hash'
 import { CONTEXT_SOURCES } from '../registry/context-sources'
 import type {
   ContextPacketV1,
@@ -41,6 +41,7 @@ import {
 } from './selector'
 import {
   createContextGatewayToolSessionV1,
+  MAX_SOURCE_CAPABILITIES_PER_RESOURCE,
   isContextGatewayResourceAllowedV1,
   settleContextGatewayTokensV1,
   type ContextGatewayProviderBindingV1,
@@ -91,6 +92,7 @@ export interface ExecuteContextGatewayInputV1 {
   accessPolicyOverride?: ContextAccessPolicyV1
   /** Exact resource permission derived from ProductSourcePlan selectors. */
   allowedResourceKeys?: readonly string[]
+  worldQueryAccess?: import('../types/world-query').WorldQueryAccessV1
   /** Deterministic adapter boundary; excludes a record and all field/aggregate resources. */
   excludedRecordResourceKeys?: readonly string[]
   /** Omit to disable extra planning calls while preserving deterministic selection. */
@@ -115,6 +117,7 @@ export interface ContextGatewayExecutionV1 {
     catalogPages: number
     catalogResources: number
     deterministicResourceReads: number
+    deterministicOriginalReadCalls: number
     additionalPlanningModelCalls: number
     additionalToolCalls: number
     additionalReadResources: number
@@ -394,6 +397,7 @@ export async function executeContextGatewayV1(
     scope: frozenScope(input),
     policy: accessPolicy,
     allowedResourceKeys: input.allowedResourceKeys,
+    worldQueryAccess: input.worldQueryAccess,
     excludedRecordResourceKeys: input.excludedRecordResourceKeys,
   })
   const catalog = await collectCatalog(session)
@@ -439,6 +443,7 @@ export async function executeContextGatewayV1(
 
   const descriptorByKey = new Map(catalog.descriptors.map(item => [item.resourceKey, item]))
   const deterministicReads: RetrievalDecisionV1[] = []
+  let deterministicOriginalReadCalls = 0
   const sourceSnapshots: ContextGatewaySourceSnapshotInputV1[] = []
   const packetBlocks: string[] = []
   const packetBlockSources: string[] = []
@@ -454,39 +459,45 @@ export async function executeContextGatewayV1(
     if (remaining < 1) fail('deterministic-token-budget', `确定性读取 ${decision.resourceKey} 前额度耗尽`)
     const binding = bindingFor(session, decision.sourceKey)
     if (mandatoryOriginalKeys.has(decision.resourceKey)) {
-      if (descriptor.sourceRefs.length !== 1) {
-        fail('mandatory-original-ambiguous', `原文定点读取要求唯一 source ref: ${decision.resourceKey}`)
+      const refs = descriptor.sourceRefs
+      if (!refs.length || refs.length > MAX_SOURCE_CAPABILITIES_PER_RESOURCE
+        || new Set(refs.map(ref => canonicalStringify(ref))).size !== refs.length) {
+        fail('mandatory-original-ambiguous', `原文证据为空、重复或超过单资源引用上限: ${decision.resourceKey}`)
       }
-      const sourceRef = descriptor.sourceRefs[0]!
-      const read = await binding.provider.readOriginal({
-        scope: session.scope,
-        resourceKey: decision.resourceKey,
-        sourceRef,
-        maxTokens: remaining,
-      })
-      const exactHash = sourceRef.anchor?.quoteHash ?? sourceRef.contentHash
-      if (descriptor.contentHash !== decision.contentHash
-        || descriptor.policyHash !== decision.policyHash
-        || read.descriptor.contentHash !== decision.contentHash
-        || read.descriptor.policyHash !== decision.policyHash
-        || read.contentHash !== exactHash
-        || read.contentHash !== await sha256Text(read.content)
-        || read.tokenCount !== estimateTokens(read.content)) {
-        fail('mandatory-original-incomplete', `${decision.resourceKey} 原文超出本轮预算或验签失败，拒绝静默截断`)
+      const spans: Array<{ field: string; contentHash: string; text: string }> = []
+      let settledTokens = 0
+      for (const sourceRef of refs) {
+        // As with deterministic full reads, these host-selected mandatory
+        // reads do not spend the model's bounded additional-tool-call budget.
+        // Count every physical span read separately; the 64-ref resource cap
+        // and the shared retrieved-token budget still apply before delivery.
+        deterministicOriginalReadCalls += 1
+        const read = await binding.provider.readOriginal({ scope: session.scope, resourceKey: decision.resourceKey,
+          sourceRef, maxTokens: session.policy.maxRetrievedTokens - session.usage.retrievedTokens })
+        const exactHash = sourceRef.anchor?.quoteHash ?? sourceRef.contentHash
+        if (descriptor.contentHash !== decision.contentHash || descriptor.policyHash !== decision.policyHash
+          || read.descriptor.contentHash !== decision.contentHash || read.descriptor.policyHash !== decision.policyHash
+          || canonicalStringify(read.sourceRef) !== canonicalStringify(sourceRef)
+          || read.contentHash !== exactHash || read.contentHash !== await sha256Text(read.content)
+          || read.tokenCount !== estimateTokens(read.content)) {
+          fail('mandatory-original-incomplete', `${decision.resourceKey} 原文超出本轮预算或验签失败，拒绝静默截断`)
+        }
+        settleContextGatewayTokensV1(session, read.tokenCount)
+        settledTokens += read.tokenCount
+        spans.push({ field: sourceRef.field, contentHash: read.contentHash, text: read.content })
       }
-      settleContextGatewayTokensV1(session, read.tokenCount)
-      deterministicReads.push({
-        ...retrievalDecision({ decision, descriptor: read.descriptor, tokenCount: read.tokenCount }),
-        depth: 'original',
-        sourceRefs: [sourceRef],
+      // A multi-span resource is an evidence bundle, never a fabricated
+      // contiguous quotation. Keep each exact string and ref separately.
+      const authorSource = descriptor.worldSemantic?.authorSource
+      const content = spans.length === 1 && !authorSource ? spans[0]!.text : canonicalStringify({
+        schema: 'storyforge.original-evidence-bundle', version: 1, spans,
+        ...(authorSource ? { authorSource } : {}),
       })
-      sourceSnapshots.push({
-        sourceKey: decision.sourceKey,
-        resourceKey: decision.resourceKey,
-        sourceRefs: [sourceRef],
-        content: read.content,
-      })
-      packetBlocks.push(`【${read.descriptor.kind}｜${read.descriptor.title}｜original】\n${read.content}`)
+      const tokenCount = estimateTokens(content)
+      settleContextGatewayTokensV1(session, Math.max(0, tokenCount - settledTokens))
+      deterministicReads.push({ ...retrievalDecision({ decision, descriptor, tokenCount }), depth: 'original', sourceRefs: [...refs] })
+      sourceSnapshots.push({ sourceKey: decision.sourceKey, resourceKey: decision.resourceKey, sourceRefs: [...refs], content })
+      packetBlocks.push(`【${descriptor.kind}｜${descriptor.title}｜original】\n${content}`)
       packetBlockSources.push(decision.sourceKey)
       continue
     }
@@ -574,7 +585,7 @@ export async function executeContextGatewayV1(
             queryTrace.push({
               query: item.name === 'search_context'
                 ? String(item.arguments.query ?? '')
-                : '[catalog]',
+                : item.name === 'query_world_release' ? JSON.stringify(item.arguments) : '[catalog]',
               sourceKeys: [...item.result.meta.sourceKeys].sort(),
               resultResourceKeys: [...item.result.meta.gateway.resourceKeys],
               resultFingerprint: await hashCanonicalValue({
@@ -657,11 +668,11 @@ export async function executeContextGatewayV1(
   const contract = await createContextGatewayContractSnapshotV1({
     policy: session.policy,
     sources: providerSources,
-    gatewayVersion: 'context-gateway-execution-v1',
+    gatewayVersion: 'context-gateway-execution-v2-original-bundles',
     selectorVersion: CONTEXT_SELECTOR_VERSION_V1,
     sufficiencyObligationsVersion: 'context-sufficiency-v1',
     toolSchemaHash: AGENT_TOOL_SCHEMA_HASH_V1,
-    normalizationVersion: 'context-gateway-execution-v1',
+    normalizationVersion: 'context-gateway-execution-v2-original-bundles',
   })
   const content = packetBlocks.join('\n\n')
   const contextPacket = await createContextPacketV1({
@@ -704,6 +715,7 @@ export async function executeContextGatewayV1(
       catalogPages: catalog.pages,
       catalogResources: catalog.descriptors.length,
       deterministicResourceReads: deterministicReads.length,
+      deterministicOriginalReadCalls,
       additionalPlanningModelCalls: planning?.steps ?? 0,
       additionalToolCalls: planning?.toolCalls ?? 0,
       additionalReadResources: agentReads.size,

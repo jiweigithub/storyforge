@@ -154,3 +154,27 @@ describe('CHAR-1 · 角色状态候选 UI', () => {
     }
   })
 })
+
+
+it('候选编辑校验失败保持原候选、显示错误并阻止误采纳，修正后可继续保存', async () => {
+  const candidate = pendingCandidate()
+  const original = candidate.event.content
+  mocks.copilot.pendingCandidates = [candidate]
+  const { host } = await renderAction()
+  const reason = host.querySelector<HTMLTextAreaElement>('[aria-label="角色状态变化理由"]')!
+  const changeReason = async (value: string) => act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(reason, value)
+    reason.dispatchEvent(new Event('change', { bubbles: true }))
+  })
+  await changeReason('')
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain('reason')
+  expect(mocks.copilot.updateCandidate).not.toHaveBeenCalled()
+  expect(candidate.event.content).toBe(original)
+  const adopt = Array.from(host.querySelectorAll('button')).find(button => button.textContent?.includes('采纳'))!
+  expect(adopt.disabled).toBe(true)
+  expect(mocks.copilot.adoptCandidate).not.toHaveBeenCalled()
+  await changeReason('作者补充了有效理由。')
+  expect(mocks.copilot.updateCandidate).toHaveBeenCalledWith(88, expect.stringContaining('作者补充了有效理由'))
+  expect(host.querySelector('[role="alert"]')).toBeNull()
+  expect(adopt.disabled).toBe(false)
+})

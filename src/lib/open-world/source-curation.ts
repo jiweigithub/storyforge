@@ -13,7 +13,7 @@ import { executeContextGatewayV1, type ContextGatewayExecutionV1 } from '../cont
 import { openWorldSemanticResourceCatalogV1 } from '../context-gateway/world-release-client'
 import { db } from '../db/schema'
 import { readAgentRunArtifactExactV1, recordAgentRunArtifactV1 } from '../memory/artifact-store'
-import { resolveProductSourceReadBoundaryV1 } from '../product/source-contracts'
+import { resolveProductSourceReadBoundary } from '../product/source-contracts'
 import { assembleContext } from '../registry/assemble-context'
 import type { AssembleContextInput, AssembleContextResult, ContextResourceDescriptorV1 } from '../registry/types'
 import type {
@@ -467,7 +467,7 @@ async function worldBatches(input: {
     || creatorWorldPlan.releaseHash !== available.worldReference.releaseHash)) {
     fail('P1 SourcePin与Creator SourcePlan不属于同一WorldRelease')
   }
-  const boundary = sourcePlan ? await resolveProductSourceReadBoundaryV1(sourcePlan) : null
+  const boundary = sourcePlan ? await resolveProductSourceReadBoundary(sourcePlan) : null
   const catalog = await openWorldSemanticResourceCatalogV1({
     localReleaseRecordId: available.worldReference.localReleaseRecordId,
     expectedProjectId: input.scope.projectId,

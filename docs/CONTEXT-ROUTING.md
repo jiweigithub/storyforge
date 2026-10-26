@@ -1,6 +1,6 @@
 # StoryForge 上下文路由
 
-> 版本：2.7.1 · 生效：2026-10-13
+> 版本：2.8.2 · 生效：2026-10-13
 > 目标：保持项目级关联理解，同时只读取当前任务需要的现行文档与源码。三注册表和数据红线不因上下文精简而降低。
 
 ## 1. 默认入口
@@ -28,11 +28,14 @@
 | 分步骤长篇或节点 | 具体模块、Skill、领域数据、节点 adapter | `products/LONGFORM-AND-NODE.md`、能力基线相关行、入口→下游闭包；系统文质量优化再读 `roadmap/LONGFORM-SYSTEM-FICTION-QUALITY-PLAN.md` 对应单元 | 上层产品完整实现 |
 | 短篇、剧本、漫画 | work/adaptation kind、source manifest、产物 owner | `products/INDEPENDENT-CREATION.md`、`roadmap/INDEPENDENT-CREATION-DEVELOPMENT-PLAN.md` 和且仅和目标产品的专项方案、对应领域代码和表/Skill | 另外两个独立创作产品内部实现、世界引擎或游戏媒资的无关实现 |
 | 漫剧前期生产 | MotionDrama Work、source manifest、series/episode、asset/shot/reference、Image/Video Prompt IR | `products/MOTION-DRAMA.md`、`roadmap/MOTION-DRAMA-PREPRODUCTION-DEVELOPMENT-PLAN.md`、对应 motion-drama 代码与三注册表 | 页漫排字/页面、最终视频/剪辑、世界与上层产品媒资内部实现 |
-| 世界引擎 | World draft/release、code/version/completeness、source gateway | `products/WORLD-ENGINE.md`、数据治理、world-engine 代码与三注册表 | 上层运行状态、产品媒资实现 |
+| 世界引擎、WorldRelease、世界版本/封存/出口 | World draft/release、codec/hash、source gateway | `products/WORLD-ENGINE.md` §1～11、§13、§18；数据治理、world-engine 代码与三注册表 | 上层运行状态、产品媒资实现 |
+| Narrative IR、角色知识、时间与因果 | temporalFacts、knowledgeLedger、事件/故事线、source UID/证据、projector | `products/WORLD-ENGINE.md` §10～14、§16、§18～19、§22～30（基线、领域投影、候选、冻结索引、查询、精确来源计划、修改影响与规模诊断）；命中的领域类型/采纳/生命周期与反例 | 将 Work 缓存或产品私域当冻结 Canon |
+| 世界检索、世界推演、人物视角/秘密 | world-release-provider、typed query、policy/manifest、hypothesis owner | `products/WORLD-ENGINE.md` §13～16、§19；Gateway、source-contracts、对应测试 | 未实现 query/validate/simulate 不得按现成功能调用 |
+| 产品 Requirement Compiler、上层产品读取世界 | product adapter、精确 selection/依赖闭包、SourcePlan/Manifest | `products/WORLD-ENGINE.md` §14、§17～20；`products/UPPER-PRODUCTS.md`、目标产品契约 | 不读取或复制世界物理表清单，不引入全产品万能 payload |
 | 跑团/聊天/AI 小镇/文字游戏 | WorldReference、产品 requirement adapter、Brief/SourcePlan/SourceManifest、production/build/release/session | `products/UPPER-PRODUCTS.md`、目标产品代码、中立世界资源协议和 owner；角色聊天按 `roadmap/CHARACTER-CHAT-DEVELOPMENT-PLAN.md` 读取命中的工作包；文字冒险还须读取 `products/TEXT-ADVENTURE.md`，专业生产任务再由其路由到 `products/text-adventure-production/README.md` | 其它上层产品内部细节 |
 | 新体系或完整产品 | 总纲阶段、稳定 ID、依赖和当前能力状态 | 总纲、对应产品契约、能力基线、路线图与质量标准 | 旧任务名驱动的历史方案 |
 | PR、合并、发布、交接 | branch/commit/PR/check 状态 | `COLLAB-WORKFLOW.md` 相关段、diff、验证证据 | 协作历史全文 |
-| 并行产品开发 | 产品 ID、共同基线、共享热点、各自 owner | 总纲 §12.1、`COLLAB-WORKFLOW.md` §2.1、产品契约和受影响注册表 | 其它产品内部实现；禁止多分支各改一套共享协议 |
+| 并行产品开发 | 产品 ID、共同基线、共享热点、各自 owner | 总纲 §12.1、`COLLAB-WORKFLOW.md` §2.1、产品契约和受影响注册表；涉及世界语义时读 `products/WORLD-ENGINE.md` §18、§20 | 其它产品内部实现；禁止多分支各改一套共享协议 |
 | 项目知识库、官网说明、用户更新日志或反馈入口 | 用户可见变化、产品 ID、当前入口与能力状态 | `website-docs/AGENTS.md`、对应 `website-docs/` 页面、`website-docs/updates/changelog.md`；反馈任务再读 `website-docs/feedback/`、`.github/ISSUE_TEMPLATE/` 和相关表单实现 | 内部工程文档正文、WPS 知识库；不得把分支内容误报为已上线 |
 | 历史追溯 | 任务 ID、commit、被删文件名 | `git log` / `git blame`；必要时 WPS 已过时归档 | 把旧文档重新当现行权威 |
 | 文档或宪法冲突 | 冲突条款和代码事实 | 总纲、`DOCUMENT-AUTHORITY.md`、CLAUDE 对应节和检查器 | 无关产品材料 |

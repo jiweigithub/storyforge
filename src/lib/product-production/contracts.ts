@@ -24,7 +24,7 @@ import type {
 } from '../types'
 import { PRODUCT_MEDIA_KINDS, PRODUCT_PRODUCTION_COMMAND_TYPES, PRODUCTION_PRODUCT_KINDS_V1 } from '../types'
 import { isSha256Hash, canonicalProductProductionJsonV2 } from './hash'
-import { parseProductRuntimePackageV1, parseProductWorldSourceSelectionV1 } from './runtime-package'
+import { parseProductRuntimePackageV1, parseProductWorldSourceSelection } from './runtime-package'
 import { parseTtrpgProductionBriefV2 } from '../ttrpg/production-brief'
 import { parseAiTownProductionBriefV1 } from '../ai-town/contracts'
 import { parseTextAdventureProductionBriefV1 } from '../adventure/production-brief'
@@ -289,7 +289,7 @@ export function parseProductProductionBriefV3(value: unknown): ProductProduction
   const source = record(row.source, 'source')
   exactKeys(source, ['worldReleaseId', 'worldContentHash', 'selection', 'startingPoint'], 'source')
   if (!isSha256Hash(source.worldContentHash)) fail('source.worldContentHash 无效')
-  const selection = parseProductWorldSourceSelectionV1(source.selection)
+  const selection = parseProductWorldSourceSelection(source.selection)
 
   const intent = record(row.intent, 'intent')
   exactKeys(intent, [

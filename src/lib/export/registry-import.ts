@@ -19,8 +19,10 @@ import { isPortableResourceUidV1 } from '../context-gateway/resource-uid'
 import { remapWorldPortalTargets } from '../utils/world-portals'
 import { transactionTablesFor } from '../registry/lifecycle'
 import type { ExportRefRemap, TableSpec } from '../registry/types'
-import type { ProjectExportData } from './json-export'
+import type { ProjectExportData, ProjectImportOptionsV1 } from './json-export'
 import { CURRENT_BACKUP_VERSION, normalizeProjectBackup } from './backup-trust'
+import { remapNarrativeDomainFieldV1 } from '../narrative-domain/references'
+import { assertNarrativeLineageRowsV1 } from '../world-engine/narrative-lineage-lifecycle'
 import { rebindPortableAgentRunContractV1 } from '../agent/run/contract-portability'
 import {
   finalizeImportedAgentRunLedgersV1,
@@ -433,6 +435,14 @@ async function validateProductArchitectureBackup(value: Record<string, any>): Pr
       if (brief._worldExportId !== worldRelease._worldExportId) {
         throw new Error('[deriveImport] v10 ProductBrief 与 WorldRelease 世界不一致')
       }
+      if (typeof brief._sourcePlanPortableJson === 'string') {
+        const { validateEnhancedProductSourcePlanRecordV2 } = await import('../product/exact-source-contracts')
+        await validateEnhancedProductSourcePlanRecordV2({
+          sourcePlanJson: brief._sourcePlanPortableJson, sourcePlanHash: brief.sourcePlanHash,
+          briefJson: brief.briefJson, briefHash: brief.briefHash,
+          sourceWorldReleaseId: brief._sourceWorldReleaseExportId, sourceWorldContentHash: brief.sourceWorldContentHash,
+        })
+      }
     }
   }
   for (const command of commands) {
@@ -479,6 +489,8 @@ async function validateProductArchitectureBackup(value: Record<string, any>): Pr
       throw new Error('[deriveImport] v10 ProductRelease 内容、身份或Hash无效')
     }
   }
+  const runtimeSourceContract = await import('../product/runtime-source-manifest')
+  const sourceBriefsByRevision = new Map(briefs.map(brief => [`${brief._productionExportId}:${brief.revision}`, brief]))
   for (const session of runtimeSessions) {
     validateImportedChatNarrativeEvidenceStateV1(session.initialStateJson, session.kind)
     validateImportedChatNarrativeEvidenceStateV1(session.runtimeHeadStateJson, session.kind)
@@ -498,6 +510,24 @@ async function validateProductArchitectureBackup(value: Record<string, any>): Pr
     if (sourceProductType !== session.kind) {
       throw new Error('[deriveImport] v12 ProductRuntime 身份与来源产品不一致')
     }
+    let runtimeSourceManifest = null
+    if (releaseId != null) {
+      const manifest = releaseManifests.get(releaseId)
+      if (!manifest) throw new Error('[deriveImport] ProductRuntime 产品来源缺失')
+      runtimeSourceManifest = await runtimeSourceContract.runtimeSourceManifestFromReleaseV1(manifest)
+    } else {
+      const build = builds.get(buildId)
+      const brief = build && sourceBriefsByRevision.get(`${build._productionExportId}:${build.briefRevision}`)
+      if (!build || !brief) throw new Error('[deriveImport] ProductRuntime 预览来源缺失')
+      runtimeSourceManifest = await runtimeSourceContract.runtimeSourceManifestFromBuildRecordsV1({
+        build: build as unknown as import('../types').ProductBuildRecordV1,
+        brief: { ...brief, sourcePlanJson: brief._sourcePlanPortableJson } as unknown as import('../types').ProductProductionBriefRecordV1,
+      })
+    }
+    if (runtimeSourceManifest && session.runtimeSourceHash !== runtimeSourceManifest.packageHash) {
+      throw new Error('[deriveImport] ProductRuntime 来源包身份不一致')
+    }
+    runtimeSourceContract.assertProductRuntimeSourceSnapshotV2({ canonSnapshot: session.canonSnapshotJson, manifest: runtimeSourceManifest })
   }
   const runtimeSequences = new Map<number, Set<number>>()
   const runtimeEventsBySession = new Map<number, ProductRuntimeEvent[]>()
@@ -1460,8 +1490,8 @@ function deriveImportOrder(specs: TableSpec[]): TableSpec[] {
         // JSON locators are restored in a second pass when their target table
         // is a forward reference. This is required for legitimate proof cycles
         // such as ProductBuild ledger -> AgentRun -> ProductBuild.
-        .filter(ref => ref.kind !== 'json-id-paths' && ref.remapVia !== spec.name)
-        .map(ref => ref.remapVia)
+        .flatMap(ref => ref.kind === 'json-id-paths' || ref.kind === 'narrative-source-refs-v1' || ref.remapVia === spec.name
+          ? [] : [ref.remapVia])
       const ownerDeps = spec.domainOwner?.locator?.kind === 'field'
         ? [spec.domainOwner.locator.owner === 'world' ? 'worlds' : spec.domainOwner.locator.owner === 'work' ? 'works' : null]
         : spec.domainOwner?.locator?.kind === 'exclusive-fields' ? ['worlds', 'works']
@@ -1565,10 +1595,15 @@ async function restorePortableSharedMediaObject(
  * 派生导入:把 ProjectExportData 写成一个新项目,返回新项目 id。
  * 与手写 importProjectJSON 行为一致(往返完整性由 R-export-fullcoverage 锁死)。
  */
-export async function deriveImportProjectJSON(data: ProjectExportData): Promise<number> {
+export async function deriveImportProjectJSON(data: ProjectExportData, options: ProjectImportOptionsV1 = {}): Promise<number> {
+  const finalizeInTransaction = options.finalizeInTransaction
   if (!data.project) throw new Error('无效的导出文件格式')
   data = normalizeProjectBackup(data)
   await validateCurrentBackup(data)
+  await assertNarrativeLineageRowsV1(new Map([
+    ['worlds', data.worlds as unknown as Record<string, unknown>[]],
+    ['worldDerivations', data.worldDerivations as unknown as Record<string, unknown>[]],
+  ]), 'portable')
   const now = Date.now()
   const specs = PROJECT_TABLES.filter(s => s.exportable && s.name !== 'projects')
   const order = deriveImportOrder(specs)
@@ -1601,6 +1636,11 @@ export async function deriveImportProjectJSON(data: ProjectExportData): Promise<
 
     const newIdMaps = new Map<string, Map<number, number>>()
     const deferredForeignKeys: Array<{ table: any; id: number; field: string; target: string; exportId: number }> = []
+    const deferredNarrativeRefs: Array<{
+      table: TableSpec['table']; id: number
+      remap: Extract<ExportRefRemap, { kind: 'narrative-source-refs-v1' }>
+      value: unknown
+    }> = []
     const deferredJsonIdPaths: Array<{
       table: any
       tableName: string
@@ -1754,7 +1794,14 @@ export async function deriveImportProjectJSON(data: ProjectExportData): Promise<
 
       // 两阶段:JSON 引用重映射(portals 自引用,需本表 newIdMap 已全)
       for (const rr of spec.exportRefRemap ?? []) {
-        if (rr.kind === 'portals') {
+        if (rr.kind === 'narrative-source-refs-v1') {
+          // Always wait for every table. An event may reference several target
+          // kinds, including a forward event or a chapter referring back to it.
+          for (const pending of pendingRefRemap) {
+            const value = pending.stashed[rr.exportAs]
+            if (value !== undefined) deferredNarrativeRefs.push({ table: spec.table, id: pending.newId, remap: rr, value })
+          }
+        } else if (rr.kind === 'portals') {
           const refMap = rr.remapVia === spec.name ? newIdMap : (newIdMaps.get(rr.remapVia) ?? newIdMap)
           for (const p of pendingRefRemap) {
             const remapped = remapWorldPortalTargets(p.stashed[rr.field], (exportId: number) => refMap.get(exportId))
@@ -1821,6 +1868,10 @@ export async function deriveImportProjectJSON(data: ProjectExportData): Promise<
       newIdMaps.set(spec.name, newIdMap)
     }
 
+    for (const deferred of deferredNarrativeRefs) {
+      const value = remapNarrativeDomainFieldV1(deferred.remap.field, deferred.value, 'import', newIdMaps)
+      await deferred.table.update(deferred.id, { [deferred.remap.field]: value })
+    }
     for (const deferred of deferredForeignKeys) {
       const mapped = newIdMaps.get(deferred.target)?.get(deferred.exportId)
       if (mapped != null) await deferred.table.update(deferred.id, { [deferred.field]: mapped })
@@ -1863,6 +1914,7 @@ export async function deriveImportProjectJSON(data: ProjectExportData): Promise<
       })
     }
 
+    if (finalizeInTransaction) await Dexie.Promise.resolve(finalizeInTransaction(newProjectId))
     return newProjectId
   })
   return importedProjectId

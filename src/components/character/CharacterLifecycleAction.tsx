@@ -76,6 +76,7 @@ function LifecycleDialog({
   onDone?: () => void
 }) {
   const copilot = useMasterCopilot({ project, worldGroupId })
+  const [editError, setEditError] = useState<string | null>(null)
   const chapters = useChapterStore(state => state.chapters)
   const loadChapters = useChapterStore(state => state.loadAll)
   const arcs = useStoryArcStore(state => state.arcs)
@@ -101,6 +102,7 @@ function LifecycleDialog({
       return null
     }
   }, [candidate])
+  useEffect(() => setEditError(null), [candidate?.event.id])
   const visibleOutlineIds = useMemo(() => new Set(outlineNodes
     .filter(node => (node.worldGroupId ?? null) === worldGroupId)
     .map(node => node.id)
@@ -139,14 +141,19 @@ function LifecycleDialog({
   const updateCandidate = async (patch: Partial<CharacterLifecycleCandidateV1>) => {
     if (!candidate || !parsed) return
     const next = { ...parsed, ...patch }
-    await copilot.updateCandidate(
-      candidate.event.id!,
-      serializeCharacterLifecycleCandidateV1(next, candidate.payload.baseSnapshot as never),
-    )
+    setEditError(null)
+    try {
+      await copilot.updateCandidate(
+        candidate.event.id!,
+        serializeCharacterLifecycleCandidateV1(next, candidate.payload.baseSnapshot as never),
+      )
+    } catch (cause) {
+      setEditError(cause instanceof Error ? cause.message : '候选修改未保存，请修正后重试。')
+    }
   }
 
   const adoptCandidate = async () => {
-    if (!candidate || !await copilot.adoptCandidate(candidate)) return
+    if (editError || !candidate || !await copilot.adoptCandidate(candidate)) return
     onDone?.()
     onClose()
   }
@@ -198,7 +205,7 @@ function LifecycleDialog({
             <CInput value={hint} onChange={event => setHint(event.target.value)} placeholder="补充说明（可选）" />
           </div>
         )}
-        {copilot.error && <p className="mt-2 text-xs text-error">{copilot.error}</p>}
+        {(editError || copilot.error) && <p role="alert" className="mt-2 text-xs text-error">{editError ?? copilot.error}</p>}
         {candidate && parsed && (
           <div className="mt-3 space-y-2">
             <p className="text-xs text-text-secondary">{STATUS_LABELS[parsed.fromStatus]} → {STATUS_LABELS[parsed.targetStatus]}</p>
@@ -212,7 +219,7 @@ function LifecycleDialog({
           {candidate ? (
             <>
               <button type="button" disabled={copilot.busy} onClick={() => { void copilot.rejectCandidate(candidate) }} className="px-2 py-1 text-xs"><X className="inline h-3 w-3" /> 拒绝</button>
-              <button type="button" disabled={copilot.busy || !parsed} onClick={() => { void adoptCandidate() }} className="rounded bg-accent px-2.5 py-1.5 text-xs text-white"><Check className="inline h-3 w-3" /> 采纳</button>
+              <button type="button" disabled={copilot.busy || !parsed || !!editError} onClick={() => { void adoptCandidate() }} className="rounded bg-accent px-2.5 py-1.5 text-xs text-white"><Check className="inline h-3 w-3" /> 采纳</button>
             </>
           ) : (
             <button type="button" disabled={copilot.loading || copilot.busy || (chapterId == null && arcId == null)} onClick={() => { void run() }} className="rounded bg-accent px-2.5 py-1.5 text-xs text-white disabled:opacity-50">

@@ -43,6 +43,7 @@ import {
   readCanonAssertions,
   readSettingAssertionScanContext,
 } from '../fact-ledger/setting-assertions'
+import { readNarrativeCanonContextV1 } from '../world-engine/narrative-domain-context'
 import { readStorylineProgressContext } from '../storyline/storyline-progress'
 import { readCodexExtractionBaselineContextV1 } from '../codex/extraction'
 import { readHistoryAgentBaselineContextV1 } from '../history/agent-baseline'
@@ -146,6 +147,15 @@ const WORLD_RELEASE_RESOURCE_PROVIDER_PROXY_V1: ContextResourceProviderV1 = {
     .WORLD_RELEASE_RESOURCE_PROVIDER_V1.readOriginal!(input),
   fingerprint: async scope => (await import('../context-gateway/world-release-provider'))
     .WORLD_RELEASE_RESOURCE_PROVIDER_V1.fingerprint(scope),
+  worldQuery: {
+    openAuthor: async input => (await import('../context-gateway/world-release-provider')).WORLD_RELEASE_RESOURCE_PROVIDER_V1.worldQuery!.openAuthor(input),
+    openPreparation: async input => (await import('../context-gateway/world-release-provider')).WORLD_RELEASE_RESOURCE_PROVIDER_V1.worldQuery!.openPreparation(input),
+    openProduction: async input => (await import('../context-gateway/world-release-provider')).WORLD_RELEASE_RESOURCE_PROVIDER_V1.worldQuery!.openProduction(input),
+    describe: async access => (await import('../context-gateway/world-release-provider')).WORLD_RELEASE_RESOURCE_PROVIDER_V1.worldQuery!.describe(access),
+    bind: async (access, narrowing) => (await import('../context-gateway/world-release-provider')).WORLD_RELEASE_RESOURCE_PROVIDER_V1.worldQuery!.bind(access, narrowing),
+    query: async (access, query) => (await import('../context-gateway/world-release-provider')).WORLD_RELEASE_RESOURCE_PROVIDER_V1.worldQuery!.query(access, query),
+    close: async access => (await import('../context-gateway/world-release-provider')).WORLD_RELEASE_RESOURCE_PROVIDER_V1.worldQuery!.close(access),
+  },
 }
 
 const TEXT_OPEN_WORLD_RUNTIME_CONTEXT_PROVIDER_PROXY_V1: ContextResourceProviderV1 = {
@@ -2926,16 +2936,21 @@ export const CONTEXT_SOURCES: ContextSource[] = [
     scope: 'manual',
     layer: 'L0',
     budgetTokens: 100_000,
-    enabled: input => !!input.ragEntryKeys?.length,
+    enabled: input => !!input.ragEntryKeys?.length || !!input.ragAnnotationTarget,
     resources: CANON_RESOURCE_PROVIDER_V1,
-    read: input => readRagSelectionContext({
+    read: input => {
+      if (input.ragAnnotationTarget && input.productRuntimeSessionId != null) throw new Error('产品运行只能读取冻结世界，不能读取作者草稿注释')
+      return readRagSelectionContext({
       projectId: input.projectId,
       scope: input.scope,
       worldGroupId: input.worldGroupId,
       entryKeys: input.ragEntryKeys,
+      originalEvidence: input.ragReadMode === 'original-evidence-v1',
+      annotationTarget: input.ragAnnotationTarget,
       inputBudgetTokens: input.inputBudgetTokens,
       trace: input.ragSelectionTrace,
-    }),
+      })
+    },
   },
   {
     key: 'manualText',
@@ -3141,14 +3156,18 @@ export const CONTEXT_SOURCES: ContextSource[] = [
     key: 'canonAssertions',
     label: '世界宪法(已确认设定断言)',
     scope: 'world',
-    ownerFrom: 'world',
+    ownerFrom: 'work',
     layer: 'L1',
-    budgetTokens: 1800,
+    budgetTokens: 8_000,
     protectedFromTrim: true,
     requiresWorldGroupId: true,
-    read: async input => formatCanonAssertionsContext(
-      await readCanonAssertions(input.projectId, input.worldGroupId),
-    ),
+    read: async input => {
+      if (input.productRuntimeSessionId != null) throw new Error('产品运行只能读取冻结世界，不能读取作者草稿注释')
+      return [
+        formatCanonAssertionsContext(await readCanonAssertions(input.projectId, input.worldGroupId, input.scope)),
+        await readNarrativeCanonContextV1({ scope: input.scope!, worldGroupId: input.worldGroupId }),
+      ].filter(Boolean).join('\n\n')
+    },
   },
   {
     key: 'constitutionScanSources',

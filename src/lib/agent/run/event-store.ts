@@ -531,7 +531,10 @@ export async function appendAgentRunEventWithSettlementInTransactionV1(input: {
   workspaceDirty?: boolean
 }): Promise<AgentRunSnapshotV1> {
   const { snapshot, event } = input
-  const next = await appendPrivilegedAgentRunEventInTransactionV1(snapshot, event)
+  // Rejoin the caller's Dexie zone before settlement performs scoped reads and
+  // hashes. A deep native-promise return may otherwise lose that zone in
+  // Chromium, allowing the original write transaction to commit early.
+  const next = await Dexie.Promise.resolve(appendPrivilegedAgentRunEventInTransactionV1(snapshot, event))
   const terminalStates = ['completed', 'failed', 'cancelled'] as const
   const enteredMemoryTerminal = !terminalStates.includes(
     input.snapshot.projection.state as (typeof terminalStates)[number],
@@ -568,7 +571,7 @@ export async function appendAgentRunEventWithSettlementInTransactionV1(input: {
       workspaceDirty: input.workspaceDirty ?? true,
     },
   })
-  return appendPrivilegedAgentRunEventInTransactionV1(next, settlementEvent)
+  return await Dexie.Promise.resolve(appendPrivilegedAgentRunEventInTransactionV1(next, settlementEvent))
 }
 
 /**

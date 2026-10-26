@@ -146,6 +146,9 @@ async function cached<T extends CacheValue>(input: {
   maxEntries: number
   load: () => Promise<T>
 }): Promise<T> {
+  if (input.provider.assertAccessCurrent) {
+    await input.provider.assertAccessCurrent(input.request.scope as import('../registry/types').FrozenResourceScopeV1)
+  }
   if (!cacheReliable) {
     input.state.bypasses += 1
     return input.load()
@@ -225,6 +228,9 @@ export function createCachedContextResourceProviderV1(
     }),
     // Scope fingerprints are session authority, not a cache data version.
     fingerprint: scope => provider.fingerprint(scope),
+    ...(provider.worldQuery ? { worldQuery: provider.worldQuery } : {}),
+    ...(provider.queryWorldMetadata ? { queryWorldMetadata: provider.queryWorldMetadata.bind(provider) } : {}),
+    ...(provider.assertAccessCurrent ? { assertAccessCurrent: provider.assertAccessCurrent.bind(provider) } : {}),
   }
 }
 

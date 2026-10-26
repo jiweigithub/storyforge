@@ -7,7 +7,7 @@ import type {
   TtrpgCharacterSheetV2,
   TtrpgCharacterTemplateV1,
   TtrpgProductionBriefV2,
-  ProductWorldSourceSelectionV1,
+  ProductWorldSourceSelection,
 } from '../types'
 import type { ProductProductionWorldSourceCatalogV2 as ProductWorldSourceCatalog } from '../product-production/world-source'
 import {
@@ -237,7 +237,7 @@ export function compileProductionTtrpgCampaignV2(input: {
   productionKey: string
   authoredScenario?: TtrpgAuthoredScenarioV1
   brief: TtrpgProductionBriefV2
-  selection: ProductWorldSourceSelectionV1
+  selection: ProductWorldSourceSelection
   narrative: Narrative
   sourceCatalog: Pick<ProductWorldSourceCatalog, 'characters' | 'locations' | 'artifacts' | 'storyArcs'>
   rulePack: RulePackV1

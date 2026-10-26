@@ -5,7 +5,7 @@ import {
   migrateTextOpenWorldSaveToReleaseV1,
   previewTextOpenWorldSaveMigrationV1,
 } from '../../src/lib/open-world/player-save-migration'
-import { readProductRuntimeState } from '../../src/lib/product/runtime-core'
+import { readProductRuntimeState, prepareReleasedProductRuntimeSessionRecordV1, insertPreparedProductRuntimeSessionV1 } from '../../src/lib/product/runtime-core'
 import { hashProductProductionValueV2 } from '../../src/lib/product-production/hash'
 import { exportProjectJSON, importProjectJSON } from '../../src/lib/export/json-export'
 import { assertProductReleaseUnchanged } from '../../src/lib/product/releases'
@@ -68,6 +68,24 @@ function presentationOnlyUpdate(source: ProductRuntimePackageV1): ProductRuntime
 describe('Text Open World G5-11 · 新Release存档迁移', () => {
   beforeEach(async () => { await db.delete(); await db.open() })
   afterAll(() => db.close())
+
+  it('父链在准备阶段验证并冻结；跨作用域、越界序列及准备后篡改均零写入拒绝', async () => {
+    const created = await fixture('父链校验'), foreign = await fixture('另一作品')
+    const original = await db.productRuntimeSessions.get(created.session.id!)
+    const count = await db.productRuntimeSessions.count()
+    const input = { ...created.scope, productReleaseId: created.release.id!, kind: 'text-open-world' as const,
+      title: '受验证子分支', origin: 'branch' as const, seed: 'checked-lineage',
+      canonSnapshot: JSON.parse(created.session.canonSnapshotJson), initialState: JSON.parse(created.session.initialStateJson) }
+    await expect(prepareReleasedProductRuntimeSessionRecordV1(input, { parentSessionId: foreign.session.id!, parentThroughSequence: 0 }))
+      .rejects.toThrow('父会话或序列')
+    await expect(prepareReleasedProductRuntimeSessionRecordV1(input, { parentSessionId: created.session.id!, parentThroughSequence: original!.runtimeHeadSequence! + 1 }))
+      .rejects.toThrow('父会话或序列')
+    const prepared = await prepareReleasedProductRuntimeSessionRecordV1(input, { parentSessionId: created.session.id!, parentThroughSequence: 0 })
+    prepared.parentThroughSequence = 1
+    await expect(insertPreparedProductRuntimeSessionV1(prepared)).rejects.toThrow('未经验证准备')
+    expect(await db.productRuntimeSessions.count()).toBe(count)
+    expect(await db.productRuntimeSessions.get(created.session.id!)).toEqual(original)
+  }, 30_000)
 
   it('预演通过后创建绑定新Release的子Session，保留原分支、原事件与玩家进度', async () => {
     const created = await fixture('兼容迁移')

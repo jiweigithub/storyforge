@@ -1,3 +1,4 @@
+import type { NarrativeDomainMetadataV1, NarrativeDomainFieldsV1 } from './narrative-domain'
 import type { RagDocumentMetadata } from './rag-library'
 
 /**
@@ -56,7 +57,9 @@ export const TAG_EMOJI: Partial<Record<LocationTag, string>> = {
 }
 
 /** 重要地点 */
-export interface ImportantLocation extends RagDocumentMetadata {
+type ImportantLocationNarrativeFieldsV1 = NarrativeDomainMetadataV1 & Pick<NarrativeDomainFieldsV1, 'narrativeAliasesV1'>
+
+export interface ImportantLocation extends RagDocumentMetadata, ImportantLocationNarrativeFieldsV1 {
   id?: number
   projectId: number
   /** 地点名称 */

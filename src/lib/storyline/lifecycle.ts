@@ -1,3 +1,5 @@
+import { transactionTablesForReferenceCascade } from '../registry/lifecycle'
+import { cascadeRegisteredReferences } from '../workspace/lifecycle'
 import { db } from '../db/schema'
 
 /** 删章时保留作者确认的数据和冗余章名，只断开可能悬空的 FK。 */
@@ -28,20 +30,10 @@ export async function detachStorylineForDeletedChapters(
 
 /** StoryArc 是动态投影的硬父项；删线必须在同一事务里清掉所有投影和交汇。 */
 export async function deleteStoryArcLifecycle(arcId: number): Promise<void> {
-  await db.transaction(
-    'rw',
-    db.storyArcs,
-    db.storylineProgress,
-    db.storylineCrossings,
-    async () => {
-      await db.storylineProgress.where('arcId').equals(arcId).delete()
-      const crossings = await db.storylineCrossings
-        .filter(row => row.arcIdA === arcId || row.arcIdB === arcId)
-        .primaryKeys()
-      if (crossings.length) await db.storylineCrossings.bulkDelete(crossings as number[])
-      await db.storyArcs.delete(arcId)
-    },
-  )
+  await db.transaction('rw', transactionTablesForReferenceCascade('storyArcs'), async () => {
+    await cascadeRegisteredReferences('storyArcs', arcId)
+    await db.storyArcs.delete(arcId)
+  })
 }
 
 /** 编辑静态阶段后，不能让动态投影继续指向已删除的 stageId。 */

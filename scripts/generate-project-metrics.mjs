@@ -60,6 +60,34 @@ function declaredArrayLength(rel, declarationName) {
   return declaration ? resolveLength(declaration, new Set([declarationName])) : 0
 }
 
+/** ADOPTION_EXTENSIONS merges existing per-target entries with registered
+ * narrative projectors. Counting two spread expressions as two extensions
+ * would under-report the actual governance surface. No application execution. */
+function adoptionExtensionCount() {
+  const targets = new Set()
+  const scan = (rel, accept) => {
+    const sourceFile = ts.createSourceFile(rel, read(rel), ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+    const visit = node => {
+      if (ts.isObjectLiteralExpression(node)) {
+        const fields = new Map(node.properties.filter(ts.isPropertyAssignment).map(field => [field.name.getText(sourceFile).replace(/^['"]|['"]$/g, ''), field.initializer]))
+        accept(fields, sourceFile)
+      }
+      ts.forEachChild(node, visit)
+    }
+    visit(sourceFile)
+  }
+  scan('src/lib/registry/adoption-schema.ts', fields => {
+    const target = fields.get('target')
+    if (target && ts.isStringLiteral(target) && fields.has('id') && fields.has('policyRegistry')) targets.add(target.text)
+  })
+  scan('src/lib/registry/project-tables.ts', (fields, sourceFile) => {
+    const name = fields.get('name'), semantics = fields.get('worldSemantic')
+    if (name && ts.isStringLiteral(name) && semantics?.getText(sourceFile).includes('NARRATIVE_PROJECTOR_V1(')) targets.add(name.text)
+  })
+  if (!targets.size) throw new Error('无法从注册声明读取领域扩展')
+  return targets.size
+}
+
 function metrics() {
   const files = tsSourceFiles()
   const sourceLines = files.reduce((total, file) => {
@@ -88,7 +116,7 @@ function metrics() {
     promptTemplates,
     contextSources: countMatches(read('src/lib/registry/context-sources.ts'), /\n\s*key:\s*'[^']+'/g),
     adoptionTargets: declaredArrayLength('src/lib/registry/adoption-schema.ts', 'ADOPTION_SCHEMAS'),
-    adoptionExtensions: declaredArrayLength('src/lib/registry/adoption-schema.ts', 'ADOPTION_EXTENSIONS'),
+    adoptionExtensions: adoptionExtensionCount(),
   }
 }
 

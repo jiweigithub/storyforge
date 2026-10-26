@@ -15,8 +15,8 @@ import type {
   ProductReleaseManifestV1,
   ProductRuntimePackageV1,
   ProductReleaseLineageV1,
-  ProductSourceManifestV1,
-  ProductSourcePlanV1,
+  ProductSourceManifest,
+  ProductSourcePlan,
   TextOpenWorldCreatorBriefV1,
   TextOpenWorldCreatorProductionSourcePlanV1,
   TextOpenWorldCreatorProductionStartV1,
@@ -49,12 +49,12 @@ import { readAgentRunV1 } from '../agent/run/event-store'
 import type { VerifiedProductBuildTerminalArtifactSetV1 } from './artifact-store'
 import { parseProductProductionPortableTaskLedgerV1 } from './task-evidence'
 import {
-  aggregateProductSourceManifestFromExactRunsV1,
+  aggregateProductSourceManifestFromExactRuns,
   createProductReleaseLineageV1,
-  portableProductSourcePlanV1,
+  portableProductSourcePlan,
   productReleaseUidV1,
-  resolveProductSourceReadBoundaryV1,
-  validateProductSourceManifestV1,
+  resolveProductSourceReadBoundary,
+  validateProductSourceManifest,
 } from '../product/source-contracts'
 import {
   productProductionTaskUsesWorldGatewayV1,
@@ -137,9 +137,9 @@ interface VerifiedAdoption extends PreparedProductProductionAdoptionV1 {
    * and IndexedDB bytes are compared again inside that transaction. */
   terminalBlobProofRows: Map<number, MediaBlobObjectRecordV1 & { id: number }>
   terminalVerification: VerifiedProductBuildTerminalArtifactSetV1
-  sourcePlan: ProductSourcePlanV1 | null
+  sourcePlan: ProductSourcePlan | null
   confirmedBrief: ConfirmedProductBriefV1 | null
-  sourceManifest: ProductSourceManifestV1 | null
+  sourceManifest: ProductSourceManifest | null
   creatorReleaseAuthority: null | {
     creatorBrief: TextOpenWorldCreatorBriefV1
     sourcePlan: TextOpenWorldCreatorProductionSourcePlanV1
@@ -340,7 +340,7 @@ async function priorReleaseLineageV1(input: {
 }): Promise<{
   version: number
   parentRelease: ProductReleaseLineageV1['parentRelease']
-  sourceManifest: ProductSourceManifestV1 | null
+  sourceManifest: ProductSourceManifest | null
 }> {
   const rows = (await db.productReleases.where('workId').equals(input.workId).toArray())
     .filter(row => row.productionKey === input.productionKey)
@@ -356,7 +356,7 @@ async function priorReleaseLineageV1(input: {
       releaseUid: manifest.lineage.releaseUid,
       releaseHash: manifest.lineage.releaseHash,
     },
-    sourceManifest: creatorSource ? null : manifest.sourceContracts.sourceManifest as ProductSourceManifestV1,
+    sourceManifest: creatorSource ? null : manifest.sourceContracts.sourceManifest as ProductSourceManifest,
   }
 }
 
@@ -520,9 +520,9 @@ async function inspectAdoption(scope: WorkspaceScope, productionId: number): Pro
     workId: scope.workId,
     productionKey: production.productionKey,
   })
-  let sourcePlan: ProductSourcePlanV1 | null = null
+  let sourcePlan: ProductSourcePlan | null = null
   let confirmedBrief: ConfirmedProductBriefV1 | null = null
-  let sourceManifest: ProductSourceManifestV1 | null = null
+  let sourceManifest: ProductSourceManifest | null = null
   let creatorReleaseAuthority: VerifiedAdoption['creatorReleaseAuthority'] = null
   let creatorRelease: PreparedTextOpenWorldCreatorReleaseV1 | null = null
   let worldReleaseId: number | null
@@ -633,20 +633,20 @@ async function inspectAdoption(scope: WorkspaceScope, productionId: number): Pro
       || sourcePlan.worldReference.releaseHash !== brief.source.worldContentHash) {
       fail('SourcePlan/ConfirmedBrief 与 Production/Brief/WorldRelease 不闭合')
     }
-    await resolveProductSourceReadBoundaryV1(sourcePlan)
+    await resolveProductSourceReadBoundary(sourcePlan)
     const pointers = await worldContextManifestPointersV1({
       scope,
       buildId: build.id!,
       worldSourceTaskKeys: plan.tasks.filter(productProductionTaskUsesWorldGatewayV1).map(task => task.taskKey),
     })
     sourceManifest = pointers.length > 0
-      ? await aggregateProductSourceManifestFromExactRunsV1({
+      ? await aggregateProductSourceManifestFromExactRuns({
         scope,
         sourcePlan,
         runContextManifests: pointers,
       })
       : prior.sourceManifest && prior.sourceManifest.sourcePlanHash === sourcePlan.planHash
-        ? await validateProductSourceManifestV1({ sourceManifest: prior.sourceManifest, sourcePlan })
+        ? await validateProductSourceManifest({ sourceManifest: prior.sourceManifest, sourcePlan })
         : fail('当前 Build 没有真实世界读取 ContextManifestV3，且不存在可继承的同 SourcePlan 来源清单')
     worldReleaseId = sourcePlan.worldReference.localReleaseRecordId
     worldContentHash = sourcePlan.worldReference.releaseHash
@@ -806,7 +806,7 @@ export async function prepareCommunityPrototypeProductReleaseV1(input: {
     buildManifestHash: verified.intent.manifestHash,
     rootTerminalReceiptHash: verified.intent.rootTerminalReceiptHash,
   }
-  const portableSourcePlan = await portableProductSourcePlanV1(verified.sourcePlan)
+  const portableSourcePlan = await portableProductSourcePlan(verified.sourcePlan)
   const sourceContracts = {
     sourcePlan: portableSourcePlan,
     confirmedBrief: verified.confirmedBrief,
@@ -1071,7 +1071,7 @@ export async function publishProductProductionBuild(input: {
     buildManifestHash: prepared.intent.manifestHash,
     rootTerminalReceiptHash: prepared.intent.rootTerminalReceiptHash,
   }
-  let portableSourcePlan: ProductSourcePlanV1 | null = null
+  let portableSourcePlan: ProductSourcePlan | null = null
   let sourceContracts: ProductReleaseManifestV1['sourceContracts']
   if (prepared.creatorReleaseAuthority && creatorAuthorization) {
     const { createTextOpenWorldCreatorReleaseSourceContractsV1 } = await import(
@@ -1090,7 +1090,7 @@ export async function publishProductProductionBuild(input: {
     if (!prepared.sourcePlan || !prepared.confirmedBrief || !prepared.sourceManifest) {
       fail('共享WorldRelease发布缺少正式来源合同')
     }
-    portableSourcePlan = await portableProductSourcePlanV1(prepared.sourcePlan)
+    portableSourcePlan = await portableProductSourcePlan(prepared.sourcePlan)
     sourceContracts = {
       sourcePlan: portableSourcePlan,
       confirmedBrief: prepared.confirmedBrief,
@@ -1159,9 +1159,9 @@ export async function publishProductProductionBuild(input: {
         runtimePackage: prepared.runtimePackage,
         productionProvenance,
         sourceContracts: sourceContracts as {
-          sourcePlan: ProductSourcePlanV1
+          sourcePlan: ProductSourcePlan
           confirmedBrief: ConfirmedProductBriefV1
-          sourceManifest: ProductSourceManifestV1
+          sourceManifest: ProductSourceManifest
         },
         lineage: lineage as ProductReleaseLineageV1,
       })

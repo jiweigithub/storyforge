@@ -116,7 +116,7 @@ export async function selectAvgWorldV1(
   const current = await readAvgDraftV1(scope);
   if (current.revision !== revision)
     throw new Error("AVG 方案已变化，请刷新后重新选择世界");
-  const localId = await cacheWorldReferenceForProductV1(scope, releaseId);
+  const localId = await cacheWorldReferenceForProductV1(scope, releaseId, { narrativeProductType: 'avg' });
   return db.transaction(
     "rw",
     scopeTransactionTables(db.avgAuthoringDrafts),

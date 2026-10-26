@@ -3,3 +3,7 @@
 # git 检出与 GitHub「下载 ZIP」都会得到 CRLF，且防止编辑器/工具再把它写回 LF。
 *.bat text eol=crlf
 *.cmd text eol=crlf
+
+# Verification evidence must keep the exact emitted bytes, including coverage
+# table padding and trailing blank lines. Source files retain normal checks.
+tests/acceptance/narrative-world/raw/** -text whitespace=-blank-at-eol,-blank-at-eof

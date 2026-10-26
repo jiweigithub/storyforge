@@ -130,6 +130,25 @@ describe('CTXG-7 · Gateway fast/complex execution', () => {
     expect(enabled.metrics.additionalToolCalls).toBe(0)
   })
 
+  it.each(['empty', 'duplicate', 'over-limit'] as const)('mandatory originals reject %s references before any source read', async mode => {
+    const fixture = await seedWorkspace('必读原文引用硬门')
+    await addScoped(fixture.scope, 'worldviews', { worldGroupId: null, races: '潮民保留原文。' }, 'world')
+    const selected = (await descriptors(fixture.scope)).find(item => item.resourceKey.endsWith(':field:races'))!
+    expect(selected?.sourceRefs).toHaveLength(1)
+    const originalPage = CANON_RESOURCE_PROVIDER_V1.listMetadata.bind(CANON_RESOURCE_PROVIDER_V1)
+    vi.spyOn(CANON_RESOURCE_PROVIDER_V1, 'listMetadata').mockImplementation(async input => {
+      const page = await originalPage(input)
+      return { ...page, items: page.items.map(item => item.resourceKey !== selected.resourceKey ? item : { ...item,
+        sourceRefs: mode === 'empty' ? [] : mode === 'duplicate' ? [item.sourceRefs[0], item.sourceRefs[0]]
+          : Array.from({ length: 65 }, (_, index) => ({ ...item.sourceRefs[0], field: `claimed-field-${index}` })) }) }
+    })
+    const read = vi.spyOn(CANON_RESOURCE_PROVIDER_V1, 'readOriginal')
+    await expect(executeContextGatewayV1({ skill: worldviewSkill(), scope: fixture.scope, worldGroupId: null,
+      mandatoryResourceKeys: [selected.resourceKey], mandatoryOriginalResourceKeys: [selected.resourceKey],
+      additionalReadsEnabled: false })).rejects.toThrow(mode === 'empty' ? '没有 Canon/source ref' : 'mandatory-original-ambiguous')
+    expect(read).not.toHaveBeenCalled()
+  })
+
   it('applies the frozen resource allow-list before selection and conflict checks', async () => {
     const fixture = await seedWorkspace('产品 SourcePlan 精确选择')
     for (const description of ['被选择的地点正史', '未选择的同名冲突正史']) {

@@ -1,3 +1,5 @@
+import { transactionTablesForReferenceCascade } from '../lib/registry/lifecycle'
+import { cascadeRegisteredReferences } from '../lib/workspace/lifecycle'
 /**
  * 故事进程年表 store — Phase 25.5.2-a
  */
@@ -57,7 +59,10 @@ export const useStoryTimelineStore = create<StoryTimelineStore>((set, get) => ({
   deleteEvent: async (id) => {
     const current = get().events.find(e => e.id === id) ?? await db.storyTimelineEvents.get(id)
     if (!current || !await assertRecordInScope(await resolveScopeLike(current.projectId), 'storyTimelineEvents', current, { owner: 'work' })) return
-    await db.storyTimelineEvents.delete(id)
+    await db.transaction('rw', transactionTablesForReferenceCascade('storyTimelineEvents'), async () => {
+      await cascadeRegisteredReferences('storyTimelineEvents', id)
+      await db.storyTimelineEvents.delete(id)
+    })
     set({ events: get().events.filter(e => e.id !== id) })
   },
 
@@ -69,7 +74,10 @@ export const useStoryTimelineStore = create<StoryTimelineStore>((set, get) => ({
       if (event.projectId === projectId && event.chapterId === chapterId && event.id != null
         && await assertRecordInScope(scope, 'storyTimelineEvents', event, { owner: 'work' })) toDelete.push(event)
     }
-    await db.storyTimelineEvents.bulkDelete(toDelete.map(e => e.id!).filter(Boolean))
+    await db.transaction('rw', transactionTablesForReferenceCascade('storyTimelineEvents'), async () => {
+      for (const event of toDelete) await cascadeRegisteredReferences('storyTimelineEvents', event.id!)
+      await db.storyTimelineEvents.bulkDelete(toDelete.map(e => e.id!).filter(Boolean))
+    })
     const deletedIds = new Set(toDelete.map(e => e.id))
     set({ events: get().events.filter(e => !deletedIds.has(e.id)) })
   },

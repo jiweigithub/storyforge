@@ -493,6 +493,7 @@ export async function createProductRuntimeInstance(
   // Precompute the new session's first receipt and projection before opening
   // the transaction. This event does not replay opening effects or dialogue.
   let upgradeEvent: Omit<ProductRuntimeEvent, 'sessionId'> | null = null
+  let upgradeHead: Pick<ProductRuntimeSession, 'status' | 'runtimeHeadSequence' | 'runtimeHeadStateJson' | 'runtimeHeadStateHash'> | null = null
   if (chatUpgrade) {
     const {plan} = chatUpgrade, {compatibility} = plan
     const envelope = {commandId: chatRequest!.commandId, baseSequence: 0, baseStateHash: await hashProductRuntimeStateV1(initialState)}
@@ -504,10 +505,8 @@ export async function createProductRuntimeInstance(
         sourcePackageHash: compatibility.sourcePackageHash, targetPackageHash: compatibility.targetPackageHash,
         sourceStateHash: plan.sourceStateHash, sourceSequence: plan.sourceSequence, ...envelope})}
     const projected = applyProductRuntimeEvent(initialState, {...upgradeEvent, sessionId: 0})
-    preparedSession.status = chatUpgrade.saved.parent.status
-    preparedSession.runtimeHeadSequence = 1
-    preparedSession.runtimeHeadStateJson = JSON.stringify(projected)
-    preparedSession.runtimeHeadStateHash = await hashProductRuntimeStateV1(projected)
+    upgradeHead = {status: chatUpgrade.saved.parent.status, runtimeHeadSequence: 1,
+      runtimeHeadStateJson: JSON.stringify(projected), runtimeHeadStateHash: await hashProductRuntimeStateV1(projected)}
   }
 
   return db.transaction('rw', scopeTransactionTables(
@@ -563,6 +562,9 @@ export async function createProductRuntimeInstance(
     const binding = {
       parentSessionId: chatUpgrade?.saved.parent.id ?? continuationParent?.id ?? null,
       parentThroughSequence: chatUpgrade?.plan.sourceSequence ?? continuation?.expectedParentSequence ?? null,
+      // Keep the verified prepared record intact until insertion. Apply the
+      // precomputed upgrade projection atomically with its first event below.
+      ...upgradeHead,
     }
     await db.productRuntimeSessions.update(session.id!, binding)
     const boundSession = { ...session, ...binding }

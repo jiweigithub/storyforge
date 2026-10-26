@@ -160,3 +160,55 @@ test('world rules with a missing text field remain readable without implicit wri
   await expect(fictional).toHaveValue('作者明确补全的架空规则')
   await expect(historical).toHaveValue('既有规则文字必须保留')
 })
+
+
+test('native history replay after browser summary rotation retains the acknowledged occurrence across refresh', async ({ page }) => {
+  const reports: unknown[][] = []
+  await page.route('**/v1/client-support/events', async route => {
+    const body = route.request().postDataJSON()
+    reports.push(body.events)
+    await route.fulfill({ json: { accepted: body.events.map((row: { id: string }) => row.id), discarded: [] } })
+  })
+  await page.addInitScript(() => localStorage.setItem('storyforge_guide_completed', 'isolated-native-replay'))
+  await page.goto('home')
+  await expect(page.getByRole('heading', { name: '首页', exact: true })).toBeVisible({ timeout: 30_000 })
+  const occurredAt = new Date(Date.now() - 120_000).toISOString()
+  const collect = async (fresh: boolean) => page.evaluate(async ({ occurredAt, fresh }) => {
+    const load = new Function('path', 'return import(path)')
+    const telemetry = await load('/storyforge/src/lib/feedback/client-telemetry.ts')
+    const runtime = await load('/storyforge/src/lib/diagnostics/runtime-errors.ts')
+    const native = await load('/storyforge/src/lib/platform/native-diagnostics.ts')
+    const unsubscribe = runtime.subscribeRuntimeDiagnostics(telemetry.recordClientError)
+    const oldBridge = window.storyforgeClient
+    const row = { occurredAt, source: 'native', name: 'NativeInterrupted', build: 'v4.0.3+local', frames: [] }
+    try {
+      window.storyforgeClient = { diagnostics: async () => fresh ? [row, { ...row, occurredAt: new Date().toISOString() }] : [row] } as unknown as typeof window.storyforgeClient
+      telemetry.setTelemetryPreferences(false, true)
+      await native.collectNativeDiagnostics()
+      await telemetry.flushClientTelemetry()
+      return JSON.parse(localStorage.getItem(telemetry.TELEMETRY_KEY)!).queue.length
+    } finally {
+      window.storyforgeClient = oldBridge
+      unsubscribe()
+    }
+  }, { occurredAt, fresh })
+  expect(await collect(false)).toBe(0)
+  expect(reports).toHaveLength(1)
+  await page.evaluate(() => {
+    localStorage.setItem('storyforge-runtime-diagnostics-v1', JSON.stringify(Array.from({ length: 20 }, (_, i) => ({
+      occurredAt: new Date(Date.now() - i * 1000).toISOString(), source: 'react', name: 'TypeError', build: 'v4.0.4+local', frames: [],
+    }))))
+  })
+  await page.reload()
+  await expect(page.getByRole('heading', { name: '首页', exact: true })).toBeVisible()
+  expect(await collect(false)).toBe(0)
+  expect(reports).toHaveLength(1)
+  expect(await collect(true)).toBe(1)
+  await page.evaluate(async () => {
+    const telemetry = await (new Function('path', 'return import(path)'))('/storyforge/src/lib/feedback/client-telemetry.ts')
+    telemetry.setTelemetryPreferences(false, false)
+    const state = JSON.parse(localStorage.getItem(telemetry.TELEMETRY_KEY)!)
+    if (state.queue.length || state.nativeSeen.length) throw new Error('Consent withdrawal must clear pending and replay metadata')
+  })
+  expect(reports).toHaveLength(1)
+})

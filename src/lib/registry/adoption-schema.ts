@@ -5,7 +5,7 @@
  * 自动盖章 / FK 校验策略。
  */
 import type { AdoptionExtensionSpec, CollectionAdoptionSpec } from './types'
-import { REGISTRY_BY_NAME } from './project-tables'
+import { PROJECT_TABLES, REGISTRY_BY_NAME } from './project-tables'
 
 const ADOPTION_SCHEMAS_RAW: CollectionAdoptionSpec[] = [
   {target: 'chatAuthoringDrafts', identity: 'id', recordOnly: true, duplicatePolicy: 'error', required: [], autoStamps: ['updatedAt'], ownerFrom: 'work'},
@@ -476,7 +476,7 @@ const ADOPTION_SCHEMAS_RAW: CollectionAdoptionSpec[] = [
   },
 ]
 
-export const ADOPTION_EXTENSIONS: readonly AdoptionExtensionSpec[] = Object.freeze([
+const ADOPTION_EXTENSION_REGISTRATIONS: readonly AdoptionExtensionSpec[] = [
   {
     id: 'chat-authoring-draft-lifecycle', target: 'chatAuthoringDrafts',
     entrypoints: ['src/lib/character-interaction/draft-service.ts', 'src/lib/character-interaction/role-profile-store.ts', 'src/lib/character-interaction/consultation-store.ts', 'src/lib/character-interaction/source-unit-store.ts'],
@@ -648,9 +648,10 @@ export const ADOPTION_EXTENSIONS: readonly AdoptionExtensionSpec[] = Object.free
       'src/lib/world-engine/derivation.ts',
       'src/lib/world-engine/promotion.ts',
       'src/lib/world-engine/draft.ts',
+      'src/lib/world-engine/narrative-derivation.ts',
     ],
     policyRegistry: 'PROJECT_TABLES refs + world package trust + world release lifecycle',
-    reason: 'World 根创建、版本推进和引用级联是注册表约束的领域生命周期；draft.ts 仅允许作者显式修改名称与简介，校验 scope 和 updatedAt，不接受模型自由字段写回。',
+    reason: 'World 根创建、版本推进和引用级联是注册表约束的领域生命周期；narrative-derivation.ts 只在来源 CAS 和已验证编译均匹配的注册导入事务中推进本次新建目标的发布版本；draft.ts 仅允许作者显式修改名称与简介，校验 scope 和 updatedAt，不接受模型自由字段写回。',
     reviewAfter: '2027-08-01',
   },
   {
@@ -1048,6 +1049,31 @@ export const ADOPTION_EXTENSIONS: readonly AdoptionExtensionSpec[] = Object.free
     reason: '规则包安装是人工或内置来源的版本化领域生命周期：写入前必须完成结构解析、行为夹具、许可声明与内容 hash 校验，并按 Work 与规则版本原子更新；模型候选字段仍统一走 adopt。',
     reviewAfter: '2027-08-21',
   },
+]
+
+const NARRATIVE_ADOPTION_ENTRYPOINTS = ['src/lib/world-engine/narrative-domain-authoring.ts', 'src/lib/narrative-domain/lifecycle.ts', 'src/lib/agent/run/narrative-annotation-durable.ts']
+const NARRATIVE_ADOPTION_POLICY = 'PROJECT_TABLES.worldSemantic.projector + FIELD_REGISTRY + source hash CAS'
+const NARRATIVE_ADOPTION_REVIEW_AFTER = '2027-01-01'
+
+/** One domain extension per target; current narrative fields are derived from
+ * PROJECT_TABLES, while existing lifecycle entrypoints retain their policies. */
+export const ADOPTION_EXTENSIONS: readonly AdoptionExtensionSpec[] = Object.freeze([
+  ...ADOPTION_EXTENSION_REGISTRATIONS.map(extension => {
+    if (!REGISTRY_BY_NAME.get(extension.target)?.worldSemantic?.projector) return extension
+    return { ...extension,
+      entrypoints: [...extension.entrypoints, ...NARRATIVE_ADOPTION_ENTRYPOINTS],
+      policyRegistry: `${extension.policyRegistry} + ${NARRATIVE_ADOPTION_POLICY}`,
+    }
+  }),
+  ...PROJECT_TABLES.filter(spec => spec.worldSemantic?.projector
+    && !ADOPTION_EXTENSION_REGISTRATIONS.some(extension => extension.target === spec.name))
+    .map((spec): AdoptionExtensionSpec => ({
+      id: `narrative-annotation-${spec.name}`, target: spec.name,
+      entrypoints: NARRATIVE_ADOPTION_ENTRYPOINTS,
+      policyRegistry: NARRATIVE_ADOPTION_POLICY,
+      reason: '叙事注释必须经作者确认、严格字段/引用/证据校验与来源 CAS；系统生成确认凭据，删除/合并保留证据并使旧确认失效。',
+      reviewAfter: NARRATIVE_ADOPTION_REVIEW_AFTER,
+    })),
 ])
 
 /** C3: owner policy is derived from the same PROJECT_TABLES domainOwner metadata. */

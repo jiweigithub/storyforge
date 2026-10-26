@@ -29,6 +29,28 @@ function toml(value) {
   }
   return JSON.stringify(value)
 }
+const PUBLIC_TURN_ERRORS = new Set([
+  'contextWindowExceeded', 'sessionBudgetExceeded', 'usageLimitExceeded', 'rateLimitExceeded',
+  'flexUnavailable', 'serverOverloaded', 'cyberPolicy', 'misalignmentPolicyViolation', 'tooManyDenials',
+  'internalServerError', 'unauthorized', 'badRequest', 'threadRollbackFailed', 'sandboxError', 'other',
+])
+const HTTP_TURN_ERRORS = new Set([
+  'httpConnectionFailed', 'responseStreamConnectionFailed', 'responseStreamDisconnected', 'responseTooManyFailedAttempts',
+])
+// Only documented public identifiers and a valid HTTP status may leave the
+// bridge. Free-form messages/details can include prompts, paths or secrets.
+function publicTurnError(error) {
+  const info = error?.codexErrorInfo
+  if (typeof info === 'string' && PUBLIC_TURN_ERRORS.has(info)) return { code: info, httpStatusCode: null }
+  if (info && typeof info === 'object' && !Array.isArray(info)) {
+    const keys = Object.keys(info), code = keys[0]
+    if (keys.length === 1 && HTTP_TURN_ERRORS.has(code)) {
+      const status = info[code]?.httpStatusCode
+      return { code, httpStatusCode: Number.isInteger(status) && status >= 100 && status <= 599 ? status : null }
+    }
+  }
+  return { code: 'unclassified', httpStatusCode: null }
+}
 // Only public protocol variants may enter a receipt. Never retain arbitrary
 // messages, additionalDetails, unknown variant strings, paths or credentials.
 const TURN_FAILURE_LABELS = {
@@ -55,11 +77,14 @@ function turnFailureDetail(info) {
 // Only a matching turn/completed notification establishes a provider terminal state.
 // Never persist provider error text: it can contain input, paths or credentials.
 export class CodexTurnError extends Error {
-  constructor(providerTurn, codexErrorInfo) {
+  constructor(providerTurn, error, priorDiagnostic) {
+    const diagnostic = error == null ? priorDiagnostic ?? publicTurnError(null) : publicTurnError(error)
+    const codexErrorInfo = HTTP_TURN_ERRORS.has(diagnostic.code) ? {[diagnostic.code]: {httpStatusCode: diagnostic.httpStatusCode}} : diagnostic.code
     super(providerTurn.status === 'interrupted'
       ? 'Codex 已确认本次生成被中断；未完成内容不会成为正式候选，不会自动重发。'
       : `Codex 已确认本次生成失败${turnFailureDetail(codexErrorInfo)}；未完成内容不会成为正式候选，不会自动重发。`)
     this.providerTurn = providerTurn
+    this.codexDiagnostic = diagnostic
   }
 }
 export class CodexRuntime {
@@ -174,7 +199,7 @@ export class CodexRuntime {
   async generate(input, notify, signal) {
     if ((await this.account()).state !== 'ready') throw new Error('Codex 登录不可用。请检查本机 ChatGPT 登录；不会切换付费 API。')
     if (!(await this.models()).some(model => model.id === input.model)) throw new Error('当前 Codex 模型目录没有所选模型，请刷新模型并重新选择。')
-    let threadId; let turnId; let unsubscribe = () => {}; let timer
+    let threadId; let turnId; let unsubscribe = () => {}; let timer; let turnDiagnostic
     try {
       const started = await this.rpc('thread/start', {
         model: input.model, modelProvider: 'storyforge-subscription', allowProviderModelFallback: false,
@@ -206,6 +231,9 @@ export class CodexRuntime {
             if (p?.threadId !== threadId) return
             if (method === 'turn/started' && !turnId) turnId = p.turn.id
             if (p.turnId && turnId && p.turnId !== turnId) return
+            if (method === 'error' && p.turnId === turnId && typeof turnId === 'string') {
+              turnDiagnostic = publicTurnError(p.error)
+            }
             if (method === 'item/started' && !['userMessage', 'agentMessage', 'reasoning'].includes(p.item.type)) {
               return abort('Codex 尝试执行文本生成范围外的工具；已阻止本次结果。')
             }
@@ -245,7 +273,7 @@ export class CodexRuntime {
         throw new Error('Codex 结束通知无法核验，本次结果未知；不会自动重发。')
       }
       const providerTurn = { threadId, turnId, status: completed.status }
-      if (completed.status !== 'completed') throw new CodexTurnError(providerTurn, completed.error?.codexErrorInfo)
+      if (completed.status !== 'completed') throw new CodexTurnError(providerTurn, completed.error, turnDiagnostic)
       notify({ providerTurn })
     } finally {
       clearTimeout(timer); unsubscribe()

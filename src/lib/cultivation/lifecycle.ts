@@ -1,4 +1,5 @@
 import { db } from '../db/schema'
+import { remapNarrativeDomainReferencesV1 } from '../narrative-domain/lifecycle'
 import {
   detachCultivationProgressSystems,
   refreshCultivationProgressStageSources,
@@ -10,6 +11,7 @@ export async function clearCultivationSystemReferences(
   systemIds: ReadonlySet<number>,
 ): Promise<void> {
   if (systemIds.size === 0) return
+  for (const id of systemIds) await remapNarrativeDomainReferencesV1({ table: 'cultivationSystems', fromId: id })
   const [characters, entries, facts] = await Promise.all([
     db.characters.where('projectId').equals(projectId).toArray(),
     db.codexEntries.where('projectId').equals(projectId).toArray(),

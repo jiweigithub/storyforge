@@ -1,3 +1,5 @@
+import { transactionTablesForReferenceCascade } from '../lib/registry/lifecycle'
+import { cascadeRegisteredReferences } from '../lib/workspace/lifecycle'
 import { create } from 'zustand'
 import { db } from '../lib/db/schema'
 import { buildForeshadowTaskContext } from '../lib/foreshadow/context'
@@ -52,7 +54,10 @@ export const useForeshadowStore = create<ForeshadowStore>((set, get) => ({
   deleteForeshadow: async (id) => {
     const current = get().foreshadows.find(f => f.id === id) ?? await db.foreshadows.get(id)
     if (!current || !await assertRecordInScope(await resolveScopeLike(current.projectId), 'foreshadows', current, { owner: 'work' })) return
-    await db.foreshadows.delete(id)
+    await db.transaction('rw', transactionTablesForReferenceCascade('foreshadows'), async () => {
+      await cascadeRegisteredReferences('foreshadows', id)
+      await db.foreshadows.delete(id)
+    })
     set({ foreshadows: get().foreshadows.filter(f => f.id !== id) })
   },
 

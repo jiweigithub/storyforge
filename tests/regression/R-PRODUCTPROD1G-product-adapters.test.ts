@@ -16,6 +16,7 @@ import { createInitialInteractionState } from '../../src/lib/character-interacti
 import { adventureNarrativeActionContext, applyAdventureEffects, availableAdventureActions, createInitialAdventureState } from '../../src/lib/adventure/runtime'
 import { db } from '../../src/lib/db/schema'
 import { createProductBuildPreviewManifestV1 } from '../../src/lib/product-production/preview-manifest'
+import { hashProductProductionValueV2 } from '../../src/lib/product-production/hash'
 import { createConfiguredProductProductionExecutorV1 } from '../../src/lib/product-production/production-executor'
 import { createProductRuntimeInstanceFromSource } from '../../src/lib/product/runtime-instances'
 import { createWorldRevision, publishWorldRevision } from '../../src/lib/world-engine/releases'
@@ -171,6 +172,7 @@ async function insertPreviewBuild(input: {
 }) {
   const now = Date.now()
   const emptyHash = '0'.repeat(64)
+  const sourcePlan = { schema: 'storyforge.product-source-plan', version: 1, worldReleaseId: input.sourceWorldRelease.id! }
   const manifestHash = 'f'.repeat(64)
   const productionKey = `current-product.${input.runtimePackage.productType}.${crypto.randomUUID()}`
   const productionId = await db.productProductions.add({
@@ -185,7 +187,7 @@ async function insertPreviewBuild(input: {
     productionId, revision: 1, parentRevision: null, status: 'authorized',
     sourceWorldReleaseId: input.sourceWorldRelease.id!, sourceWorldContentHash: input.sourceWorldRelease.contentHash,
     userIntentSummary: '现行产品预览闭环', unresolvedJson: '[]', estimateJson: '{}', briefJson: '{}',
-    briefHash: emptyHash, sourcePlanJson: '{}', sourcePlanHash: emptyHash,
+    briefHash: emptyHash, sourcePlanJson: JSON.stringify(sourcePlan), sourcePlanHash: await hashProductProductionValueV2(sourcePlan),
     confirmedBriefJson: '{}', confirmedBriefHash: emptyHash,
     authorizedAt: now, createdAt: now,
   })

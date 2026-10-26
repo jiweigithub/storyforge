@@ -17,7 +17,7 @@ import {executeProductProductionCommand} from '../../src/lib/product-production/
 import {createConfiguredProductProductionExecutorV1, type ProductionTextRunnerV1} from '../../src/lib/product-production/production-executor'
 import {runProductProductionUntilBlockedV1, recoverImportedChatProductionPrefixV1, recoverImportedProductProductionProofsV1} from '../../src/lib/product-production/scheduler'
 import {readProductProductionBuildWorldScopeV1} from '../../src/lib/product-production/world-binding'
-import {aggregateProductSourceManifestFromExactRunsV1} from '../../src/lib/product/source-contracts'
+import {aggregateProductSourceManifestFromExactRuns} from '../../src/lib/product/source-contracts'
 import {readProductProductionDetailsV1, confirmChatSituationDecisionV1, listProductProductionReviewArtifactsV1, retryProductProductionBlockerV1, publishProductProductionV1} from '../../src/lib/product-production/service'
 import {chatSituationCandidatesFixture, chatSituationReferenceDraftFixture, chatOpeningDevelopmentReviewFixture, chatOpeningPerspectiveReviewFixture} from '../helpers/chat-narrative-production-fixture'
 import {CHAT_OPENING_FACT_CATALOG_KEY, buildChatOpeningFactCatalogV2} from '../../src/lib/character-interaction/opening-source-references'
@@ -231,7 +231,7 @@ it.each([
     const assembled = (await db.agentRunEvents.where('runId').equals(originalDesign.producerRunId!).toArray())
       .find(event => event.type === 'context.assembled')!
     const pointer = JSON.parse(assembled.payloadJson)
-    const aggregate = (scope: typeof f.scope, runId: number) => aggregateProductSourceManifestFromExactRunsV1({
+    const aggregate = (scope: typeof f.scope, runId: number) => aggregateProductSourceManifestFromExactRuns({
       scope, sourcePlan: JSON.parse(briefRow.sourcePlanJson), runContextManifests: [{runId,
         stepId: pointer.stepId, attempt: pointer.attempt, manifestHash: pointer.manifestHash}],
     })
@@ -257,7 +257,14 @@ it.each([
     await db.agentRunCheckpoints.put(checkpoint)
     const eventsBefore = await db.agentRunEvents.where('runId').equals(candidate.producerRunId!).count()
     await recover()
-    await expect(aggregate(f.scope, restoredDesign.producerRunId!)).resolves.toMatchObject({sourcePlanHash: briefRow.sourcePlanHash})
+    // The exact V2 plan reads different slices across production tasks. This
+    // single design run now proves its rebound binding, but cannot by itself
+    // prove all mandatory release sources. Full publication is checked below.
+    if (JSON.parse(briefRow.sourcePlanJson).version === 2) {
+      await expect(aggregate(f.scope, restoredDesign.producerRunId!)).rejects.toMatchObject({code: 'required-source-evidence'})
+    } else {
+      expect(await aggregate(f.scope, restoredDesign.producerRunId!)).toMatchObject({sourcePlanHash: briefRow.sourcePlanHash})
+    }
     const eventsAfter = await db.agentRunEvents.where('runId').equals(candidate.producerRunId!).count()
     expect(eventsAfter).toBeGreaterThan(eventsBefore)
     await recover()

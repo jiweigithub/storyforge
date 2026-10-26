@@ -2,7 +2,7 @@ import { hashCanonicalValue } from '../agent/run/hash'
 import { db } from '../db/schema'
 import type { WorkspaceScope, WorldReferenceCatalogEntryV1, WorldReferenceV1, WorldRelease } from '../types'
 import type { FrozenResourceScopeV1 } from '../registry/types'
-import { verifyPureWorldReleaseRecordV3 } from './release-codec'
+import { verifyPureWorldReleaseRecordV3, verifyWorldReleaseRecordV1 } from './release-codec'
 import { assertReleaseUnchanged, listWorldReleases, worldReleaseUidV1 } from './releases'
 
 const HASH = /^[a-f0-9]{64}$/
@@ -109,12 +109,17 @@ export async function createWorldReferenceV1(localReleaseRecordId: number): Prom
   return { ...base, referenceHash: await hashCanonicalValue(referenceBody(base)) }
 }
 
-/** The only catalog projection upper products may use to choose a world. */
+/** V1 consumers can select only v3 releases. A valid experimental v4 release
+ * must not break their catalog or be silently reinterpreted as v3. Unknown or
+ * corrupt bytes still fail verification; there is no latest-version fallback. */
 export async function listWorldReferenceCatalogV1(
   scope: WorkspaceScope,
 ): Promise<WorldReferenceCatalogEntryV1[]> {
   const releases = await listWorldReleases(scope)
-  return Promise.all(releases.map(async release => {
+  const compatible = (await Promise.all(releases.map(async release => ({ release,
+    verified: await verifyWorldReleaseRecordV1(release),
+  })))).filter(item => item.verified.version === 3).map(item => item.release)
+  return Promise.all(compatible.map(async release => {
     if (!release.id) fail('release-id', 'WorldRelease catalog 存在无 ID 记录')
     return {
       reference: await createWorldReferenceV1(release.id),

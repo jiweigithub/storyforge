@@ -3,6 +3,8 @@ import type { FieldSpec } from './types'
 import {parseChatAuthoringSettings} from '../character-interaction/authoring-contract'
 import {parseChatRoleProfileSetV1} from '../character-interaction/role-profile'
 import {parseChatSourceUnitSetV1} from '../character-interaction/source-unit-authorization'
+import { PROJECT_TABLES } from './project-tables'
+import { parseNarrativeDomainFieldV1 } from '../narrative-domain/codec'
 import { parseSystemFictionElementsV1 } from '../prose/system-fiction-contract'
 import { normalizeDetailedScenes } from '../types/detailed-outline'
 
@@ -166,6 +168,9 @@ export const STORY_CORE_GENERATABLE_FIELD_SPECS = [
 export type StoryCoreGeneratableField = typeof STORY_CORE_GENERATABLE_FIELD_SPECS[number]['field']
 
 export const FIELD_REGISTRY: FieldSpec[] = [
+  // NW-1A: ragDocumentId, semanticSubKey, IR IDs/hashes/time context and alias
+  // receipts stay system-owned. No IR projection field is an adoption target;
+  // the exact field whitelist rejects model-supplied identity metadata.
   object('extensionRecords', 'payload'),
   // MEMORY-5: author-edited workspace roots. Stable identities, owner IDs,
   // active pointers and derived counters remain outside the editable surface.
@@ -805,6 +810,16 @@ export const FIELD_REGISTRY: FieldSpec[] = [
   num('stateCards', 'lastChapterId'),
 ]
 
+// Proposals require the domain confirmation boundary; receipts are system-owned.
+FIELD_REGISTRY.push(...PROJECT_TABLES.flatMap(spec => (spec.worldSemantic?.projector?.annotationFields ?? [])
+  .filter(field => field !== 'narrativeAuthorityV1')
+  .map((field): FieldSpec => ({
+    target: spec.name, field, adoptionPolicy: 'narrative-annotation-v1',
+    type: ['narrativeAliasesV1', 'narrativeEvidenceV1', 'narrativeDependenciesV1', 'narrativeDevelopmentsV1', 'narrativeDisclosuresV1'].includes(field)
+      ? 'array' : field === 'narrativeModalityV1' ? 'enum' : 'object',
+    ...(field === 'narrativeModalityV1' ? { enums: ['established', 'belief', 'intent'] } : {}),
+    sanitize: value => parseNarrativeDomainFieldV1(field, value),
+  }))))
 /** Author editing capabilities live beside the writable fields, not in panels. */
 const replacementFields: Record<string, Record<string, NonNullable<FieldSpec['textReplacement']>>> = {
   worldviews: {

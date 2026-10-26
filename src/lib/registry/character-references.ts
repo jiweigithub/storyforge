@@ -5,6 +5,7 @@ import { remapCultivationProgressCharacterRefs } from '../cultivation/progress-l
 import { parseFields, stringifyFields } from '../types/state-card'
 import { PROJECT_TABLES } from './project-tables'
 import type { ArrayRef, JsonRef } from './types'
+import { remapNarrativeDomainReferencesV1 } from '../narrative-domain/lifecycle'
 
 interface CharacterReferenceRemapInput {
   projectId: number
@@ -18,6 +19,7 @@ interface CharacterReferenceRemapInput {
 export async function applyCharacterReferenceRemap(input: CharacterReferenceRemapInput): Promise<void> {
   const toCharacterId = input.toCharacterId
   const toName = input.toName
+  await remapNarrativeDomainReferencesV1({ table: 'characters', fromId: input.fromCharacterId, toId: toCharacterId })
 
   // itemLedger 同时保存稳定 ID 与作者可读名称；必须先更新两者，再让
   // 注册表通用重映射处理其余 ID 引用。否则通用步骤先改 ID 后，名称
@@ -107,6 +109,7 @@ async function remapSimpleCharacterRefs(projectId: number, fromId: number, toId?
           await targetSpec.table.update(key, { [field]: null } as any)
         }
       } else if (ref.onDelete === 'cascade') {
+        for (const key of keys) await remapNarrativeDomainReferencesV1({ table: tableName, fromId: key })
         if (keys.length) await targetSpec.table.bulkDelete(keys)
       }
     } else {
@@ -122,6 +125,7 @@ async function remapSimpleCharacterRefs(projectId: number, fromId: number, toId?
       .filter(r => r.fromCharacterId === r.toCharacterId)
       .map(r => r.id)
       .filter((id): id is number => id != null)
+    for (const id of selfIds) await remapNarrativeDomainReferencesV1({ table: 'characterRelations', fromId: id })
     if (selfIds.length) await db.characterRelations.bulkDelete(selfIds)
   }
 }

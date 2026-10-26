@@ -5,6 +5,7 @@ import {readChatRoleProfilesV1} from '../character-interaction/role-profile-stor
 import {readChatSourceUnitSetV1} from '../character-interaction/source-unit-store'
 import {validateChatSourceUnitSetForProjectionV1} from '../character-interaction/source-unit-authorization'
 import {validateChatRoleProfilesForSourceV1} from '../character-interaction/role-profile'
+import { parseProductWorldSourceSelection } from './runtime-package'
 import { parseAvgAuthoringSettingsV1, type AvgAuthoringSettingsV1 } from '../avg/authoring-contract'
 import type {
   ProductionProductKindV1,
@@ -14,7 +15,6 @@ import type {
   ProductProductionSourceOptionsV1,
   ProductProductionSourceSelectionV1,
   ProductStartingPointSuggestionV1,
-  ProductWorldSourceSelectionV1,
   WorkspaceScope,
   AiTownBriefSettingsV1,
 } from '../types'
@@ -141,7 +141,8 @@ function normalizeAuthorSelection(input: {
   for (const field of AUTHOR_SELECTION_FIELDS) {
     const submitted = input.authorSelection[field]
     if (!Array.isArray(submitted)) throw new Error(`[product-production] 冻结素材选择缺少 ${field}`)
-    if (submitted.some(value => typeof value !== 'string' || !value.startsWith('world-release:'))) {
+    if (submitted.some(value => typeof value !== 'string' || (input.source.worldReference.version === 2
+      ? !/^world-narrative:[a-f0-9]{64}$/.test(value) : !value.startsWith('world-release:')))) {
       throw new Error(`[product-production] 冻结素材选择 ${field} 包含非法世界资源 key`)
     }
     if (new Set(submitted).size !== submitted.length) {
@@ -235,11 +236,12 @@ async function capabilityRequirement(input: {
 export async function suggestProductStartingPoints(input: {
   scope: WorkspaceScope
   worldReleaseId: number
+  productType?: string
 }): Promise<ProductConsultationSuggestionSetV1> {
   const scope = await resolveScope({ scope: input.scope })
   let source: ConsultationSourceV1
   try {
-    source = await loadProductProductionConsultationSourceV2({ scope, worldReleaseId: input.worldReleaseId })
+    source = await loadProductProductionConsultationSourceV2({ scope, worldReleaseId: input.worldReleaseId, productType: input.productType })
   } catch (cause) {
     const detail = cause instanceof Error ? cause.message : String(cause)
     throw new Error(`[product-production] WorldRelease 已被篡改、不属于当前作用域或不符合纯语义契约：${detail}`)
@@ -297,6 +299,9 @@ export async function suggestProductStartingPoints(input: {
     risks: ['需要补齐主角、起点、规模、必守事实和内容边界后才能开始制作。'],
   }))
   const suggestions = result.slice(0, 6)
+  if (source.worldReference.version === 2) for (const item of suggestions) {
+    item.recommendedProductTypes = item.recommendedProductTypes.filter(type => type === 'character-interaction' || type === 'avg')
+  }
   const selectionDefaults = Object.fromEntries(suggestions.map(item => [
     item.suggestionKey,
     editableSelection(selectionForStartingPoint(source, item)),
@@ -342,12 +347,13 @@ export async function draftProductProductionBriefV3(input: {
   sourceSelection?: ProductProductionSourceSelectionV1
 }): Promise<ProductProductionBriefV3> {
   const scope = await resolveScope({ scope: input.scope })
-  const suggestions = await suggestProductStartingPoints({ scope, worldReleaseId: input.worldReleaseId })
+  const suggestions = await suggestProductStartingPoints({ scope, worldReleaseId: input.worldReleaseId, productType: input.productType })
   const selected = suggestions.suggestions.find(item => item.suggestionKey === input.suggestionKey)
   if (!selected) throw new Error('[product-production] 起点建议不属于当前冻结 WorldRelease')
   const source = await loadProductProductionConsultationSourceV2({
     scope,
     worldReleaseId: input.worldReleaseId,
+    productType: input.productType,
   })
   if (source.release.contentHash !== suggestions.worldContentHash) {
     throw new Error('[product-production] 会谈期间 WorldRelease 来源发生变化')
@@ -409,13 +415,13 @@ export async function draftProductProductionBriefV3(input: {
   if (backgroundKeys.length) roleBindings.chatBackground = [...backgroundKeys]
   const playerKeys = characterChat?.version === 3 && characterChat.narrative.playerCharacterKey ? [characterChat.narrative.playerCharacterKey] : []
   if (playerKeys.length) roleBindings.chatPlayer = playerKeys
-  const selection: ProductWorldSourceSelectionV1 = {
-    schema: 'storyforge.product-world-source-selection', version: 1,
+  const selection = parseProductWorldSourceSelection({
+    schema: 'storyforge.product-world-source-selection', version: source.worldReference.version,
     productType: input.productType,
     worldReferenceHash: source.worldReference.referenceHash,
     resourceKeys: [...new Set([...Object.values(selectedCatalog).flat(), ...backgroundKeys, ...playerKeys])].sort(),
     roleBindings,
-  }
+  })
   if (characterChat && characterChat.version !== 1) {
     if (!characterChat.sourceReview) throw new Error('请先检查并确认角色来源资料')
     const catalog = await loadProductProductionWorldSourceCatalogV2({scope, worldReleaseId: input.worldReleaseId, selection,

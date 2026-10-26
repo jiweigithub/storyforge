@@ -40,7 +40,7 @@ export function assertAgentSkillContextGatewayPolicyV1(
   for (const name of gateway.additionalReadToolNames) {
     const tool = AGENT_TOOL_BY_NAME.get(name)
     if (!tool || tool.risk !== 'read' || ![
-      'list_context_catalog', 'search_context', 'read_context_resource', 'read_original_evidence',
+      'list_context_catalog', 'search_context', 'query_world_release', 'read_context_resource', 'read_original_evidence',
     ].includes(name)) {
       fail(`Skill ${skill.id} 未获 Gateway 工具 ${name}`)
     }

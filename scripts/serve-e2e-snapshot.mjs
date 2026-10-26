@@ -29,6 +29,9 @@ const snapshotEntries = [
   'src',
   'tailwind.config.ts',
   'tests/helpers',
+  'tests/acceptance/narrative-world/corpus-v1.json',
+  'tests/acceptance/narrative-world/worldrelease-v4-content-golden.json',
+  'tests/acceptance/narrative-world/scale-plan-20261015-v1.json',
   'tsconfig.json',
   'vite.config.ts',
 ]

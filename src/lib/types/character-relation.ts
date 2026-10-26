@@ -1,3 +1,4 @@
+import type { NarrativeDomainMetadataV1, NarrativeDomainFieldsV1 } from './narrative-domain'
 import type { RagDocumentMetadata } from './rag-library'
 
 /** 角色关系类型 */
@@ -14,7 +15,9 @@ export type RelationType =
   | 'other'        // 其他
 
 /** 角色关系 */
-export interface CharacterRelation extends RagDocumentMetadata {
+type CharacterRelationNarrativeFieldsV1 = NarrativeDomainMetadataV1 & Pick<NarrativeDomainFieldsV1, 'narrativeRelationV1'>
+
+export interface CharacterRelation extends RagDocumentMetadata, CharacterRelationNarrativeFieldsV1 {
   id?: number
   projectId: number
   fromCharacterId: number   // 角色 A

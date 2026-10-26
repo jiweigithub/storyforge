@@ -1,7 +1,7 @@
 import { CURRENT_BACKUP_VERSION } from '../export/backup-trust'
 import type { ProjectExportData } from '../export/json-export'
 import { PROJECT_TABLES } from '../registry/project-tables'
-import type { WorldReleaseManifestV3, WorldSemanticSnapshotV1 } from '../types'
+import type { WorldSemanticSnapshotV1 } from '../types'
 
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
@@ -45,7 +45,7 @@ export function assertWorldSemanticSnapshotV1(value: unknown): asserts value is 
  * not compatibility defaults for an older backup.
  */
 export function materializeWorldReleaseBackupV1(
-  manifest: WorldReleaseManifestV3,
+  manifest: { selectedTables: string[]; records: Record<string, unknown[]>; semanticSnapshot: WorldSemanticSnapshotV1 },
   projectPatch: Record<string, unknown> = {},
 ): ProjectExportData {
   assertWorldSemanticSnapshotV1(manifest.semanticSnapshot)

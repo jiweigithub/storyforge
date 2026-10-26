@@ -7,11 +7,13 @@ import {
   searchWorldReleaseV1,
 } from '../../src/lib/context-gateway/world-release-provider'
 import { db } from '../../src/lib/db/schema'
+import { estimateTokens } from '../../src/lib/ai/context-budget'
 import type { WorldReleaseManifestV3 } from '../../src/lib/types'
 import { createWorkspace } from '../../src/lib/workspace/create-workspace'
 import { createWorldRevision, publishWorldRevision } from '../../src/lib/world-engine/releases'
 import { stampNewRecord } from '../../src/lib/workspace/scope'
 import { createWorldReferenceV1, resolveWorldReferenceResourceScopeV1 } from '../../src/lib/world-engine/world-reference'
+import { verifyPureWorldReleaseManifestV3 } from '../../src/lib/world-engine/release-codec'
 
 async function phaseDFixture(characterCount = 0) {
   const created = await createWorkspace({
@@ -109,6 +111,14 @@ describe('D-WORLD · 完整世界引擎版本、画像、关系与规模出口',
     expect(characters).toMatchObject({ selectionStatus: 'omitted', rowCount: 0, status: 'missing' })
     expect(manifest.sourceManifest?.selectedResourceIds.some(item => item.endsWith(':foundation:worldview'))).toBe(true)
     expect(manifest.sourceManifest?.omittedResourceIds.some(item => item.endsWith(':characters:character'))).toBe(true)
+    expect(release.manifestJson).toBe(revision.manifestJson)
+    expect(foundation.omittedRowCount).toBeGreaterThan(0)
+    await expect(verifyPureWorldReleaseManifestV3({ manifest: release.manifestJson })).resolves.toEqual(manifest)
+    for (const change of [{ rowCount: foundation.rowCount + 1 }, { selectionStatus: 'selected' }, { omittedRowCount: -1 }]) {
+      const damaged = structuredClone(manifest)
+      Object.assign(damaged.capabilityProfile!.find(item => item.area === 'foundation')!, change)
+      await expect(verifyPureWorldReleaseManifestV3({ manifest: damaged })).rejects.toThrow('capabilities')
+    }
   })
 
   it('冻结目录暴露稳定多世界关系；产品不需要读取底层表才能从通道导航到两端世界', async () => {
@@ -173,4 +183,33 @@ describe('D-WORLD · 完整世界引擎版本、画像、关系与规模出口',
       maxTokens: 4_000,
     })).content).not.toContain('草稿已改变')
   }, 30_000)
+
+  it('预算不足以容纳截断说明时明确拒绝；可用预算、原文和旧 Release 保持有效', async () => {
+    const owned = await phaseDFixture()
+    const descriptors = await listAllWorldReleaseResourceDescriptorsV1(owned.resourceScope)
+    const target = descriptors.find(item => item.kind === 'world-link')!
+    const before = await db.worldReleases.get(owned.release.id!)
+    for (const depth of ['index', 'summary', 'focused', 'full'] as const) {
+      const input = { scope: owned.resourceScope, resourceKey: target.resourceKey, depth, maxTokens: 1 }
+      await expect(readWorldResourceV1(input)).rejects.toMatchObject({ code: 'budget' })
+      for (const maxTokens of [32, 33, 40, 64]) {
+        try {
+          const response = await readWorldResourceV1({ ...input, maxTokens })
+          expect(response.tokenCount).toBeLessThanOrEqual(maxTokens)
+          expect(estimateTokens(response.content)).toBe(response.tokenCount)
+        } catch (error) {
+          expect(error).toMatchObject({ code: 'budget' })
+          expect(maxTokens).toBeLessThan(33)
+        }
+      }
+    }
+    const full = await readWorldResourceV1({ scope: owned.resourceScope, resourceKey: target.resourceKey, depth: 'full', maxTokens: 20_000 })
+    const originalInput = { scope: owned.resourceScope, resourceKey: target.resourceKey, sourceRef: full.sourceRefs[0]!, maxTokens: 1 }
+    await expect(readWorldOriginalEvidenceV1(originalInput)).rejects.toMatchObject({ code: 'original-budget' })
+    const original = await readWorldOriginalEvidenceV1({ ...originalInput, maxTokens: 20_000 })
+    expect(full.content).toBe(original.content)
+    expect(full.contentHash).toBe(original.contentHash)
+    expect(await db.worldReleases.get(owned.release.id!)).toEqual(before)
+  })
+
 })

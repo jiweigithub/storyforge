@@ -1,3 +1,4 @@
+import type { NarrativeDomainMetadataV1, NarrativeDomainFieldsV1 } from './narrative-domain'
 import type { RagDocumentMetadata } from './rag-library'
 
 /** 戏份权重（R1：与阵营正交） */
@@ -13,7 +14,9 @@ export type CharacterOrderAxis = 'lawful' | 'neutral' | 'chaotic'
 export type CharacterNarrativeStatus = 'planned' | 'active' | 'inactive' | 'retired' | 'deceased'
 
 /** 角色 */
-export interface Character extends RagDocumentMetadata {
+type CharacterNarrativeFieldsV1 = NarrativeDomainMetadataV1 & Pick<NarrativeDomainFieldsV1, 'narrativeAliasesV1'>
+
+export interface Character extends RagDocumentMetadata, CharacterNarrativeFieldsV1 {
   id?: number
   projectId: number
   name: string

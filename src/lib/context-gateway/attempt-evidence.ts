@@ -1,3 +1,4 @@
+import { lookupContextResourceMetadataV1 } from './resource-metadata'
 import { estimateTokens } from '../ai/context-budget'
 import { sha256Text } from '../ai/chapter-memory/text-normalization'
 import {
@@ -674,6 +675,7 @@ export async function inspectContextGatewayManifestFreshnessV1(input: {
   if (input.manifest.gateway.scopeFingerprint !== input.session.scopeFingerprint) reasonCodes.add('scope-fingerprint-stale')
   if (input.manifest.gateway.policyHash !== input.session.policyHash) reasonCodes.add('policy-binding-stale')
   const unique = new Map(retrievalDecisions(input.manifest.gateway.retrievalTrace).map(item => [item.resourceKey, item]))
+  const metadata = new Map<string, ReturnType<typeof lookupContextResourceMetadataV1>>()
   for (const decision of [...unique.values()].sort((left, right) => left.resourceKey.localeCompare(right.resourceKey))) {
     const binding = input.session.providers.find(item => item.source.key === decision.sourceKey)
     if (!binding) {
@@ -682,19 +684,24 @@ export async function inspectContextGatewayManifestFreshnessV1(input: {
       continue
     }
     try {
-      const current = await binding.provider.read({
-        scope: input.session.scope,
-        resourceKey: decision.resourceKey,
-        depth: 'index',
-        maxTokens: 1,
-      })
-      const status = current.descriptor.contentHash !== decision.contentHash
-        || current.descriptor.contentRevision !== decision.revision
+      let lookup = metadata.get(decision.sourceKey)
+      if (!lookup) {
+        lookup = lookupContextResourceMetadataV1({
+          provider: binding.provider,
+          scope: input.session.scope,
+          resourceKeys: [...unique.values()].filter(item => item.sourceKey === decision.sourceKey).map(item => item.resourceKey),
+        })
+        metadata.set(decision.sourceKey, lookup)
+      }
+      const descriptor = (await lookup).get(decision.resourceKey)
+      if (!descriptor) throw new Error('资源元数据不可用')
+      const status = descriptor.contentHash !== decision.contentHash
+        || descriptor.contentRevision !== decision.revision
         ? 'content-stale' as const
-        : current.descriptor.policyHash !== decision.policyHash
-          || current.descriptor.policyRevision !== decision.policyRevision
+        : descriptor.policyHash !== decision.policyHash
+          || descriptor.policyRevision !== decision.policyRevision
           ? 'policy-stale' as const
-          : decision.sourceRefs.some(ref => !current.descriptor.sourceRefs.some(item => sameSourceRef(item, ref)))
+          : decision.sourceRefs.some(ref => !descriptor.sourceRefs.some(item => sameSourceRef(item, ref)))
             ? 'source-ref-stale' as const
             : 'fresh' as const
       resources.push({ resourceKey: decision.resourceKey, sourceKey: decision.sourceKey, status })

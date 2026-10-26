@@ -45,7 +45,7 @@ for (const failure of ['opening', 'review-output-limit'] as const) test(failure 
   const read = () => page.evaluate(async f => {
     const load = new Function('p', 'return import(p)'), db = (await load('/storyforge/src/lib/db/schema.ts')).db
     const build = await db.productBuilds.where('productionId').equals(f.productionId).last()
-    return {status: build.status, failure: JSON.parse(build.failureJson), world: JSON.stringify(await db.worldReleases.toArray()),
+    return {status: build?.status ?? null, failure: build ? JSON.parse(build.failureJson) : {}, world: JSON.stringify(await db.worldReleases.toArray()),
       raw: (await db.agentRunArtifacts.where('projectId').equals(f.scope.projectId).toArray()).filter((a: {artifactKind: string}) => a.artifactKind === 'raw-response').map((a: {content: string}) => a.content),
       inputs: (await db.productBuildArtifacts.where('projectId').equals(f.scope.projectId).toArray())
         .filter((a: {artifactKey: string}) => ['design.game', 'content.chat-candidates'].includes(a.artifactKey))

@@ -1,0 +1,5 @@
+
+> storyforge@4.0.0 gen:ai-manual
+> node scripts/generate-ai-manual.mjs
+
+[ai-manual] generated docs/AI-FUNCTIONS-MANUAL.generated.md

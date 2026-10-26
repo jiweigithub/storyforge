@@ -1,6 +1,6 @@
 # StoryForge 当前能力基线
 
-> 版本：2.2.1 · 基线：2026-09-25 文字开放世界内置纵向展示 · 权威层级：L2
+> 版本：2.5.0 · 本次增量核查：2026-10-13 世界引擎与数据基线 · 权威层级：L2
 > 本文区分代码存在、纵切面可用和产品完成。旧完成卡不自动恢复权威，但已合入主干并由当前代码/检查器复证的 Phase 5 成果必须保留。
 
 ## 状态定义
@@ -15,8 +15,8 @@
 | ID | 状态 | 当前事实与证据 | 缺口 |
 |---|---|---|---|
 | A-GOV-01 | implemented | 总纲、WPS 完整归档、唯一现行文档白名单和当前架构审计已建立 | 后续正常功能分支按协作流程短期存在，不重新解释为长期架构分叉 |
-| A-GOV-02 | implemented | 身份/派生、纯语义 WorldRelease、`S1 世界封存 → S2 产品定向 → S3 产品执行`闸门、五项逻辑契约、中立网关、当前产品适配器、节点同源与能力/成熟度门均已机器化；schema v6 与静态门只允许当前产品身份和运行入口 | 后续产品仍须逐项完成专项功能；治理完成不代表这些产品已经完成 |
-| BASE-DATA-01 | implemented | Dexie 当前 schema v6；支持已发布 v1→v2→v3→v4→v5→v6 纯加表迁移并有保留数据反例；`npm run check:required-tables` 验证 118 张 required/project tables；非当前备份和旧字段明确拒绝 | 新表仍必须先登记；后续 schema 演进继续明确支持窗口并补迁移、回滚和生命周期反例 |
+| A-GOV-02 | implemented | 身份/派生、纯语义 WorldRelease、`S1 世界封存 → S2 产品定向 → S3 产品执行`闸门、五项逻辑契约、中立网关、当前产品适配器、节点同源与能力/成熟度门均已机器化；schema v11 与静态门只允许当前产品身份和运行入口 | 后续产品仍须逐项完成专项功能；治理完成不代表这些产品已经完成 |
+| BASE-DATA-01 | implemented | Dexie 当前 schema v11；保留 v1～v10 的加表/索引升级（含 Brief hash 索引调整与聊天草稿兼容桥）；`npm run check:required-tables` 本轮验证 128 张 required/project tables；备份 v16，v14/v15 严格校验后可沿显式版本链转换；旧字段和其他不支持版本拒绝 | 新表仍必须先登记；后续 schema 演进继续明确支持窗口并补迁移、回滚和生命周期反例 |
 | BASE-REG-01 | implemented | Context、Field/Adoption、Project Tables 三注册表与架构检查器存在；Project 仅为 Workspace 壳，World/Work 身份、作品数据和上层产品读取边界已分离 | 后续新入口必须先登记，不得恢复组件私有清单、Project/Work 镜像或物理世界表读取 |
 | BASE-AI-01 | implemented | AI 入口注册表与自动生成手册区分 formal/auxiliary/evaluation/experimental | 登记证明边界，不证明所有 formal UI 纵切面完成 |
 | BASE-HARNESS-01 | implemented | Run contract、ledger、checkpoint、candidate/stale、receipt 及多个 durable use case | 并非所有旧按钮都统一到同样成熟度 |
@@ -55,16 +55,29 @@
 | ID | 状态 | 当前事实与证据 | 缺口 |
 |---|---|---|---|
 | D-WORLD-01 | implemented | 独立作品、内部 scope 与显式 `world-draft` 身份已分离；世界 code/revision、按 World/Work 隔离的语义投影、诚实能力画像和不可变 release/hash 已形成闭环 | 新语义域加入时继续登记覆盖、证据、候选/冲突/遗漏统计 |
-| D-WORLD-02 | implemented | `describe/search/read/readOriginalEvidence` 中立 WorldRelease provider、冻结 SourcePlan、per-run Context Manifest、发布 SourceManifest，以及跑团、角色互动、AI 小镇、文字冒险、AVG、文字开放世界六个 requirement adapter 已验证 | 新产品继续增加自己的 adapter；不得把网关扩成固定万能数据包 |
+| D-WORLD-02 | implemented | `describe/search/read/readOriginalEvidence` 中立 WorldRelease provider、冻结 SourcePlan、per-run Context Manifest、发布 SourceManifest，以及跑团、角色互动、AI 小镇、文字冒险、AVG、文字开放世界六个 requirement adapter 已验证 | 当前六 adapter 共用 helper；entityKeys/storyArcKeys/timeRange 搜索未执行过滤。已有生产编译精确资源/依赖 mandatory original 门；不能据此宣称人物视角、事件/因果查询完整 |
 | D-WORLD-03 | implemented | 长篇/短篇可显式一键派生且保存来源 revision/range/hash；剧本/漫画被拒绝；多世界关系、通道式导航、导入重映射和 World/Work 隔离已有回归 | 产品是否使用跨世界资源由自己的 adapter 与 Brief 决定 |
 | D-WORLD-04 | implemented | `PROJECT_TABLES.worldSemantic` 是封存集合唯一来源；WorldRelease、导出和中立读取排除 product production、媒资、build、可执行蓝图、session 与 runtime | 产品媒资与运行状态继续由各产品生命周期测试守门 |
+
+### D-NW · 叙事世界基座增量（身份/时间/codec 与评测已形成，领域投影/查询待实施）
+
+[专项权威](../products/WORLD-ENGINE.md) §10～23 统一事实、IR、索引、查询、推演边界、施工包和 NW-0B/NW-1A 实测，不重开已完成 D-WORLD 基础，也不降级长篇主链。
+
+| ID | 状态 | 当前事实与证据 | 缺口 |
+|---|---|---|---|
+| D-NW-EVAL | implemented | NW-0B：12 原创场景族、120 查询、48 修改、4 族留出；真实当前接口结果与 10 项缺口冻结 | 只完成确定性评测基线/守门；独立人工、模型、规模与增强能力未验收 |
+| D-NW-IR | partial | temporalFacts、knowledgeLedger、事件/故事线、WorldRelease 语义快照、候选/采纳已有；NW-1A 实现稳定身份、分轴时间、八类 exact codec、证据/hash/引用校验及同考卷复测 | NW-1B 已加入注册领域注释、八类确定性 projector、确认 CAS、证据/依赖/可见范围闭包与备份 v16；工程验证见 WORLD-ENGINE §24。作者 UI/durable 候选采纳待 NW-1C，冻结 v4/查询待 NW-2A/2B；旧 provider 缺口保持 |
+| D-NW-INDEX | missing | v3 有按行目录与部分关系；Work 的检索块/层级摘要为非导出缓存 | 冻结 Narrative Index、原子证据闭包、版本化便携包与无向量查询待 NW-2A/2B/2E |
+| D-NW-COMPILER | partial | 六 adapter/plan/manifest 与确定性编译依赖闭包存在 | 完整精确选择、产品级禁止、视角/能力声明接缝待 NW-2C，各产品完整 Compiler 另验 |
+| D-NW-IMPACT | partial | 章级 edit impact、stale、修复 Harness 存在 | 世界字段/证据依赖、误伤/漏更新及增量等价验收待 NW-2D |
+| D-NW-DYNAMICS | missing | 上层产品有各自状态机；中立 provider 无 validate/simulate | §15 只确定未来合同，Phase 2 后另行授权实施 |
 
 ## E · 上层垂直产品
 
 | ID | 状态 | 当前事实与证据 | 缺口 |
 |---|---|---|---|
 | E-TTRPG-01 | partial | 已接入中立世界协议、专用需求适配器、统一 Production/Build/ProductRelease v1、AI GM runtime、事件/存档与在线 handoff；独立跑团 UI 已接作品库、无世界 S2 保存、九步配置与提案、实际制作检查发布、产物查看和团局 | 逐字段产物编辑、完整媒资、公共服务权限隔离、真实多人体验及产品整体验收尚未封板 |
-| E-CHAT-01 | partial | 单/多角色互动已接入独立 S2 草稿、主 Agent 候选确认、专用需求适配器、统一 Production/Build/ProductRelease、玩家对话、关系记忆及检查点分支；私密消息过滤、导演决策与部分回复恢复已有回归 | 当前为纯文字；商业内容质量、超长会话与更多模型供应商的实测仍需验收 |
+| E-CHAT-01 | partial | 单/多角色互动已接入独立 S2 草稿、主 Agent 候选确认、专用需求适配器、统一 Production/Build/ProductRelease、玩家对话、关系记忆及检查点分支；私密消息过滤、导演决策与部分回复恢复已有回归 | 实验性单角色新流程已接入人物/背景图片确认、显示与分发，设备语音输入和朗读；技术预览可使用内置占位图。商业内容质量、真机听感、超长会话与更多模型供应商仍需验收 |
 | E-TOWN-01 | partial | 已有专属 Brief/SourceSelection/adapter、Production/Build/ProductRelease、六时段语义地图、居民日程、知识隔离、证据化对话记忆、关系/轻经营、离线演化、检查点/分支、14 日回放、重大变化确认、durable 自治导演、产品专属地点/肖像/表情/环境音媒资 lane、玩家界面与冻结 Build 浏览器旅程 E2E；新版作者界面接入独立 S2 草稿、可恢复会谈候选、来源选择、生产检查与分区游玩 | 真实模型长期角色一致性、真实媒体 provider 的肖像/音频质量、权利/成本/性能回执及非 fixture 浏览器商业验收仍需继续 |
 | E-TEXTADV-01 | partial | `/adventure/:pageId?` 已接真实产品入口；冻结 WorldRelease 可进入文字冒险专属 Brief、专业 Agent/Skill DAG、候选工件、规则/任务/场景/对白编译、媒资需求与 Build 绑定、静态质量门/自动游玩、可玩 Preview、确定性事件与存档、不可变 ProductRelease，以及含媒资候选包导出/隔离导入回环；相关定向和浏览器 E2E 已登记 | 真实模型生成的文学质量、真实 provider 媒资、浏览器性能、双角色真人试玩及首个社区推荐成品仍需在每个实际 Build 上完成验收；工程纵切面通过不等于内容成品完成 |
 | E-AVG-01 | partial | `/avg/:pageId?` 已接真实作品库、无世界可保存的 S2 草稿、主 Agent 会谈候选回填、冻结版本引用、统一 Production/Build/Release、作者剧情/演出/媒资修订及玩家存档；schema v7 草稿与素材参与备份生命周期 | 通用外部模型生成的完整文学/视听质量与商业标准仍需逐作品验收；原型与内部评审不得冒充商业完成 |

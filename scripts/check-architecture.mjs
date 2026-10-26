@@ -23,6 +23,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
+import { importsNarrativeGold, physicalWorldReleaseType, validateNarrativeBaselineFiles } from './narrative-world-baseline-contract.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -417,7 +418,7 @@ const eventStoreSource = read('src/lib/agent/run/event-store.ts')
 if (!/RESERVED_EVENT_TYPES[\s\S]*?'memory\.settlement\.recorded'/.test(eventStoreSource)) {
   violations.push('[⑫记忆结算权限] memory.settlement.recorded 必须是 event-store 专用保留事件')
 }
-if (!/const next = await appendPrivilegedAgentRunEventInTransactionV1\(snapshot, event\)[\s\S]*?const settlementEvent = parseAgentRunEventV1\([\s\S]*?return appendPrivilegedAgentRunEventInTransactionV1\(next, settlementEvent\)/.test(eventStoreSource)) {
+if (!/const next = await Dexie\.Promise\.resolve\(appendPrivilegedAgentRunEventInTransactionV1\(snapshot, event\)\)[\s\S]*?const settlementEvent = parseAgentRunEventV1\([\s\S]*?return await Dexie\.Promise\.resolve\(appendPrivilegedAgentRunEventInTransactionV1\(next, settlementEvent\)\)/.test(eventStoreSource)) {
   violations.push('[⑫记忆结算原子性] Harness 终态与 memory settlement 必须在 appendAgentRunEventV1 同一事务追加')
 }
 for (const file of walk('src/lib')) {
@@ -1052,8 +1053,8 @@ if (!gatewayToolsSource.includes('sourceRefCount: descriptor.sourceRefs.length')
 if (/\bdb\./.test(gatewayToolsSource)) {
   violations.push('[㉕工具只读] Context Gateway tool adapter 不得直接访问或写数据库')
 }
-if (!agentExecutionBindingSource.includes("AGENT_TOOL_SCHEMA_VERSION_V1 = 'agent-read-tools-v7'")
-  || !agentExecutionBindingSource.includes("AGENT_TOOL_SCHEMA_HASH_V1 = '2ca07d7fc193be12a1069608353789493b4d2df9a1c9463e9eb412221ac2dff3'")
+if (!agentExecutionBindingSource.includes("AGENT_TOOL_SCHEMA_VERSION_V1 = 'agent-read-tools-v8-narrative-query-v1'")
+  || !agentExecutionBindingSource.includes("AGENT_TOOL_SCHEMA_HASH_V1 = '4e0a7be0ccc9b3d3e7d0d348554cfb1a92466346af109488fcb84f17c7743b6b'")
   || !agentExecutionBindingSource.includes('verifyAgentToolSchemaBindingV1')) {
   violations.push('[㉕工具版本] 当前 Gateway 工具必须冻结并校验 Agent tool schema version/hash')
 }
@@ -1320,17 +1321,24 @@ for (const token of [
 ]) {
   if (!worldDerivationSource.includes(token)) violations.push(`[㉜显式派生] 派生服务缺少 ${token}`)
 }
-if (!worldReleaseSource.includes('PROJECT_TABLES.filter(spec => spec.worldSemantic)')
+const historicalSemanticRegistryV3 = read('src/lib/world-engine/semantic-registry-v3.ts')
+if (!worldReleaseSource.includes('WORLD_SEMANTIC_REGISTRY_V3 as V3_TABLES')
+  || !read('src/lib/world-engine/release-codec.ts').includes('WORLD_SEMANTIC_REGISTRY_V3 as WORLD_SEMANTIC_SPECS')
+  || /import\s+[^\n]*PROJECT_TABLES/.test(historicalSemanticRegistryV3)
+  || !historicalSemanticRegistryV3.includes('Object.freeze')
   || worldReleaseSource.includes('communityShare')) {
-  violations.push('[㉜纯语义发布] WorldRelease 必须只从 worldSemantic 派生，禁止读取分享兼容标志')
+  violations.push('[㉜纯语义发布] v3 WorldRelease 必须使用历史 PROJECT_TABLES.worldSemantic 快照，禁止动态扩展旧协议或读取分享兼容标志')
 }
 if (!worldReleaseSource.includes('semanticContract: 3')
   || worldReleaseSource.includes('selectedNarrativeModules')) {
   violations.push('[㉜产品内容隔离] WorldRelease 必须声明 semanticContract 3，且协议中不得存在可执行叙事模块字段')
 }
 for (const token of [
-  'WORLD_PACKAGE_VERSION = 3', 'WORLD_PACKAGE_MAX_BYTES',
-  'verifyPureWorldReleaseManifestV3', 'report.importable',
+  'WORLD_PACKAGE_VERSION = 5', 'WORLD_PACKAGE_MAX_BYTES',
+  'verifyWorldReleaseManifestV1', 'report.importable',
+  'WorldPackageV3', 'WorldPackageV4', 'WorldPackageV5',
+  'packNarrativeJsonV1', 'unpackNarrativeJsonV1',
+  'verified.version !== (input.packageVersion === 5 ? 4 : input.packageVersion)',
 ]) {
   if (!worldPackageSource.includes(token)) violations.push(`[㉜世界包边界] world-package 缺少 ${token}`)
 }
@@ -1511,8 +1519,8 @@ if (!productProductionWorldSource.includes('openWorldSemanticResourceCatalogV1({
   || !productProductionWorldSource.includes('readWorldSemanticResourcesV1({')) {
   violations.push('[㉝B中立世界读取] 统一产品生产必须经语义目录与资源读取协议，不得解析物理 WorldRelease')
 }
-if (!productProductionWorldSource.includes('selection: ProductWorldSourceSelectionV1')
-  || productProductionWorldSource.includes('selection?: ProductWorldSourceSelectionV1')
+if (!productProductionWorldSource.includes('selection: ProductWorldSourceSelection')
+  || productProductionWorldSource.includes('selection?: ProductWorldSourceSelection')
   || /input\.selection\s*\?|\?\?\s*opened\.resources|input\.selection\s*==\s*null/.test(productProductionWorldSource)
   || !productProductionWorldSource.includes('resolveProductProductionWorldCompilationDescriptorsV2({')
   || !productProductionWorldSource.includes('selection 与冻结 WorldReference 不一致')) {
@@ -1576,7 +1584,7 @@ for (const token of [
   }
 }
 for (const token of [
-  'aggregateProductSourceManifestFromExactRunsV1', 'portableProductSourcePlanV1',
+  'aggregateProductSourceManifestFromExactRuns', 'portableProductSourcePlan',
   'createProductReleaseLineageV1', 'createProductReleaseManifestV1',
 ]) {
   if (!productProductionAdoptionSource.includes(token)) {
@@ -1593,8 +1601,8 @@ for (const token of [
   if (!productReleaseTypesSource.includes(token)) violations.push(`[㉝B产品发布协议] product-release.ts 缺少 ${token}`)
 }
 for (const token of [
-  'verifyProductReleaseManifestV1', 'validateProductSourcePlanV1',
-  'validateConfirmedProductBriefV1', 'validateProductSourceManifestV1',
+  'verifyProductReleaseManifestV1', 'validateProductSourcePlan',
+  'validateConfirmedProductBriefV1', 'validateProductSourceManifest',
   'validateProductReleaseLineageV1', 'productReleaseIdentityHashV1',
 ]) {
   if (!productRuntimePackageSource.includes(token)) violations.push(`[㉝B发布反篡改] runtime-package.ts 缺少 ${token}`)
@@ -1604,7 +1612,7 @@ if (productReleaseTypesSource.includes('productionProvenance: null')
   violations.push('[㉝B发布来源必填] 当前 ProductRelease 不得允许空或可选 productionProvenance')
 }
 for (const token of [
-  'freezeProductSourcePlanV1', 'resolveProductSourceReadBoundaryV1',
+  'freezeProductSourcePlanV1', 'freezeExactProductSourcePlanV2', 'resolveProductSourceReadBoundary',
   'openWorldSemanticResourceCatalogV1', 'productProductionTaskUsesWorldGatewayV1',
   'resolveProductProductionWorldCompilationDescriptorsV2',
   'mandatoryOriginalResourceKeys:',
@@ -1722,7 +1730,7 @@ if (!productRuntimeMediaLibrarySource.includes('productRuntimeSessionId: number'
   violations.push('[㉝B运行媒资隔离] 运行中新生成的媒资必须绑定具体 ProductRuntimeSession')
 }
 if (!currentSchemaSource.includes("STORYFORGE_DATABASE_NAME = 'storyforge-core'")
-  || !currentSchemaSource.includes('STORYFORGE_SCHEMA_VERSION = 11')
+  || !currentSchemaSource.includes('STORYFORGE_SCHEMA_VERSION = 12')
   || !currentSchemaSource.includes('this.version(1).stores(STORYFORGE_STORES_V1)')
   || !currentSchemaSource.includes('this.version(2).stores(STORYFORGE_STORES_V2)')
   || !currentSchemaSource.includes('this.version(3).stores(STORYFORGE_STORES_V3)')
@@ -1732,11 +1740,12 @@ if (!currentSchemaSource.includes("STORYFORGE_DATABASE_NAME = 'storyforge-core'"
   || !currentSchemaSource.includes('this.version(7).stores(STORYFORGE_STORES_V7)')
   || !currentSchemaSource.includes('this.version(8).stores({ ...STORYFORGE_STORES_V8, chatAuthoringDrafts: STORYFORGE_STORES.chatAuthoringDrafts })')
   || !currentSchemaSource.includes('this.version(10).stores(STORYFORGE_STORES_V10)')
+  || !currentSchemaSource.includes('this.version(11).stores(STORYFORGE_STORES_V11)')
   || !currentSchemaSource.includes('this.version(STORYFORGE_SCHEMA_VERSION).stores(STORYFORGE_STORES)')
-  || (currentSchemaSource.match(/\.version\(/g) ?? []).length !== 11
+  || (currentSchemaSource.match(/\.version\(/g) ?? []).length !== 12
   || currentSchemaSource.includes('.upgrade(')
   || !currentSchemaSource.includes("productMediaAssets: '++id, projectId, worldId, workId, ownerKind, productType, productReleaseId, productRuntimeSessionId, &[productReleaseId+assetKey+version], &[productRuntimeSessionId+assetKey+version]")) {
-  violations.push('[㉝B当前 schema] 必须使用 storyforge-core v11、保留 v1 至 v10 加表迁移、零数据改写 upgrade，并保留当前根/媒资隔离索引')
+  violations.push('[㉝B当前 schema] 必须使用 storyforge-core v12、保留 v1 至 v11 加表迁移、零数据改写 upgrade，并保留当前根/媒资隔离索引')
 }
 if (!deriveImportSrc.includes('ProductMedia 必须具有唯一、有效的产品所有者')
   || !deriveImportSrc.includes("asset.ownerKind === 'release'")
@@ -1784,18 +1793,26 @@ for (const file of walk('src')) {
 // is world-owned infrastructure; upper products consume only the neutral gateway.
 const WORLD_RELEASE_PHYSICAL_OWNERS = new Set([
   'src/lib/context-gateway/world-release-provider.ts',
+  'src/lib/context-gateway/world-release-query-provider.ts',
+  // World-owned author directory metadata from an already verified release.
+  'src/lib/context-gateway/world-query-source-titles.ts',
   'src/lib/world-engine/world-package.ts',
   'src/lib/types/world-release.ts',
+  'src/lib/types/narrative-release.ts',
+  'src/lib/world-engine/narrative-release-v4.ts',
+  // NW-2D: the world-owned pure update compiler verifies the frozen base and
+  // produces a new semantic manifest; products still use the neutral gateway.
+  'src/lib/world-engine/narrative-incremental.ts',
+  'src/lib/world-engine/narrative-index-cache.ts',
   'src/lib/world-engine/release-codec.ts',
   'src/lib/world-engine/releases.ts',
   'src/lib/world-engine/world-reference.ts',
+  'src/lib/world-engine/world-reference-v2.ts',
   'src/lib/world-engine/semantic-snapshot.ts',
 ])
 for (const file of walk('src')) {
   const source = read(file)
-  if ((source.includes('WorldReleaseManifestV3')
-      || source.includes('parsePureWorldReleaseManifestV3'))
-    && !WORLD_RELEASE_PHYSICAL_OWNERS.has(file)) {
+  if (physicalWorldReleaseType(source) && !WORLD_RELEASE_PHYSICAL_OWNERS.has(file)) {
     violations.push(`[㉝C世界物理边界] ${file}: 非世界基础设施不得解析物理 WorldRelease`)
   }
 }
@@ -1821,6 +1838,7 @@ for (const directory of [
   'src/lib/product-platform',
   'src/lib/ttrpg',
   'src/lib/character-interaction',
+  'src/lib/ai-town',
   'src/lib/adventure',
   'src/lib/avg',
   'src/lib/open-world',
@@ -2361,6 +2379,18 @@ if (registryValidationIndex < 0
   || /validateRegistry\s*\(\s*\{/.test(applicationBootstrapSource)
   || !applicationBootstrapSource.includes('void bootstrap().catch(')) {
   violations.push('[㊶当前架构启动硬门] 三注册表与 schema 校验必须先于 Store 初始化、不得被局部 catch 吞掉，启动失败必须进入显式终态')
+}
+
+// NW-0B: evaluation gold is test-owned. Keep source spans/splits frozen and
+// prevent importing synthetic stories/answer labels into production readers.
+try { validateNarrativeBaselineFiles() } catch (error) {
+  violations.push(`[NW-0B评测证据] ${error.message}`)
+}
+for (const file of walk('src')) {
+  const source = read(file)
+  if (importsNarrativeGold(source)) {
+    violations.push(`[NW-0B样本隔离] ${file}: 生产代码不得导入评测语料、答案或测试适配器`)
+  }
 }
 
 // ── 报告 ──

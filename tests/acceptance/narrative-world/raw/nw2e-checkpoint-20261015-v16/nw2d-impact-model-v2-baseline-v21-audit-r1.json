@@ -1,0 +1,10 @@
+{
+  "sourceHashesVerified": 207,
+  "behaviorUnchangedVsV20": [
+    "baseline",
+    "ir-contract",
+    "domain-projection"
+  ],
+  "r7ProductionAndDependencyHashesUnchanged": 120,
+  "noNewBuildClaim": true
+}

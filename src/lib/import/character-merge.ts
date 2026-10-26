@@ -136,6 +136,12 @@ async function applyMergeGroup(
   if (!primary.id) return 0
 
   const others = targets.filter(t => t.id !== primary.id)
+  // Import's automatic model grouping cannot silently discard an author's
+  // reviewed semantic identity. A reviewed merge needs its explicit alias and
+  // confirmation lifecycle; leave every source intact for that author action.
+  if (targets.some(character => character.narrativeAuthorityV1)) {
+    throw new Error('角色含作者已确认的叙事注释，自动合并已停止；需要作者审阅身份合并')
+  }
   const append = (cur: string, extra: string) => {
     const e = (extra || '').trim()
     if (!e) return cur

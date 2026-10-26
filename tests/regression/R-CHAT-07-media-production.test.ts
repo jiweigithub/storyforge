@@ -22,9 +22,25 @@ import {exportProjectJSON, importProjectJSON} from '../../src/lib/export/json-ex
 import {exportProductDistributionBundleV2, importCommunityProductDistributionV1} from '../../src/lib/product-platform/distribution-bundle'
 import {createChatDraftV3} from '../../src/lib/character-interaction/draft-service'
 import {createCharacterInteractionInstance} from '../../src/lib/product/runtime-instances'
+import {evaluateProductProductionAuthorizationReadinessV1, inspectProductProductionCapabilityReadinessV1} from '../../src/lib/product-production/service'
 
 beforeEach(async () => {db.close(); await db.delete(); await db.open()})
 afterEach(() => db.close())
+
+it('allows built-in preview pictures at the real authorization gate while retaining external image requirements', async () => {
+  const {brief, scope} = await illustrated('only')
+  const readiness = inspectProductProductionCapabilityReadinessV1({projectId: scope.projectId})
+  readiness.text = {...readiness.text, ready: true, issue: null}
+  readiness.image = {...readiness.image, ready: false, issue: 'No external image provider configured'}
+  readiness.mediaRelayReady = false
+  const preview = evaluateProductProductionAuthorizationReadinessV1({brief, readiness})
+  expect(preview).toMatchObject({ready: true, requiredMediaRequirementKeys: ['media.visual']})
+  for (const qualityProfile of ['internal', 'commercial-candidate'] as const) {
+    expect(evaluateProductProductionAuthorizationReadinessV1({brief: {...brief, qualityProfile}, readiness}))
+      .toMatchObject({ready: false, blockerCode: 'capability-unbound', requiredMediaRequirementKeys: ['media.visual']})
+  }
+  expect(evaluateProductProductionAuthorizationReadinessV1({brief, readiness: {...readiness, text: {...readiness.text, ready: false}}}).ready).toBe(false)
+})
 
 it('opts into exact public pictures with a durable author gate and keeps historical text plans closed', async () => {
   const f = await illustrated('only'), brief = f.brief

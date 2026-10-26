@@ -44,6 +44,7 @@ export interface ResolvedProductRuntimeSourceV1 {
   runtimePackage: ProductRuntimePackageV1;
   packageHash: string;
   runtimeSourceHash: string;
+  sourceManifest?: import('./world-product-contracts').ProductRuntimeSourceManifestV1;
   mediaResolver: ProductMediaResolverV1;
 }
 
@@ -489,7 +490,7 @@ export interface ProductProductionBriefV3 {
   source: {
     worldReleaseId: number;
     worldContentHash: string;
-    selection: import("./product-release").ProductWorldSourceSelectionV1;
+    selection: import("./product-release").ProductWorldSourceSelection;
     startingPoint: ProductStartingPointV1;
   };
   intent: {

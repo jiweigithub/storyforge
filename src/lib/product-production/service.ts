@@ -18,10 +18,11 @@ import type {
   TextOpenWorldCreatorSourceLocatorV1,
   TextOpenWorldSourceRightsBasisV1,
   WorkspaceScope,
-  WorldReferenceCatalogEntryV1,
+  WorldReferenceCatalogEntry,
 } from '../types'
 import { assertRecordInScope, resolveScope } from '../workspace/scope'
 import { listWorldReferenceCatalogV1 } from '../product/source'
+import { listWorldReferenceCatalog } from '../world-engine/world-reference-v2'
 import { prepareProductProductionAdoption, publishProductProductionBuild } from './adoption'
 import {
   canReviseTextAdventureContentBeforeMediaV1,
@@ -41,6 +42,7 @@ import {
 } from './recovery-policy'
 import { draftProductProductionBriefV3, suggestProductStartingPoints } from './consultation'
 import { parseProductProductionBriefV3 } from './contracts'
+import { parseProductProductionSourcePlanV1 } from './source-contracts'
 import {
   inspectConfiguredTextCapabilityV1,
   resolveConfiguredTextCapabilityV1,
@@ -866,6 +868,7 @@ export function inspectProductProductionCapabilityReadinessV1(input: {
  */
 export function evaluateProductProductionAuthorizationReadinessV1(input: {
   brief: Pick<ProductProductionBriefV3, 'capabilityRequirements' | 'avgRevision'>
+    & Partial<Pick<ProductProductionBriefV3, 'qualityProfile' | 'intent'>>
   readiness: ProductProductionCapabilityReadinessV1
 }): ProductProductionAuthorizationReadinessV1 {
   const blockerMessages: string[] = []
@@ -877,9 +880,13 @@ export function evaluateProductProductionAuthorizationReadinessV1(input: {
     .map(requirement => requirement.requirementKey)
   const requiresImage = input.brief.capabilityRequirements
     .some(requirement => requirement.required && requirement.mediaClass === 'image')
+  // Chat previews still require their pictures and author confirmation. The
+  // configured executor binds the built-in SVG adapter for this exact mode.
+  const usesChatPreviewImages = input.brief.qualityProfile === 'prototype'
+    && input.brief.intent?.productType === 'character-interaction'
   const requiresAudio = input.brief.capabilityRequirements
     .some(requirement => requirement.required && ['music', 'sfx'].includes(requirement.mediaClass))
-  if (requiresImage && !input.readiness.image.ready && !input.readiness.mediaRelayReady) {
+  if (requiresImage && !usesChatPreviewImages && !input.readiness.image.ready && !input.readiness.mediaRelayReady) {
     blockerMessages.push(input.readiness.image.issue || '全局 Agnes 图片能力尚未就绪。')
   }
   if (requiresAudio && !input.readiness.mediaRelayReady) {
@@ -964,13 +971,15 @@ export async function authorizeTextOpenWorldCreatorProductionStartV1(
 export async function listProductProductionWorkspaceV1(
   scopeInput: WorkspaceScope,
   allowedProducts: readonly ProductionProductKindV1[],
+  option: { narrativePreview?: boolean } = {},
 ): Promise<{
-  worldReleases: WorldReferenceCatalogEntryV1[]
+  worldReleases: WorldReferenceCatalogEntry[]
   productions: ProductProductionRecordV1[]
 }> {
   const scope = await resolveScope({ scope: scopeInput })
   const [worldReleases, rows] = await Promise.all([
-    listWorldReferenceCatalogV1(scope),
+    option.narrativePreview && allowedProducts.length === 1 && ['character-interaction', 'avg'].includes(allowedProducts[0])
+      ? listWorldReferenceCatalog(scope) : listWorldReferenceCatalogV1(scope),
     db.productProductions.where('workId').equals(scope.workId).toArray(),
   ])
   const productions: ProductProductionRecordV1[] = []
@@ -1059,6 +1068,7 @@ export async function readProductProductionDetailsV1(
 export async function consultProductProductionStartV1(input: {
   scope: WorkspaceScope
   worldReleaseId: number
+  productType?: ProductionProductKindV1
 }) {
   return suggestProductStartingPoints(input)
 }
@@ -1811,6 +1821,7 @@ export async function runAuthorizedProductProductionV1(input: {
     })
     : createConfiguredProductProductionExecutorV1({
       production: details.production, brief, mediaCapabilities,
+      sourcePlan: await parseProductProductionSourcePlanV1(details.brief),
     })
   const projection = await runProductProductionUntilBlockedV1({
     scope, productionId: input.productionId, executor, capabilityBindings, signal: input.signal,

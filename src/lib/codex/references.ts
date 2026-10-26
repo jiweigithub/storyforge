@@ -1,4 +1,5 @@
 import { db } from '../db/schema'
+import { remapNarrativeDomainReferencesV1 } from '../narrative-domain/lifecycle'
 import { parseEntryRefs, stringifyEntryRefs } from '../types/codex'
 
 /**
@@ -12,6 +13,7 @@ export async function removeCodexEntryReferences(
   deletedIds: ReadonlySet<number>,
 ): Promise<void> {
   if (deletedIds.size === 0) return
+  for (const id of deletedIds) await remapNarrativeDomainReferencesV1({ table: 'codexEntries', fromId: id })
   const rows = await db.codexEntries.where('projectId').equals(projectId).toArray()
   for (const row of rows) {
     if (row.id == null || deletedIds.has(row.id)) continue

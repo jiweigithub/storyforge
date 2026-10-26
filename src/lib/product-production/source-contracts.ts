@@ -1,28 +1,32 @@
 import { getAgentSkillV1 } from '../agent/skill-registry'
 import { executeContextGatewayV1, type ContextGatewayExecutionV1 } from '../context-gateway/execution'
-import { openWorldSemanticResourceCatalogV1 } from '../context-gateway/world-release-client'
+import { openWorldSemanticResourceCatalogV1, openProductWorldResourceCatalogV2, closeProductWorldResourceCatalogV2 } from '../context-gateway/world-release-client'
 import type {
   ConfirmedProductBriefV1,
   ProductProductionBriefRecordV1,
   ProductProductionBriefV3,
   ProductProductionPlanTaskV3,
   ProductionProductKindV1,
-  ProductSourcePlanV1,
+  ProductSourcePlan,
   WorkspaceScope,
 } from '../types'
 import {
   createConfirmedProductBriefV1 as createConfirmedProductBriefContractV1,
   freezeProductSourcePlanV1,
-  resolveProductSourceReadBoundaryV1,
+  createProductSourcePlanBasisV2,
+  resolveProductSourceReadBoundary,
   type ProductSourceReadBoundaryV1,
   validateConfirmedProductBriefV1,
-  validateProductSourcePlanV1,
+  validateProductSourcePlan,
 } from '../product/source-contracts'
 import {
   getUpperProductWorldRequirementAdapterV1,
+  CHARACTER_INTERACTION_WORLD_REQUIREMENT_ADAPTER_V2, AVG_WORLD_REQUIREMENT_ADAPTER_V2,
   type UpperProductWorldRequirementGoalV1,
 } from '../product/world-requirement-adapters'
-import { createWorldReferenceV1, resolveWorldReferenceResourceScopeV1 } from '../world-engine/world-reference'
+import { resolveWorldReferenceResourceScope } from '../world-engine/world-reference-v2'
+import { freezeExactProductSourcePlanV2, refreezeExactProductSourcePlanBriefV2 } from '../product/exact-source-contracts'
+import { hashProductProductionValueV2 } from './hash'
 import { resolveProductProductionWorldCompilationDescriptorsV2 } from './world-source'
 import { textAdventureMandatoryFullWorldResourcesV1 } from '../adventure/world-source-requirements'
 
@@ -52,16 +56,18 @@ function requirementGoal(input: {
     ?? []
   const selectedKinds = new Set(input.descriptors.map(item => item.worldSemantic!.resourceKind))
   const selectedAreas = unique(input.descriptors.map(item => item.worldSemantic!.area))
+  const narrative = input.descriptors.some(item => item.worldSemantic?.narrative)
   return {
+    ...(narrative ? { semanticContract: 4 as const } : {}),
     selectedAreas,
     selectedResourceKinds: unique([...selectedKinds]),
     selectedContextKinds: unique(input.descriptors.map(item => item.kind)),
     selectedResourceCount: input.descriptors.length,
     participantCount: unique(participantKeys).length,
     includeSelectedRelations: input.descriptors.filter(item => (
-      item.worldSemantic!.resourceKind === 'character'
+      item.kind === 'character'
     )).length > 1,
-    inheritStoryContinuity: [...selectedKinds].some(kind => [
+    inheritStoryContinuity: narrative ? selectedAreas.some(area => ['story', 'storylines', 'manuscript'].includes(area)) : [...selectedKinds].some(kind => [
       'story-core', 'story-arc', 'storyline-progress', 'outline-node',
       'detailed-outline', 'chapter', 'foreshadow',
     ].includes(kind)),
@@ -74,45 +80,68 @@ export async function createProductProductionSourcePlanV1(input: {
   productionKey: string
   brief: ProductProductionBriefV3
   createdAt?: number
-}): Promise<ProductSourcePlanV1> {
-  const catalog = await openWorldSemanticResourceCatalogV1({
+}): Promise<ProductSourcePlan> {
+  const catalog = await openProductWorldResourceCatalogV2({
+    productType: input.brief.intent.productType,
     localReleaseRecordId: input.brief.source.worldReleaseId,
     expectedProjectId: input.scope.projectId,
     expectedWorldId: input.scope.worldId,
   })
-  if (catalog.description.identity.releaseHash !== input.brief.source.worldContentHash) {
-    throw new Error('[product-production-source] Brief 的 WorldRelease hash 已过期')
-  }
-  const descriptors = selectedDescriptors({ brief: input.brief, descriptors: catalog.resources })
-  if (!descriptors.length) {
-    throw new Error('[product-production-source] 正式产品至少需要一个作者冻结的世界资源')
-  }
-  const adapter = getUpperProductWorldRequirementAdapterV1(input.brief.intent.productType)
-  const roleAnchors = Object.values(input.brief.source.selection.roleBindings)
-    .flatMap(keys => keys.slice(0, 3))
-  const initialResourceKeys = unique([
-    ...input.brief.source.startingPoint.sourceRefs,
-    ...input.brief.source.startingPoint.protagonistRefs,
-    ...input.brief.intent.protagonistRefs,
-    ...roleAnchors,
-  ]).filter(key => input.brief.source.selection.resourceKeys.includes(key))
-  if (!initialResourceKeys.length) initialResourceKeys.push(input.brief.source.selection.resourceKeys[0]!)
-  const consultationContextManifests = input.brief.intent.productType === 'character-interaction'
-    ? (await (await import('../character-interaction/consultation-harness')).readChatConsultationProductionEvidenceV1(input.scope, input.brief)).map(row => row.pointer)
-    : []
-  return freezeProductSourcePlanV1({
-    productInstanceKey: input.productionKey,
-    worldReference: await createWorldReferenceV1(input.brief.source.worldReleaseId),
-    adapter,
-    goal: requirementGoal({ brief: input.brief, descriptors }),
-    missingStrategy: 'block',
-    consultationContextManifests,
-    initialResourceKeys,
-    allowedDepths: ['index', 'summary', 'focused', 'full', 'original'],
-    maxReadCalls: Math.min(20_000, Math.max(200, descriptors.length + 50)),
-    maxRetrievedTokens: Math.min(100_000, Math.max(1, input.brief.productionBudget.maximumInputTokens)),
-    createdAt: input.createdAt,
-  })
+  try {
+    if (catalog.description.identity.releaseHash !== input.brief.source.worldContentHash) {
+      throw new Error('[product-production-source] Brief 的 WorldRelease hash 已过期')
+    }
+    if (input.brief.source.selection.version !== catalog.description.worldReference.version
+      || input.brief.source.selection.worldReferenceHash !== catalog.description.worldReference.referenceHash) {
+      throw new Error('[product-production-source] 选择的版本或身份与冻结世界不一致')
+    }
+    const descriptors = selectedDescriptors({ brief: input.brief, descriptors: catalog.resources })
+    if (!descriptors.length) {
+      throw new Error('[product-production-source] 正式产品至少需要一个作者冻结的世界资源')
+    }
+    const productType = input.brief.intent.productType
+    const adapter = productType === 'character-interaction' ? CHARACTER_INTERACTION_WORLD_REQUIREMENT_ADAPTER_V2
+      : productType === 'avg' ? AVG_WORLD_REQUIREMENT_ADAPTER_V2
+        : getUpperProductWorldRequirementAdapterV1(productType)
+    const goal = requirementGoal({ brief: input.brief, descriptors })
+    const roleAnchors = Object.values(input.brief.source.selection.roleBindings)
+      .flatMap(keys => keys.slice(0, 3))
+    const initialResourceKeys = unique([
+      ...input.brief.source.startingPoint.sourceRefs,
+      ...input.brief.source.startingPoint.protagonistRefs,
+      ...input.brief.intent.protagonistRefs,
+      ...roleAnchors,
+    ]).filter(key => input.brief.source.selection.resourceKeys.includes(key))
+    if (!initialResourceKeys.length) initialResourceKeys.push(input.brief.source.selection.resourceKeys[0]!)
+    const reference = catalog.description.worldReference
+    const consultationContextManifests = productType === 'character-interaction'
+      ? (await (await import('../character-interaction/consultation-harness')).readChatConsultationProductionEvidenceV1(input.scope, input.brief)).map(row => row.pointer)
+      : []
+    const common = {
+      consultationContextManifests,
+      productInstanceKey: input.productionKey,
+      adapter,
+      goal,
+      missingStrategy: 'block' as const,
+      initialResourceKeys,
+      allowedDepths: ['index', 'summary', 'focused', 'full', 'original'] as import('../registry/types').ContextResourceDepthV1[],
+      maxReadCalls: productType === 'character-interaction' || productType === 'avg'
+        ? getAgentSkillV1('product-production.integrate.v1').contextGateway!.maxReadCalls
+        : Math.min(20_000, Math.max(200, descriptors.length + 50)),
+      maxRetrievedTokens: Math.min(100_000, Math.max(1, input.brief.productionBudget.maximumInputTokens)),
+      createdAt: input.createdAt,
+    }
+    const base = reference.version === 1 ? await freezeProductSourcePlanV1({ ...common, worldReference: reference }) : null
+    if (productType !== 'character-interaction' && productType !== 'avg') {
+      if (!base) throw new Error('[product-production-source] 此产品尚未登记 v4 编译器')
+      return base
+    }
+    const basis = base ? null : await createProductSourcePlanBasisV2({ ...common, worldReference: reference, descriptors: catalog.resources })
+    return await freezeExactProductSourcePlanV2({ ...(base ? { base } : { basis: basis! }), briefHash: await hashProductProductionValueV2(input.brief),
+      configuration: { inheritStoryContinuity: goal.inheritStoryContinuity, allowCrossWorld: goal.allowCrossWorld,
+        roleBindings: input.brief.source.selection.roleBindings },
+      authorResourceKeys: input.brief.source.selection.resourceKeys, descriptors: catalog.resources })
+  } finally { await closeProductWorldResourceCatalogV2(catalog) }
 }
 
 export function productProductionTaskUsesWorldGatewayV1(task: ProductProductionPlanTaskV3): boolean {
@@ -136,14 +165,18 @@ export function productProductionTaskOwnsWorldGatewayV1(task: ProductProductionP
 }
 
 export async function parseProductProductionSourcePlanV1(
-  row: Pick<ProductProductionBriefRecordV1, 'sourcePlanJson' | 'sourcePlanHash'>,
-): Promise<ProductSourcePlanV1> {
-  let value: ProductSourcePlanV1
-  try { value = JSON.parse(row.sourcePlanJson) as ProductSourcePlanV1 }
+  row: Pick<ProductProductionBriefRecordV1, 'sourcePlanJson' | 'sourcePlanHash' | 'briefJson' | 'briefHash'>,
+): Promise<ProductSourcePlan> {
+  let value: ProductSourcePlan
+  try { value = JSON.parse(row.sourcePlanJson) as ProductSourcePlan }
   catch { throw new Error('[product-production-source] SourcePlan JSON 损坏；必须重新保存 Brief') }
-  const plan = await validateProductSourcePlanV1(value)
+  const plan = await validateProductSourcePlan(value)
   if (plan.planHash !== row.sourcePlanHash) {
     throw new Error('[product-production-source] SourcePlan row/hash 不一致')
+  }
+  if (plan.version === 2 && (plan.compiler.briefHash !== row.briefHash
+    || await hashProductProductionValueV2(JSON.parse(row.briefJson)) !== row.briefHash)) {
+    throw new Error('[product-production-source] Brief 内容与精确 SourcePlan 不一致')
   }
   return plan
 }
@@ -152,15 +185,15 @@ export async function parseProductProductionSourcePlanV1(
  * SourcePlan carries the remappable locator used for execution after import. */
 export async function resolveProductProductionWorldScopeV1(input: {
   scope: WorkspaceScope
-  sourcePlan: ProductSourcePlanV1
+  sourcePlan: ProductSourcePlan
   brief: ProductProductionBriefV3
 }) {
-  const plan = await validateProductSourcePlanV1(input.sourcePlan)
+  const plan = await validateProductSourcePlan(input.sourcePlan)
   if (plan.productType !== input.brief.intent.productType
     || plan.worldReference.releaseHash !== input.brief.source.worldContentHash) {
     throw new Error('[product-production-source] SourcePlan 与冻结 Brief 来源不一致')
   }
-  const scope = await resolveWorldReferenceResourceScopeV1(plan.worldReference)
+  const scope = await resolveWorldReferenceResourceScope(plan.worldReference)
   if (scope.projectId !== input.scope.projectId || scope.worldId !== input.scope.worldId) {
     throw new Error('[product-production-source] WorldReference 超出当前世界作用域')
   }
@@ -168,10 +201,29 @@ export async function resolveProductProductionWorldScopeV1(input: {
     worldReleaseHash: plan.worldReference.releaseHash}
 }
 
+/** Evolution creates a new Brief but cannot silently expand its frozen world
+ * selection. Pure hashing only; safe before committing the new draft revision. */
+export async function refreezeProductProductionEvolutionSourcePlanV2(input: {
+  previous: ProductProductionBriefRecordV1
+  nextBrief: ProductProductionBriefV3
+  createdAt: number
+}): Promise<ProductSourcePlan> {
+  const plan = await parseProductProductionSourcePlanV1(input.previous)
+  if (plan.version === 1) return plan
+  const prior = JSON.parse(input.previous.briefJson) as ProductProductionBriefV3
+  if (input.nextBrief.intent.productType !== prior.intent.productType
+    || input.nextBrief.source.worldContentHash !== prior.source.worldContentHash
+    || await hashProductProductionValueV2(input.nextBrief.source.selection) !== await hashProductProductionValueV2(prior.source.selection)
+    || input.nextBrief.source.worldReleaseId !== input.previous.sourceWorldReleaseId) {
+    throw new Error('[product-production-source] 演化改变了来源选择；必须重新确认世界来源计划')
+  }
+  return refreezeExactProductSourcePlanBriefV2({ plan, briefHash: await hashProductProductionValueV2(input.nextBrief), createdAt: input.createdAt })
+}
+
 export async function createConfirmedProductBriefV1(input: {
   productionKey: string
   briefRow: ProductProductionBriefRecordV1
-  sourcePlan: ProductSourcePlanV1
+  sourcePlan: ProductSourcePlan
   authorStartRevision: number
   confirmedAt?: number
 }): Promise<ConfirmedProductBriefV1> {
@@ -189,7 +241,7 @@ export async function createConfirmedProductBriefV1(input: {
 
 export async function parseConfirmedProductBriefV1(input: {
   row: Pick<ProductProductionBriefRecordV1, 'confirmedBriefJson' | 'confirmedBriefHash'>
-  sourcePlan: ProductSourcePlanV1
+  sourcePlan: ProductSourcePlan
 }): Promise<ConfirmedProductBriefV1> {
   let value: ConfirmedProductBriefV1
   try { value = JSON.parse(input.row.confirmedBriefJson) as ConfirmedProductBriefV1 }
@@ -245,7 +297,7 @@ export function narrowProductProductionReadBoundaryV1(input: {
 /** Execute one production task against the exact frozen SourcePlan boundary. */
 export async function executeProductProductionWorldGatewayV1(input: {
   scope: WorkspaceScope
-  sourcePlan: ProductSourcePlanV1
+  sourcePlan: ProductSourcePlan
   brief: ProductProductionBriefV3
   task: ProductProductionPlanTaskV3
   budgetTokens: number
@@ -253,20 +305,29 @@ export async function executeProductProductionWorldGatewayV1(input: {
   signal?: AbortSignal
 }): Promise<ContextGatewayExecutionV1> {
   const skill = getAgentSkillV1(input.task.skillId ?? 'product-production.integrate.v1')
-  const worldScope = await resolveProductProductionWorldScopeV1(input)
-  const compilationDescriptors = input.requireCompilationResources
-    ? resolveProductProductionWorldCompilationDescriptorsV2({
-      descriptors: (await openWorldSemanticResourceCatalogV1({
-        localReleaseRecordId: worldScope.worldReleaseId,
-        expectedProjectId: input.scope.projectId,
-        expectedWorldId: input.scope.worldId,
-      })).resources,
-      selection: input.brief.source.selection,
-    })
-    : []
+  await resolveProductProductionWorldScopeV1(input)
+  if (input.sourcePlan.version === 2 && input.sourcePlan.compiler.briefHash !== await hashProductProductionValueV2(input.brief)) {
+    throw new Error('[product-production-source] Brief 条件已改变，必须重新确认精确 SourcePlan')
+  }
+  const compilationCatalog = input.requireCompilationResources ? await openProductWorldResourceCatalogV2({
+    localReleaseRecordId: input.sourcePlan.worldReference.localReleaseRecordId,
+    expectedProjectId: input.scope.projectId, expectedWorldId: input.scope.worldId,
+    productType: input.brief.intent.productType, sourcePlan: input.sourcePlan,
+  }) : null
+  const compilationDescriptors = compilationCatalog ? resolveProductProductionWorldCompilationDescriptorsV2({
+    descriptors: compilationCatalog.resources, selection: input.brief.source.selection,
+  }) : []
+  if (compilationCatalog) await closeProductWorldResourceCatalogV2(compilationCatalog)
   const compilationResources = compilationDescriptors.map(descriptor => descriptor.resourceKey)
-  const boundary = narrowProductProductionReadBoundaryV1({
-    boundary: await resolveProductSourceReadBoundaryV1(input.sourcePlan),
+  const resolvedBoundary = await resolveProductSourceReadBoundary(input.sourcePlan)
+  const exactSlice = input.sourcePlan.version === 2 ? input.sourcePlan.exact.slices.find(slice => slice.key === (
+    input.task.kind === 'runtime-package' || input.requireCompilationResources ? 'integration'
+      : ['narrative', 'product-module'].includes(input.task.kind) ? 'content' : 'adaptation'
+  ))! : null
+  const boundary = exactSlice ? { ...resolvedBoundary, allowedResourceKeys: [...exactSlice.resourceKeys],
+    mandatoryResourceKeys: [...exactSlice.resourceKeys], mandatoryFullResourceKeys: [...exactSlice.resourceKeys],
+    targetResourceKeys: [...exactSlice.resourceKeys] } : narrowProductProductionReadBoundaryV1({
+    boundary: resolvedBoundary,
     selectionResourceKeys: input.brief.source.selection.resourceKeys,
     // Model-authored tasks receive only the author's explicit selection. The
     // deterministic compiler may additionally receive the relation/category
@@ -296,13 +357,14 @@ export async function executeProductProductionWorldGatewayV1(input: {
     skill,
     scope: input.scope,
     resourceScope: boundary.sourceScope,
+    worldQueryAccess: boundary.worldQueryAccess,
     accessPolicyOverride: input.sourcePlan.gatewayPolicy,
     allowedResourceKeys: boundary.allowedResourceKeys,
     mandatoryResourceKeys,
     mandatoryFullResourceKeys: unique([
       ...boundary.mandatoryFullResourceKeys, ...compilationResources, ...specialistFullResources,
     ]),
-    mandatoryOriginalResourceKeys: unique(compilationResources),
+    mandatoryOriginalResourceKeys: input.sourcePlan.version === 2 ? mandatoryResourceKeys : unique(compilationResources),
     targetResourceKeys: unique([...boundary.targetResourceKeys, ...compilationResources]),
     query: productProductionWorldQueryV1(input.brief, input.task.taskKey),
     budgetTokens: Math.max(1, Math.min(input.budgetTokens, input.sourcePlan.gatewayPolicy.maxRetrievedTokens)),

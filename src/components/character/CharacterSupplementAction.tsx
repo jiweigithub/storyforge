@@ -82,12 +82,14 @@ function CharacterSupplementDialog({
   onDone?: () => void
 }) {
   const copilot = useMasterCopilot({ project, worldGroupId })
+  const [editError, setEditError] = useState<string | null>(null)
   const [selected, setSelected] = useState<Set<CharacterDimensionKey>>(() => initialDimensions(character))
   const [useEvidence, setUseEvidence] = useState(false)
   const candidate = copilot.pendingCandidates.find(item => (
     item.payload.skillId === 'character.supplement'
     && item.payload.characterSupplementRequest?.characterId === character.id
   ))
+  useEffect(() => setEditError(null), [candidate?.event.id])
   const hasOtherPendingCandidate = copilot.pendingCandidates.some(item => item !== candidate)
   const parsedCandidate = useMemo(() => parseCandidate(candidate), [candidate])
 
@@ -125,14 +127,19 @@ function CharacterSupplementDialog({
       version: 1,
       patch: { ...parsedCandidate.patch, [key]: value },
     }
-    await copilot.updateCandidate(
-      candidate.event.id!,
-      serializeCharacterSupplementCandidateV1(next, candidate.payload.characterSupplementRequest),
-    )
+    setEditError(null)
+    try {
+      await copilot.updateCandidate(
+        candidate.event.id!,
+        serializeCharacterSupplementCandidateV1(next, candidate.payload.characterSupplementRequest),
+      )
+    } catch (cause) {
+      setEditError(cause instanceof Error ? cause.message : '候选修改未保存，请修正后重试。')
+    }
   }
 
   const adoptCandidate = async () => {
-    if (!candidate) return
+    if (editError || !candidate) return
     const adopted = await copilot.adoptCandidate(candidate)
     if (!adopted) return
     onDone?.()
@@ -173,9 +180,9 @@ function CharacterSupplementDialog({
           </>
         )}
 
-        {copilot.error && (
-          <div className="mt-2 rounded border border-error/30 bg-error/5 px-2 py-1.5 text-xs text-error">
-            {copilot.error}
+        {(editError || copilot.error) && (
+          <div role="alert" className="mt-2 rounded border border-error/30 bg-error/5 px-2 py-1.5 text-xs text-error">
+            {editError ?? copilot.error}
           </div>
         )}
 
@@ -227,7 +234,7 @@ function CharacterSupplementDialog({
               </button>
               <button
                 type="button"
-                disabled={copilot.busy}
+                disabled={copilot.busy || !!editError}
                 onClick={() => { void adoptCandidate() }}
                 className="flex items-center gap-1 bg-accent px-3 py-1.5 text-xs text-white hover:opacity-90 rounded disabled:opacity-50"
               >
