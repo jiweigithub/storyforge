@@ -1,3 +1,5 @@
+import { normalizeProductRuntimeCheckpointPurposeV1 } from "./runtime-checkpoint-purpose";
+export { normalizeProductRuntimeCheckpointPurposeV1 } from "./runtime-checkpoint-purpose";
 import { assertProductOwnedRuntimeInvariantsV1 } from './runtime-product-adapters'
 /** Product-neutral session, event-log, checkpoint and projection infrastructure. */
 import Dexie from "dexie";
@@ -9,7 +11,7 @@ import { normalizeProductRuntimeCommandIdV1 } from "./runtime-command-id";
 import { assertProductRuntimeIntegerV1, isProductRuntimeJsonObjectV1, stableProductRuntimeJsonV1, type ProductRuntimeJsonObjectV1 } from "./runtime-values";
 import { parseNarrativeCondition, parseNarrativeEffects, evaluateNarrativeCondition, applyNarrativeEffects } from "../narrative/blueprint";
 import { transactionTablesForReferenceCascade } from "../registry/lifecycle";
-import { type ProductRuntimeKind, type ProductRuntimeState, type FrozenNarrativeBeat, NARRATIVE_BEAT_KINDS, type FrozenNarrativeChoice, type ProductNarrativeRuntimeNodeSnapshot, NARRATIVE_NODE_KINDS, type ProductNarrativeRuntimeState, NARRATIVE_MODULE_KINDS, type NarrativeChoiceHistoryEntry, type RuntimeAttributes, type RuntimeEntityState, RUNTIME_ENTITY_KINDS, RUNTIME_LIFECYCLE_STATUSES, type RuntimeMemory, type ProductRuntimeEvent, PRODUCT_RUNTIME_EVENT_TYPES, type ProductRuntimeSession, PRODUCT_RUNTIME_KINDS, EMPTY_PRODUCT_RUNTIME_STATE, type AnyProductRuntimePackage, type ProductRuntimeEventType, type ProductRelease, type ProductBuildRecordV1, type ProductProductionRecordV1, type ProductProductionBriefRecordV1, type ProductRuntimeCheckpoint, PRODUCT_RUNTIME_CHECKPOINT_PURPOSES_V1, type ProductRuntimeCheckpointPurposeV1 } from "../types";
+import { type ProductRuntimeKind, type ProductRuntimeState, type FrozenNarrativeBeat, NARRATIVE_BEAT_KINDS, type FrozenNarrativeChoice, type ProductNarrativeRuntimeNodeSnapshot, NARRATIVE_NODE_KINDS, type ProductNarrativeRuntimeState, NARRATIVE_MODULE_KINDS, type NarrativeChoiceHistoryEntry, type RuntimeAttributes, type RuntimeEntityState, RUNTIME_ENTITY_KINDS, RUNTIME_LIFECYCLE_STATUSES, type RuntimeMemory, type ProductRuntimeEvent, PRODUCT_RUNTIME_EVENT_TYPES, type ProductRuntimeSession, PRODUCT_RUNTIME_KINDS, EMPTY_PRODUCT_RUNTIME_STATE, type AnyProductRuntimePackage, type ProductRuntimeEventType, type ProductRelease, type ProductBuildRecordV1, type ProductProductionRecordV1, type ProductProductionBriefRecordV1, type ProductRuntimeCheckpoint, type ProductRuntimeCheckpointPurposeV1 } from "../types";
 import { verifyProductReleaseManifest, requirePlayableProductRuntimePackage } from "../product-production/runtime-package";
 import { verifyProductRuntimeSource, verifyProductRuntimeSessionSourceV1 } from "../product-production/preview-source";
 import { productRuntimeSourceSnapshotV2,
@@ -948,16 +950,151 @@ export function applyProductRuntimeEvent(
   return reduceProductRuntimeEvent(current, event, false);
 }
 
+interface VerifiedRuntimeReplayPrefixV1 {
+  initialSource: string;
+  eventSources: string[];
+  state: ProductRuntimeState;
+  retainedBytes: number;
+}
+
+// These values are private derivations of exact replay inputs, never a DB head.
+// Limit both entry count and retained serialized UTF-16 input/state size.
+const MAX_RUNTIME_REPLAY_PREFIX_BYTES_V1 = 12_000_000;
+let verifiedRuntimeReplayPrefixesV1: VerifiedRuntimeReplayPrefixV1[] = [];
+
+function runtimeReplaySnapshotSourceV1(value: unknown): string | null {
+  try {
+    let root = true;
+    const source = JSON.stringify(value, function (key, entry: unknown) {
+      const descriptor = root ? null : Object.getOwnPropertyDescriptor(this, key);
+      const original = root ? value : descriptor?.value;
+      root = false;
+      if ((descriptor && !("value" in descriptor)) || !Object.is(original, entry)
+        || Object.is(entry, -0)) throw new Error("not a lossless JSON snapshot");
+      const type = typeof entry;
+      if (type === "undefined" || type === "function" || type === "symbol"
+        || type === "bigint" || (type === "number" && !Number.isFinite(entry))) {
+        throw new Error("not a lossless JSON value");
+      }
+      if (entry !== null && type === "object") {
+        const array = Array.isArray(entry);
+        const prototype = Object.getPrototypeOf(entry);
+        if ((!array && prototype !== Object.prototype && prototype !== null)
+          || (array && prototype !== Array.prototype)
+          || Object.getOwnPropertySymbols(entry).length > 0) throw new Error("not plain JSON");
+        for (const name of Object.getOwnPropertyNames(entry)) {
+          if (array && name === "length") continue;
+          if (array && (!/^(?:0|[1-9]\d*)$/.test(name)
+            || Number(name) >= (entry as unknown[]).length)) throw new Error("not a JSON array index");
+          const property = Object.getOwnPropertyDescriptor(entry, name)!;
+          if (!("value" in property) || !property.enumerable) throw new Error("not a data snapshot");
+        }
+      }
+      return entry;
+    });
+    return source.length <= 2_000_000 ? source : null;
+  } catch { return null; }
+}
+
 export function replayProductRuntimeEvents(
   initialState: ProductRuntimeState,
   events: readonly ProductRuntimeEvent[],
   throughSequence = Number.MAX_SAFE_INTEGER,
 ): ProductRuntimeState {
-  let state = cloneState(parseProductRuntimeState(initialState));
+  const parsedInitialState = parseProductRuntimeState(initialState);
   const ordered = [...events]
     .filter((event) => event.sequence <= throughSequence)
     .sort((a, b) => a.sequence - b.sequence);
-  for (const event of ordered) state = reduceProductRuntimeEvent(state, event, true);
+  const initialSource = runtimeReplaySnapshotSourceV1(parsedInitialState);
+  let reusable = initialSource !== null;
+  const eventSources: string[] = [];
+  let sourceBytes = 2 * (initialSource?.length ?? 0);
+  for (const event of ordered) {
+    if (!reusable) break;
+    const source = runtimeReplaySnapshotSourceV1(event);
+    if (source === null || sourceBytes + 2 * source.length > MAX_RUNTIME_REPLAY_PREFIX_BYTES_V1) {
+      reusable = false;
+      eventSources.length = 0;
+      break;
+    }
+    sourceBytes += 2 * source.length;
+    eventSources.push(source);
+  }
+  const prefix = reusable ? verifiedRuntimeReplayPrefixesV1
+    .filter((entry) => entry.initialSource === initialSource
+      && entry.eventSources.length <= eventSources.length
+      && entry.eventSources.every((source, index) => source === eventSources[index]))
+    .sort((a, b) => b.eventSources.length - a.eventSources.length)[0] : undefined;
+  let state = cloneState(prefix?.state ?? parsedInitialState);
+  // Replay the exact data snapshot that identifies the reusable prefix. Exotic
+  // inputs retain the original full replay path and cannot seed this cache.
+  for (let index = prefix?.eventSources.length ?? 0; index < ordered.length; index += 1) {
+    const event = reusable ? JSON.parse(eventSources[index]) as ProductRuntimeEvent : ordered[index];
+    state = reduceProductRuntimeEvent(state, event, true);
+  }
+  if (reusable && initialSource !== null) {
+    const retainedBytes = 2 * (initialSource.length
+      + eventSources.reduce((sum, source) => sum + source.length, 0)
+      + JSON.stringify(state).length);
+    if (retainedBytes <= MAX_RUNTIME_REPLAY_PREFIX_BYTES_V1) {
+      const entry = { initialSource, eventSources, state: cloneState(state), retainedBytes };
+      verifiedRuntimeReplayPrefixesV1 = [entry, ...verifiedRuntimeReplayPrefixesV1
+        .filter((previous) => previous !== prefix
+          || previous.eventSources.length !== eventSources.length)].slice(0, 3);
+      while (verifiedRuntimeReplayPrefixesV1.reduce((sum, item) => sum + item.retainedBytes, 0)
+        > MAX_RUNTIME_REPLAY_PREFIX_BYTES_V1) verifiedRuntimeReplayPrefixesV1.pop();
+    }
+  }
+  return state;
+}
+
+/** Async callers can retain exact-input SHA-256 proofs instead of megabytes of
+ * repeated event payloads. The shared cache keeps the same aggregate byte cap.
+ * All mutable inputs are snapshotted before the first await; only those frozen
+ * bytes are hashed and replayed. No persisted head is used as replay authority.
+ */
+export async function replayProductRuntimeEventsVerifiedAsyncV1(
+  initialState: ProductRuntimeState,
+  events: readonly ProductRuntimeEvent[],
+  throughSequence = Number.MAX_SAFE_INTEGER,
+): Promise<ProductRuntimeState> {
+  const parsedInitialState = parseProductRuntimeState(initialState);
+  const ordered = [...events].filter(event => event.sequence <= throughSequence)
+    .sort((a, b) => a.sequence - b.sequence);
+  const initialSnapshot = runtimeReplaySnapshotSourceV1(parsedInitialState);
+  if (initialSnapshot === null) return replayProductRuntimeEvents(initialState, events, throughSequence);
+  const snapshots: string[] = [];
+  for (const event of ordered) {
+    const source = runtimeReplaySnapshotSourceV1(event);
+    if (source === null) return replayProductRuntimeEvents(initialState, events, throughSequence);
+    snapshots.push(source);
+  }
+  const initialSource = `sha256:${await hashStateJson(initialSnapshot)}`;
+  const eventSources: string[] = [];
+  for (let offset = 0; offset < snapshots.length; offset += 8) {
+    eventSources.push(...await Promise.all(snapshots.slice(offset, offset + 8)
+      .map(source => hashStateJson(source))));
+  }
+  const prefix = verifiedRuntimeReplayPrefixesV1
+    .filter(entry => entry.initialSource === initialSource
+      && entry.eventSources.length <= eventSources.length
+      && entry.eventSources.every((source, index) => source === eventSources[index]))
+    .sort((a, b) => b.eventSources.length - a.eventSources.length)[0];
+  let state = cloneState(prefix?.state ?? JSON.parse(initialSnapshot) as ProductRuntimeState);
+  for (let index = prefix?.eventSources.length ?? 0; index < snapshots.length; index += 1) {
+    state = reduceProductRuntimeEvent(state, JSON.parse(snapshots[index]) as ProductRuntimeEvent, true);
+  }
+  const retainedBytes = 2 * (initialSource.length
+    + eventSources.reduce((sum, source) => sum + source.length, 0)
+    + JSON.stringify(state).length);
+  if (retainedBytes <= MAX_RUNTIME_REPLAY_PREFIX_BYTES_V1) {
+    const entry = { initialSource, eventSources, state: cloneState(state), retainedBytes };
+    verifiedRuntimeReplayPrefixesV1 = [entry, ...verifiedRuntimeReplayPrefixesV1
+      .filter(previous => previous !== prefix
+        || previous.eventSources.length !== eventSources.length)].slice(0, 3);
+    while (verifiedRuntimeReplayPrefixesV1.reduce((sum, item) => sum + item.retainedBytes, 0)
+      > MAX_RUNTIME_REPLAY_PREFIX_BYTES_V1) verifiedRuntimeReplayPrefixesV1.pop();
+  }
   return state;
 }
 
@@ -1408,11 +1545,11 @@ export async function readProductRuntimeState(
   }
   await verifyNativeAvgInitialSnapshot(session)
   const events = await readSessionEvents(session, throughSequence);
-  return replayProductRuntimeEvents(
-    parseProductRuntimeState(session.initialStateJson),
-    events,
-    throughSequence,
-  );
+  const initial = parseProductRuntimeState(session.initialStateJson);
+  const replay = () => replayProductRuntimeEventsVerifiedAsyncV1(initial, events, throughSequence);
+  return Dexie.currentTransaction
+    ? Dexie.waitFor(Dexie.ignoreTransaction(replay))
+    : replay();
 }
 
 export async function appendBuiltEvent(
@@ -1861,57 +1998,6 @@ export async function hashStateJson(stateJson: string): Promise<string> {
   return Array.from(new Uint8Array(digest), (byte) =>
     byte.toString(16).padStart(2, "0"),
   ).join("");
-}
-
-const PRODUCT_RUNTIME_CHECKPOINT_SUBJECT_PURPOSES_V1 = new Set<ProductRuntimeCheckpointPurposeV1>([
-  "combat-retry",
-  "milestone",
-]);
-
-/**
- * Normalizes the only legacy checkpoint shape: a missing purpose is `manual`.
- * Product-specific callers still own validation of what an encounter or
- * milestone key refers to; this shared boundary owns the purpose/key pairing.
- */
-export function normalizeProductRuntimeCheckpointPurposeV1(input: {
-  purpose?: unknown;
-  subjectKey?: unknown;
-}): {
-  purpose: ProductRuntimeCheckpointPurposeV1;
-  subjectKey: string | null;
-} {
-  const rawPurpose = input.purpose;
-  const purpose = rawPurpose === undefined
-    ? "manual"
-    : typeof rawPurpose === "string"
-      && PRODUCT_RUNTIME_CHECKPOINT_PURPOSES_V1.includes(
-        rawPurpose as ProductRuntimeCheckpointPurposeV1,
-      )
-      ? rawPurpose as ProductRuntimeCheckpointPurposeV1
-      : null;
-  if (!purpose) throw new Error("检查点用途无效。");
-
-  const rawSubjectKey = input.subjectKey;
-  const subjectKey = rawSubjectKey == null
-    ? null
-    : typeof rawSubjectKey === "string"
-      ? rawSubjectKey.trim() || null
-      : null;
-  if (rawSubjectKey != null && typeof rawSubjectKey !== "string") {
-    throw new Error("检查点对象必须是字符串。");
-  }
-  if (subjectKey && subjectKey.length > 200) {
-    throw new Error("检查点对象不能超过 200 个字符。");
-  }
-
-  const requiresSubject = PRODUCT_RUNTIME_CHECKPOINT_SUBJECT_PURPOSES_V1.has(purpose);
-  if (requiresSubject && !subjectKey) {
-    throw new Error(`${purpose} 检查点必须绑定有效对象。`);
-  }
-  if (!requiresSubject && subjectKey != null) {
-    throw new Error(`${purpose} 检查点不能绑定对象。`);
-  }
-  return { purpose, subjectKey };
 }
 
 export type NormalizedProductRuntimeCheckpointV1 = ProductRuntimeCheckpoint & {

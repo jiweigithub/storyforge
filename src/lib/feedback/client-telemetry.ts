@@ -8,7 +8,7 @@ const DAY = 86_400_000
 const day = (time: number) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(time))
 const uuid = (value: unknown): value is string => typeof value === 'string' && /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i.test(value)
 interface Event { id: string; kind: 'active' | 'error'; occurredAt: string; client: ClientMetadata; error?: FailureEvent; attempts: number }
-interface State { id: string; analytics: boolean; errors: boolean; decided: boolean; lastActive: string; nextAttempt: number; queue: Event[] }
+interface State { id: string; analytics: boolean; errors: boolean; decided: boolean; lastActive: string; nextAttempt: number; queue: Event[]; nativeSeen: FailureEvent[] }
 const listeners = new Set<() => void>()
 let available = false
 let storageConsentBlocked = false
@@ -36,9 +36,14 @@ function read(): State | null {
       return [{ id: event.id, kind: event.kind, occurredAt: new Date(event.occurredAt).toISOString(), client: { build: meta.build, platform: meta.platform, distribution: meta.distribution },
         ...(error ? { error } : {}), attempts: Number.isInteger(event.attempts) ? Math.max(0, Math.min(5, event.attempts)) : 0 }]
     }) : []
+    // Native history (five rows) can outlive the rotating local summary. Keep
+    // only already-consented allowlisted occurrences, within its seven-day TTL.
+    const nativeSeen = value.errors === true && Array.isArray(value.nativeSeen)
+      ? value.nativeSeen.slice(-20).map(row => parseFailureEvent(row, now))
+        .filter((row): row is FailureEvent => !!row && row.source === 'native') : []
     return { id: value.id, analytics: value.analytics === true, errors: value.errors === true, decided: value.decided === true,
       lastActive: typeof value.lastActive === 'string' && /^\d{4}-\d\d-\d\d$/.test(value.lastActive) ? value.lastActive : '',
-      nextAttempt: Number.isFinite(value.nextAttempt) ? Math.min(value.nextAttempt, now + DAY) : 0, queue }
+      nextAttempt: Number.isFinite(value.nextAttempt) ? Math.min(value.nextAttempt, now + DAY) : 0, queue, nativeSeen }
   } catch { return null }
 }
 function write(state: State) { try { localStorage.setItem(TELEMETRY_KEY, JSON.stringify(state)); return true } catch { return false } }
@@ -46,9 +51,10 @@ export function telemetryPreferences() { const state = read(); return { analytic
 let inflight: AbortController | null = null
 export function setTelemetryPreferences(analytics: boolean, errors: boolean): boolean {
   inflight?.abort()
-  const state = read() ?? { id: crypto.randomUUID(), analytics: false, errors: false, decided: false, lastActive: '', nextAttempt: 0, queue: [] }
+  const state = read() ?? { id: crypto.randomUUID(), analytics: false, errors: false, decided: false, lastActive: '', nextAttempt: 0, queue: [], nativeSeen: [] }
   state.analytics = analytics; state.errors = errors; state.decided = true
   state.queue = state.queue.filter(row => row.kind === 'active' ? analytics : errors)
+  if (!errors) state.nativeSeen = []
   const saved = write(state)
   // A failed opt-out must still stop this session; never reread an old opt-in and resume upload.
   storageConsentBlocked = !saved
@@ -70,10 +76,16 @@ export function recordClientError(error: FailureEvent) {
   const safe = parseFailureEvent(error)
   if (!safe) return
   const now = Date.now()
+  const native = safe.source === 'native'
+  const occurrenceKey = (row: FailureEvent) => JSON.stringify([row.occurredAt, row.source, row.name, row.build, row.frames])
+  if (native && state.nativeSeen.some(row => occurrenceKey(row) === occurrenceKey(safe))) return
   // At most 20 pending errors; never collect arbitrary error messages or console logs.
   const recent = state.queue.filter(row => row.kind === 'error')
-  if (recent.length >= 20 || recent.some(row => JSON.stringify(row.error?.frames) === JSON.stringify(safe.frames) && row.error?.name === safe.name && now - Date.parse(row.occurredAt) < 60_000)) return
+  if (recent.length >= 20 || (!native && recent.some(row => JSON.stringify(row.error?.frames) === JSON.stringify(safe.frames) && row.error?.name === safe.name && now - Date.parse(row.occurredAt) < 60_000))) return
   state.queue.push({ id: crypto.randomUUID(), kind: 'error', occurredAt: safe.occurredAt, client: clientMetadata(), error: safe, attempts: 0 })
+  // Remember when queued, so unknown/failed receipts retain the original bounded
+  // retry policy rather than reintroducing the same occurrence with a fresh ID.
+  if (native) state.nativeSeen = [...state.nativeSeen, safe].slice(-20)
   write(state)
 }
 export async function flushClientTelemetry(): Promise<void> {
@@ -118,7 +130,7 @@ export async function deleteClientTelemetry(): Promise<void> {
   const receipt = await response.json().catch(() => null) as { deleted?: unknown } | null
   if (!response.ok || receipt?.deleted !== true) throw new Error('尚未确认删除。上传已关闭，请联网后重试。')
   // Retain the disabled choice while rotating the forgotten identity.
-  const saved = write({ ...state, id: crypto.randomUUID(), analytics: false, errors: false, decided: true, queue: [], lastActive: '', nextAttempt: 0 })
+  const saved = write({ ...state, id: crypto.randomUUID(), analytics: false, errors: false, decided: true, queue: [], nativeSeen: [], lastActive: '', nextAttempt: 0 })
   storageConsentBlocked = !saved; notify()
   if (!saved) throw new Error('服务器明细已删除，但本机无法保存关闭选择。当前会话已停止自动上传；重启后请检查设置。')
 }

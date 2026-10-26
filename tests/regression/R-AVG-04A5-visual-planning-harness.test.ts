@@ -1428,7 +1428,9 @@ describe('AVG V4 actual visual planning Harness and explicit author boundary', (
       if(!sealedTamper){
         const ledger=JSON.parse((await current(s)).budgetLedgerJson).tasks[`avg.media.process.${key}`]
         expect(ledger).toMatchObject(mode==='damaged-original'
-          ?{status:'failed',errorCode:'task-preflight-failed',usage:null}
+          // Damaged bytes fail before executor/provider dispatch: observed usage
+          // is exactly zero; null is reserved for a requested but unknown result.
+          ?{status:'failed',errorCode:'task-preflight-failed',usage:{costUsd:0,durationMs:0,inputTokens:0,mediaCalls:0,modelCalls:0,outputTokens:0,storageBytes:0}}
           :{status:'failed',errorCode:'task-draft-rejected',usage:{modelCalls:0,mediaCalls:0,costUsd:0}})
       }
       db.close();await db.open()

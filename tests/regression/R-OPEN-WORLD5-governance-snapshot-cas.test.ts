@@ -10,7 +10,7 @@ import {
   hashProductProductionValueV2,
 } from '../../src/lib/product-production/hash'
 import { sha256MediaData } from '../../src/lib/product-production/media-blob-store'
-import type { ProductProductionPlanV3 } from '../../src/lib/types'
+import type { ProductBuildArtifactRecordV1, ProductProductionPlanV3 } from '../../src/lib/types'
 import { seedCurrentProductWorld } from '../helpers/current-product-world'
 
 const BRIEF_HASH = 'b'.repeat(64)
@@ -297,6 +297,20 @@ async function expectMutationDuringProjectionToInvalidateSnapshot(
   }
 }
 
+async function seedHistoricalGovernanceRows(fixture: Awaited<ReturnType<typeof seedGovernanceReadFixture>>, count: number) {
+  const build = (await db.productBuilds.where('[productionId+buildNumber]').equals([fixture.productionId, 1]).first())!
+  const rows: ProductBuildArtifactRecordV1[] = Array.from({ length: count }, (_, index) => ({
+    ...fixture.scope, buildId: build.id!, artifactKey: 'text-open-world.region-skeleton',
+    requirementKey: null, version: index + 1, kind: 'text-open-world.region-skeleton', mediaKind: null,
+    status: 'invalid', producerRunId: 900_000 + index, producerReceiptHash: 'd'.repeat(64),
+    controlEpoch: 0, inputHash: 'e'.repeat(64), contentHash: 'f'.repeat(64), payloadJson: '{}',
+    metadataJson: '{}', qualityJson: '{}', rightsJson: '{}', blobObjectId: null, mimeType: null,
+    byteSize: 2, parentArtifactHash: null, carriedFrom: null, createdAt: 4, updatedAt: 4,
+  }))
+  await db.productBuildArtifacts.bulkAdd(rows)
+  return rows
+}
+
 describe('R-OPEN-WORLD5 · Creator governance stable snapshot CAS', () => {
   beforeEach(async () => {
     db.close()
@@ -304,6 +318,51 @@ describe('R-OPEN-WORLD5 · Creator governance stable snapshot CAS', () => {
     await db.open()
   })
   afterEach(() => db.close())
+
+  it('600项非权威历史仍可浏览且保留CAS，不加载无关历史producer Run', async () => {
+    const fixture = await seedGovernanceReadFixture()
+    await seedHistoricalGovernanceRows(fixture, 600)
+    const get = vi.spyOn(db.agentRuns, 'get')
+    try {
+      const projection = await readTextOpenWorldArtifactGovernanceV1(fixture)
+      const history = projection.artifacts.filter(row => row.artifactStatus === 'invalid')
+      expect(history).toHaveLength(600)
+      expect(history.every(row => row.productionValidation === 'not-applicable'
+        && row.producerRunState === null)).toBe(true)
+      expect(get.mock.calls.some(([id]) => typeof id === 'number' && id >= 900_000)).toBe(false)
+      expect(get.mock.calls.some(([id]) => id === fixture.run.id)).toBe(true)
+    } finally { get.mockRestore() }
+    const row = await db.productBuildArtifacts.where('buildId').equals((await db.productBuilds.toArray())[0]!.id!).first()
+    await expectMutationDuringProjectionToInvalidateSnapshot(async () => {
+      await db.productBuildArtifacts.update(row!.id!, { metadataJson: '{"historical":"changed"}' })
+    }, () => readTextOpenWorldArtifactGovernanceV1(fixture))
+  })
+
+  it('512当前active Run上限仍拒绝，不因历史浏览分流而放宽', async () => {
+    const fixture = await seedGovernanceReadFixture()
+    await seedHistoricalGovernanceRows(fixture, 513)
+    await db.productBuildArtifacts.toCollection().modify({ status: 'accepted' })
+    await expect(readTextOpenWorldArtifactGovernanceV1(fixture)).rejects.toThrow('当前 Build Run 数超过安全上限')
+  })
+
+  it('当前carry精确引用的历史producer仍读取，缺失证明继续拒绝权威', async () => {
+    const fixture = await seedGovernanceReadFixture()
+    const rows = await seedHistoricalGovernanceRows(fixture, 600)
+    const parent = rows[0]!
+    await db.productBuildArtifacts.add({ ...parent, id: undefined, version: 601, status: 'carried-forward',
+      producerRunId: 900_600, producerReceiptHash: 'd'.repeat(64), parentArtifactHash: parent.contentHash,
+      carriedFrom: { buildNumber: 1, artifactKey: parent.artifactKey, version: parent.version, contentHash: parent.contentHash, proofHash: 'a'.repeat(64) },
+    })
+    const get = vi.spyOn(db.agentRuns, 'get')
+    try {
+      const projection = await readTextOpenWorldArtifactGovernanceV1(fixture)
+      const carry = projection.artifacts.find(row => row.artifactStatus === 'carried-forward')!
+      expect(carry.health).toBe('corrupt')
+      expect(carry.productionValidation).not.toBe('production-validated')
+      expect(get.mock.calls.some(([id]) => id === parent.producerRunId)).toBe(true)
+      expect(get.mock.calls.some(([id]) => id === rows[1]!.producerRunId)).toBe(false)
+    } finally { get.mockRestore() }
+  })
 
   it('Artifact 引用不存在的 producer Run 时返回可定位诊断而不是误报快照变化', async () => {
     const fixture = await seedGovernanceReadFixture()

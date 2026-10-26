@@ -1830,6 +1830,8 @@ test('分步骤角色面板通过 character.create Skill 生成、恢复并确�
 })
 
 test('已有角色补全通过定向 Skill 恢复候选，确认后只写入所选字段', async ({ page }) => {
+  const pageErrors: string[] = []
+  page.on('pageerror', error => pageErrors.push(error.message))
   let characterCalls = 0
   let supplementCalls = 0
   const modelCharacter = {
@@ -1920,6 +1922,14 @@ test('已有角色补全通过定向 Skill 恢复候选，确认后只写入所�
   await expect(page.getByRole('textbox', { name: '补全候选-性格' }))
     .toHaveValue(supplementCandidate.patch.personality)
   await expect(page.getByPlaceholder('性格…')).toHaveValue('')
+  await page.getByRole('textbox', { name: '补全候选-性格' }).fill('')
+  const editAlert = page.getByRole('alert').filter({ hasText: 'personality' })
+  await expect(editAlert).toContainText('不能为空')
+  await expect(page.getByRole('button', { name: '确认写入', exact: true })).toBeDisabled()
+  await expect(page.getByPlaceholder('性格…')).toHaveValue('')
+  expect(supplementCalls).toBe(1)
+  await page.getByRole('textbox', { name: '补全候选-性格' }).fill(supplementCandidate.patch.personality)
+  await expect(editAlert).toHaveCount(0)
 
   await page.reload()
   await openSidebarLeaf(page, '角色设计', '角色生成')
@@ -1928,13 +1938,22 @@ test('已有角色补全通过定向 Skill 恢复候选，确认后只写入所�
   await page.getByTitle(/AI 补全设定/).click()
   await expect(page.getByRole('textbox', { name: '补全候选-目标(短/长期)' }))
     .toHaveValue(supplementCandidate.patch.goals)
+  await page.getByRole('textbox', { name: '补全候选-性格' }).fill('')
+  await expect(editAlert).toBeVisible()
   await page.getByRole('button', { name: '拒绝', exact: true }).click()
   await expect(page.getByRole('region', { name: '角色补全候选' })).toHaveCount(0)
+  await expect(editAlert).toHaveCount(0)
   expect(supplementCalls).toBe(1)
 
   await page.getByRole('button', { name: '生成 2 个字段候选', exact: true }).click()
+  await expect(page.getByRole('button', { name: '确认写入', exact: true })).toBeEnabled()
   const editedPersonality = '作者确认：克制但并不冷漠，会在钟声失准时主动求助。'
+  await page.getByRole('textbox', { name: '补全候选-性格' }).fill('超'.repeat(20_001))
+  await expect(editAlert).toContainText('超过')
+  await expect(page.getByRole('button', { name: '确认写入', exact: true })).toBeDisabled()
+  await expect(page.getByPlaceholder('性格…')).toHaveValue('')
   await page.getByRole('textbox', { name: '补全候选-性格' }).fill(editedPersonality)
+  await expect(editAlert).toHaveCount(0)
   await page.getByRole('button', { name: '确认写入', exact: true }).click()
 
   await expect(page.getByPlaceholder('性格…')).toHaveValue(editedPersonality)
@@ -1942,6 +1961,7 @@ test('已有角色补全通过定向 Skill 恢复候选，确认后只写入所�
   await expect(page.getByPlaceholder('背景故事…')).toHaveValue(modelCharacter.background)
   expect(characterCalls).toBe(1)
   expect(supplementCalls).toBe(2)
+  expect(pageErrors).toEqual([])
 })
 
 test('主 Agent 调度大纲领域任务，确认可见整批候选后同步到正式大纲', async ({ page }) => {

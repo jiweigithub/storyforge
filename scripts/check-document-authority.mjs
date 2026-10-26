@@ -107,6 +107,7 @@ const activeDocs = [
   'docs/audits/AVG-PRODUCTION-RESEARCH-20261013.md',
   'docs/audits/AVG-PROFESSIONAL-METHODS-20261013.md',
   'docs/audits/evidence/avg-scenes-20261013/public-frame-observations.json',
+  'docs/audits/evidence/avg-final-acceptance-20261026/acceptance-receipt.json',
   'docs/audits/AVG-SYSTEMS-AND-MEDIA-RESEARCH-20261013.md',
   'docs/audits/evidence/avg-systems-media-20261013/official-manual-observation.json',
   'docs/ttrpg/licenses/SRD-5.2.1-CC-BY-4.0.md',

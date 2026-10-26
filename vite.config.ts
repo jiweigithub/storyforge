@@ -53,6 +53,12 @@ function manualChunkFor(moduleId: string): string | undefined {
   if (id.endsWith('/src/lib/product-production/compatibility.ts')) {
     return 'product-production-quality'
   }
+  // These passive product parsers have no dependency back into the shared
+  // contract/proof cycle. Split that leaf group without changing its logic
+  // or moving the mutually dependent store/adoption modules across chunks.
+  if (/\/src\/lib\/(?:ttrpg\/(?:production-brief|campaign-proposal)|avg\/(?:artifact-contract|sound-production-plan)|open-world\/creator-media-contract)\.ts$/.test(id)) {
+    return 'product-production-plans'
+  }
   // The product-neutral runtime delegates deterministic rule reduction to
   // product-owned adapters. Keep the sizeable TTRPG rule reducer separate so
   // text/AVG/open-world players do not parse an unrelated ruleset up front.
@@ -177,6 +183,11 @@ export default defineConfig(({ mode }) => {
     // 实际打开的却是被旧进程占用的 1111（错误服务 / 重定向循环）。
     strictPort: true,
     open: '/storyforge/',
+    // Parallel verification emits portable-player HTML into these directories.
+    // Generated files must not reload an author's live production session.
+    watch: {
+      ignored: ['**/dist/**', '**/dist-adventure-player/**', '**/dist-showcase/**', '**/dist-android/**'],
+    },
     proxy: showcase ? {} : providerProxies,
   },
   build: {

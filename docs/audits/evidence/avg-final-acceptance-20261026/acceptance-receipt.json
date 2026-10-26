@@ -1,0 +1,217 @@
+{
+  "schema": "storyforge.avg.final-integration-acceptance",
+  "version": 1,
+  "status": "in-progress",
+  "scope": "AVG product development and S3 integration; story design deferred; no main merge/deployment",
+  "integrationBase": "63af1fba36e55d9a4205a4350416a46ffd361c3f",
+  "newModelOrMediaRequests": 0,
+  "demo": {
+    "releaseUid": "PR-avg-avg.assembly.e5c0a014-7586-4115-9b10-7c5df01627aa-v1-57c475fe2343726fa7809a8c",
+    "assetCount": 9,
+    "assets": [
+      {
+        "assetKey": "avg.asset.64035a57-2ac0-4864-bc64-331447a4d33e",
+        "version": 1,
+        "kind": "background",
+        "mimeType": "image/webp",
+        "byteSize": 316440,
+        "contentHash": "9c507b262e2d77b2027cf35693d0a05b47753c0d677d9c10b101a3ae36690226",
+        "blobContentHash": "9c507b262e2d77b2027cf35693d0a05b47753c0d677d9c10b101a3ae36690226"
+      },
+      {
+        "assetKey": "avg.asset.39b13999-6186-4ef7-a7c4-78e06d5f2fa9",
+        "version": 1,
+        "kind": "character-pose",
+        "mimeType": "image/png",
+        "byteSize": 250616,
+        "contentHash": "79b598da532c2d654581dc6534350f5c4a5cc97beb5f8492dc666cbbd43edfbe",
+        "blobContentHash": "79b598da532c2d654581dc6534350f5c4a5cc97beb5f8492dc666cbbd43edfbe"
+      },
+      {
+        "assetKey": "avg.asset.ce0c7711-c49d-4348-ae25-e8288b38d894",
+        "version": 1,
+        "kind": "character-expression",
+        "mimeType": "image/png",
+        "byteSize": 230579,
+        "contentHash": "8ef007baf65991b3b3946405ac057558ca451d38c2fe08c291949b62a18b3af1",
+        "blobContentHash": "8ef007baf65991b3b3946405ac057558ca451d38c2fe08c291949b62a18b3af1"
+      },
+      {
+        "assetKey": "avg.asset.7a94a95c-83ff-4908-a808-5f005ebf291a",
+        "version": 1,
+        "kind": "bgm",
+        "mimeType": "audio/wav",
+        "byteSize": 2304044,
+        "contentHash": "d730cec40147c3e0d54ac1bc33c454bfa64c65a03b3ea9c5670fb5b025f356c7",
+        "blobContentHash": "d730cec40147c3e0d54ac1bc33c454bfa64c65a03b3ea9c5670fb5b025f356c7"
+      },
+      {
+        "assetKey": "avg.asset.9793de31-6e3d-4ee7-821c-ed5cadc93454",
+        "version": 1,
+        "kind": "voice",
+        "mimeType": "audio/wav",
+        "byteSize": 280364,
+        "contentHash": "96112921645b91bb9319a53a8cab16a1ba1c0e974309719b405f84da6d2f4af7",
+        "blobContentHash": "96112921645b91bb9319a53a8cab16a1ba1c0e974309719b405f84da6d2f4af7"
+      },
+      {
+        "assetKey": "avg.asset.b7f10afd-6f9e-4589-93a7-6016a8900324",
+        "version": 1,
+        "kind": "ui",
+        "mimeType": "image/png",
+        "byteSize": 1492,
+        "contentHash": "fa6504db46f98502668fe0f3f2ca16914b06bbd6ff0bae3a12cb76f5bfde5b76",
+        "blobContentHash": "fa6504db46f98502668fe0f3f2ca16914b06bbd6ff0bae3a12cb76f5bfde5b76"
+      },
+      {
+        "assetKey": "avg.asset.5d72b857-de7f-4fe2-9640-f6f923bf2d30",
+        "version": 1,
+        "kind": "cg",
+        "mimeType": "image/png",
+        "byteSize": 17603,
+        "contentHash": "1dcdf1b218ac6e55730fe7cafe2bde542f7d9cb14f353991d60c9a6d4d9af5c5",
+        "blobContentHash": "1dcdf1b218ac6e55730fe7cafe2bde542f7d9cb14f353991d60c9a6d4d9af5c5"
+      },
+      {
+        "assetKey": "avg.asset.ba45efe6-1349-4812-9767-79cb065c03df",
+        "version": 1,
+        "kind": "ambience",
+        "mimeType": "audio/ogg",
+        "byteSize": 258149,
+        "contentHash": "4dca0e4890c0f7658b3e67c624416cdb8379f195ee68915cc076a0ed329b6c8f",
+        "blobContentHash": "4dca0e4890c0f7658b3e67c624416cdb8379f195ee68915cc076a0ed329b6c8f"
+      },
+      {
+        "assetKey": "avg.asset.1d81da2a-0eea-4483-9dc0-3f87e46753da",
+        "version": 1,
+        "kind": "sfx",
+        "mimeType": "audio/ogg",
+        "byteSize": 4876,
+        "contentHash": "ccfb7fa0cccdd9faec0eb16033c732b1e308d139d80f799161495d58f7adcdb9",
+        "blobContentHash": "ccfb7fa0cccdd9faec0eb16033c732b1e308d139d80f799161495d58f7adcdb9"
+      }
+    ],
+    "quality": "engineering prototype; no independent art or hearing acceptance; original voice producer remains unadopted",
+    "assembly": "existing real/licensed assets through explicit author-import candidates and adoption; not nine newly generated assets"
+  },
+  "package": {
+    "filename": "AVG-整合演示-v1-20261026.zip",
+    "bytes": 5482506,
+    "sha256": "a052684a6d7d43d1337baf33cd766cbbce91ab83961bb4f884c9b2a329a45e8d",
+    "backupSha256": "d34a9af3b65621ed386f418f06882afbee03db4134b10e01cd9d1ce2e3837236",
+    "contents": [
+      "complete backup",
+      "release metadata",
+      "restore/native audio receipts",
+      "screenshots",
+      "actual voice WAV",
+      "source and license notes"
+    ]
+  },
+  "restore": {
+    "allFactoriesClosed": true,
+    "manifestUnchanged": true,
+    "releaseOnlySave": true,
+    "productionRowsUnchanged": true,
+    "saveRefresh": true,
+    "mobileOverflow": false,
+    "writes": {
+      "add": 0,
+      "put": 0,
+      "delete": 0,
+      "clear": 0
+    },
+    "newProviderRequests": 0,
+    "artOrHearingAccepted": false
+  },
+  "validation": {
+    "initialFullCI": {
+      "session": 41262,
+      "exitCode": 1,
+      "candidateTree": "1d113132bd21f4f5152749ff208857478e6952f1",
+      "testFiles": {
+        "failed": 12,
+        "passed": 1090,
+        "total": 1102
+      },
+      "tests": {
+        "failed": 20,
+        "passed": 7397,
+        "skipped": 3,
+        "total": 7420
+      },
+      "durationSeconds": 7227.37,
+      "at": 1793014066.222966
+    },
+    "repairRegression": {
+      "files": 12,
+      "tests": 424,
+      "passed": true,
+      "durationSeconds": 1166.43,
+      "newTestsAdded": 0
+    },
+    "baselineObservationsUnchanged": true,
+    "finalFullCI": "pending complete JSON test and coverage reports",
+    "serialIsolatedE2E": "pending",
+    "documentPreflightFailure": {
+      "session": 8618,
+      "exitCode": 1,
+      "candidateTree": "3967419d11d72186d235af6859b16628e6952d82",
+      "phase": "check:docs",
+      "reason": "New delivery evidence file missing from document authority registry; coverage not started.",
+      "fix": "Register the L4 evidence receipt; no runtime source changes.",
+      "at": 1793016050.32618
+    },
+    "documentPreflightRepair": {
+      "registeredInAuthorityAndChecker": true,
+      "checkDocsExitCode": 0,
+      "runtimeSourceChanged": false
+    },
+    "integrationAttemptB182": {
+      "session": 88278,
+      "exitCode": 1,
+      "candidateTree": "b182f64ab104e9a66e27ce25a642224b818649ae",
+      "terminalPhase": "check:bundle-size",
+      "bundleViolation": {
+        "asset": "contracts-SgzFjQ5Q.js",
+        "rawKiB": 639.2,
+        "limitKiB": 600.0,
+        "gzipKiB": 161.4,
+        "gzipLimitKiB": 180.0
+      },
+      "coverage": {
+        "childExitCode": 0,
+        "reportedFiles": 855,
+        "expectedFiles": 1102,
+        "finalTestReportPresent": false,
+        "coverageSummaryPresent": false,
+        "status": "incomplete; do not infer full-suite pass",
+        "preservedRawDirectory": "storyforge-coverage-Z2a8rE"
+      },
+      "build": "passed",
+      "at": 1793027794.886101
+    },
+    "unreportedFileAndCompletionGuardCheck": {
+      "exitCode": 0,
+      "expectedFiles": 248,
+      "durationSeconds": 147.68530797958374,
+      "reportPresent": true,
+      "reportedFiles": 248,
+      "tests": 757,
+      "failedTests": 0,
+      "success": true
+    },
+    "bundleRepair": {
+      "buildExitCode": 0,
+      "originalBudgetsChanged": false,
+      "largestAsyncChunkRawKiB": 587.9,
+      "largestAsyncChunkGzipKiB": 162.5,
+      "runtimeProductLogicChanged": false
+    }
+  },
+  "limitations": [
+    "original failed/unknown provider requests and cost gaps retained",
+    "no independent human hearing or commercial art acceptance",
+    "final CI/E2E and commit/push remain open"
+  ]
+}

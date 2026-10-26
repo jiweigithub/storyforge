@@ -19,6 +19,7 @@ import type {
 } from '../types'
 import { assertRecordInScope } from '../workspace/scope'
 import { validateTextOpenWorldGameplayRulesetSkeletonV1 } from './gameplay-ruleset'
+import { assertTextOpenWorldItemSourceClosureV1, hasTextOpenWorldExplicitItemSourcesV1, itemHasPlannedSourceV1 } from './item-source-production'
 
 const SKILL_ID = 'text-open-world.production.crafting-economy-catalog.v1'
 const MAX_CONTEXT_CHARS = 300_000
@@ -189,9 +190,12 @@ function buildDemands(input: {
   manifest: TextOpenWorldContentRequirementManifestV1
   itemCatalog: TextOpenWorldItemRewardCatalogV1
 }): { recipeDemands: RecipeDemandV1[]; vendorDemands: VendorDemandV1[] } {
-  const sourceableItems = input.itemCatalog.items.filter(item => !item.critical && sourceKindsForItem(input.itemCatalog, item.key).length > 0)
+  const explicitSources = hasTextOpenWorldExplicitItemSourcesV1(input.itemCatalog)
+  const sourceableItems = input.itemCatalog.items.filter(item => !item.critical && (sourceKindsForItem(input.itemCatalog, item.key).length > 0
+    || (explicitSources && itemHasPlannedSourceV1(input.itemCatalog, item.key, 'vendor'))))
   const ingredients = sourceableItems.filter(item => item.kind === 'material').concat(sourceableItems.filter(item => item.kind !== 'material'))
-  const outputs = sourceableItems.filter(item => item.kind !== 'quest' && item.key !== 'item.player.starter-weapon')
+  const outputs = (explicitSources ? input.itemCatalog.items.filter(item => !item.critical) : sourceableItems)
+    .filter(item => item.kind !== 'quest' && item.key !== 'item.player.starter-weapon')
   if (!ingredients.length || !outputs.length) fail('配方目录没有可验证来源的原料或合法产物')
   const recipeDemands: RecipeDemandV1[] = []
   const vendorDemands: VendorDemandV1[] = []
@@ -248,10 +252,15 @@ function buildDemands(input: {
     })
   })
   if (recipeDemands.length > 80 || vendorDemands.length > 80) fail('配方或商店需求超过单Build首版上限80')
+  if (explicitSources) for (const demand of recipeDemands) {
+    demand.candidateOutputItemKeys = demand.candidateOutputItemKeys.filter(key => itemHasPlannedSourceV1(input.itemCatalog, key, 'craft', demand.sourceDemandKey))
+    if (demand.candidateOutputItemKeys.length !== 1) fail(`配方必须履行唯一的已冻结物品来源:${demand.sourceDemandKey}`)
+  }
   return { recipeDemands, vendorDemands }
 }
 
 async function validateUpstream(context: Omit<TextOpenWorldCraftingEconomyInputContextV1, 'contextSelectionHash'>): Promise<void> {
+  assertTextOpenWorldItemSourceClosureV1({ catalog: context.itemRewardCatalog })
   const { gameplayRuleset, regionNarrativePacks, questSkeletons, contentRequirementManifest, itemRewardCatalog } = context
   await validateTextOpenWorldGameplayRulesetSkeletonV1({ artifact: gameplayRuleset })
   for (const [value, hashKey, label] of [
@@ -325,8 +334,51 @@ async function parseContext(value: string): Promise<TextOpenWorldCraftingEconomy
   return context
 }
 
+/** Current, read-only author projection of the registered Context. Local recipe
+ * choices and global shop item numbers retain their distinct numbering. */
+export const CRAFTING_ECONOMY_REPAIR_SECTIONS_V1 = ['contract', 'recipes', 'vendors', 'items', 'locations', 'requirements'] as const
+export type CraftingEconomyRepairSectionV1 = typeof CRAFTING_ECONOMY_REPAIR_SECTIONS_V1[number]
+export async function projectTextOpenWorldCraftingEconomyRepairCandidatesV1(input: {
+  contextText: string
+  section: CraftingEconomyRepairSectionV1
+  page: number
+  expectedContextSelectionHash?: string
+}) {
+  if (!CRAFTING_ECONOMY_REPAIR_SECTIONS_V1.includes(input.section)
+    || !Number.isSafeInteger(input.page) || input.page < 0) fail('修订候选分类或页码无效')
+  const context = await parseContext(input.contextText)
+  if (input.expectedContextSelectionHash !== undefined
+    && input.expectedContextSelectionHash !== context.contextSelectionHash) fail('修订候选上下文已变化，请重新读取')
+  const sections: Record<CraftingEconomyRepairSectionV1, unknown[]> = {
+    contract: [{ productInstanceKey: context.productInstanceKey, draftVersion: 1,
+      gameplayRulesetHash: context.gameplayRuleset.gameplayRulesetHash, recipeCategories: RECIPE_CATEGORIES,
+      recipeCount: context.recipeDemands.length, vendorCount: context.vendorDemands.length,
+      itemCount: context.itemRewardCatalog.items.length,
+      numbering: '配方地点、原料和产物编号属于各需求候选；商店库存编号属于全局物品目录。misc产物的配方类别为tool。' }],
+    recipes: context.recipeDemands.map(({ candidateLocationKeys, candidateIngredientItemKeys, candidateOutputItemKeys, ...demand }) => ({
+      ...demand,
+      locations: candidateLocationKeys.map((locationKey, index) => ({ stationLocationNumber: index + 1, locationKey })),
+      ingredients: candidateIngredientItemKeys.map((itemKey, index) => ({ ingredientItemNumber: index + 1, itemKey })),
+      outputs: candidateOutputItemKeys.map((itemKey, index) => ({ outputItemNumber: index + 1, itemKey })),
+    })),
+    vendors: context.vendorDemands.map(({ candidateLocationKeys, ...demand }) => ({ ...demand,
+      locations: candidateLocationKeys.map((locationKey, index) => ({ locationNumber: index + 1, locationKey })) })),
+    items: context.itemRewardCatalog.items.map((item, index) => ({ inventoryItemNumber: index + 1, ...item,
+      sourcePlan: context.itemRewardCatalog.itemSourcePlans?.find(plan => plan.itemKey === item.key) ?? null })),
+    locations: context.regionNarrativePacks.packs.flatMap(pack => pack.locationPlans.map(location => ({ regionKey: pack.regionKey, ...location }))),
+    requirements: context.contentRequirementManifest.requirements,
+  }
+  const rows = sections[input.section], pageSize = 5
+  if (input.page >= Math.max(1, Math.ceil(rows.length / pageSize))) fail('修订候选页码超出范围')
+  return { contextSelectionHash: context.contextSelectionHash, section: input.section,
+    page: input.page, pageSize, total: rows.length, rows: rows.slice(input.page * pageSize, (input.page + 1) * pageSize) }
+}
+
 function parseDraft(value: unknown, context: TextOpenWorldCraftingEconomyInputContextV1): CatalogDraftV1 {
-  const root = record(value, 'draft'); exactKeys(root, ['schema', 'version', 'recipes', 'vendors'], 'draft')
+  const root = record(value, 'draft')
+  const authorBound = Object.prototype.hasOwnProperty.call(root, 'authorContextSelectionHash')
+  if (authorBound && root.authorContextSelectionHash !== context.contextSelectionHash) fail('作者修订上下文已变化，请重新读取候选')
+  exactKeys(root, ['schema', 'version', 'recipes', 'vendors', ...(authorBound ? ['authorContextSelectionHash'] : [])], 'draft')
   if (root.schema !== 'storyforge.text-open-world-crafting-economy-draft' || root.version !== 1) fail('draft schema/version无效')
   if (!Array.isArray(root.recipes) || root.recipes.length !== context.recipeDemands.length) fail(`recipes必须与${context.recipeDemands.length}项需求一一对应`)
   const recipes = root.recipes.map((value, index) => {
@@ -368,6 +420,10 @@ function parseDraft(value: unknown, context: TextOpenWorldCraftingEconomyInputCo
   vendors.forEach((vendor, index) => vendor.inventoryItemNumbers.forEach(number => {
     const item = context.itemRewardCatalog.items[number - 1]!
     if (item.critical || !item.sellable) fail(`商店不得出售关键或不可交易物品:${context.vendorDemands[index]!.sourceDemandKey}`)
+    if (hasTextOpenWorldExplicitItemSourcesV1(context.itemRewardCatalog)
+      && !itemHasPlannedSourceV1(context.itemRewardCatalog, item.key, 'vendor', context.vendorDemands[index]!.sourceDemandKey)) {
+      fail(`商店不得增添未选择的物品来源:${item.key}`)
+    }
   }))
   return { recipes, vendors }
 }
@@ -398,7 +454,8 @@ async function createArtifact(input: { context: TextOpenWorldCraftingEconomyInpu
   const vendors = input.draft.vendors.map((draft, index) => {
     const demand = input.context.vendorDemands[draft.demandNumber - 1]!
     const selected = draft.inventoryItemNumbers.map(number => input.context.itemRewardCatalog.items[number - 1]!)
-    const inventory = [...selected, ...ordinaryItems].filter((item, position, all) => all.findIndex(candidate => candidate.key === item.key) === position)
+    const inventory = hasTextOpenWorldExplicitItemSourcesV1(input.context.itemRewardCatalog) ? selected
+      : [...selected, ...ordinaryItems].filter((item, position, all) => all.findIndex(candidate => candidate.key === item.key) === position)
     return {
       key: `vendor.catalog.${String(index + 1).padStart(3, '0')}`, order: index + 1,
       sourceDemandKey: demand.sourceDemandKey, demandKind: demand.demandKind,
@@ -488,7 +545,9 @@ async function createArtifact(input: { context: TextOpenWorldCraftingEconomyInpu
     || !same(body.coverage.ingredientItemKeys, body.coverage.sourcedIngredientItemKeys)
     || !same(body.coverage.outputItemKeys, body.coverage.sinkedOutputItemKeys)
     || riskFreeArbitrageRecipeKeys.length) fail('配方/商店需求、地区覆盖、来源/消耗或无风险套利没有闭合')
-  return { ...body, craftingEconomyCatalogHash: await hashProductProductionValueV2(body) }
+  const result = { ...body, craftingEconomyCatalogHash: await hashProductProductionValueV2(body) }
+  assertTextOpenWorldItemSourceClosureV1({ catalog: input.context.itemRewardCatalog, economy: result })
+  return result
 }
 
 function draftFromArtifact(artifact: TextOpenWorldCraftingEconomyCatalogV1, context: TextOpenWorldCraftingEconomyInputContextV1): unknown {
@@ -508,7 +567,9 @@ function draftFromArtifact(artifact: TextOpenWorldCraftingEconomyCatalogV1, cont
       return {
         demandNumber: vendor.order, title: vendor.title, description: vendor.description,
         locationNumber: demand.candidateLocationKeys.indexOf(vendor.locationKey) + 1,
-        inventoryItemNumbers: vendor.inventoryEntries.slice(0, 1)
+        // Preserve every possible model-selected prefix (at most 12 items).
+        // The compiler appends the remaining ordinary stock in catalog order.
+        inventoryItemNumbers: vendor.inventoryEntries.slice(0, 12)
           .map(entry => context.itemRewardCatalog.items.findIndex(item => item.key === entry.itemKey) + 1)
           .filter(number => number > 0),
       }
@@ -562,7 +623,9 @@ function systemPrompt(context: TextOpenWorldCraftingEconomyInputContextV1): stri
   return [
     '你是StoryForge文字开放世界Crafting与Economy Catalog Designer。你只设计符合地区与任务语境的配方/商店语义，并从代码提供的候选地点和物品中选择；代码负责稳定键、数量、价格、库存、来源/消耗闭环、反套利与运行绑定。',
     `recipes共${context.recipeDemands.length}项、vendors共${context.vendorDemands.length}项，必须按demandNumber顺序精确覆盖。候选编号均从1开始，不得越界。`,
-    'recipe的category必须匹配所选产物种类（misc对应tool），原料和产物不得是同一物品。商店inventoryItemNumbers选择1到12项非关键物品；代码会补齐普通货物。不得输出价格、数量、角色Key、Action、Effect、Condition、QuestKey、运行绑定或媒资。',
+    hasTextOpenWorldExplicitItemSourcesV1(context.itemRewardCatalog)
+      ? 'recipe的category必须匹配所选产物种类（misc对应tool），原料和产物不得是同一物品。配方必须使用已冻结的唯一产物候选；原料须有独立来源。商店inventoryItemNumbers必须精确覆盖itemSourcePlans中kind=vendor且sourceKey等于本店sourceDemandKey的1到12项商品，不得增减或补发制作专属产物。不得输出价格、数量、角色Key、Action、Effect、Condition、QuestKey、运行绑定或媒资。'
+      : 'recipe的category必须匹配所选产物种类（misc对应tool），原料和产物不得是同一物品。商店inventoryItemNumbers选择1到12项非关键物品；代码会补齐普通货物。不得输出价格、数量、角色Key、Action、Effect、Condition、QuestKey、运行绑定或媒资。',
     '只输出字段精确的JSON：',
     '{"schema":"storyforge.text-open-world-crafting-economy-draft","version":1,"recipes":[{"demandNumber":1,"title":"...","description":"...","category":"consumable","stationLocationNumber":1,"ingredientItemNumber":1,"outputItemNumber":1}],"vendors":[{"demandNumber":1,"title":"...","description":"...","locationNumber":1,"inventoryItemNumbers":[1]}]}',
   ].join('\n')
@@ -594,7 +657,7 @@ export function createTextOpenWorldCraftingEconomyCatalogExecutorV1(options: {
     const context = await parseContext(execution.contextText); const prompt = systemPrompt(context); const startedAt = performance.now()
     const response = await runModel({
       projectId: execution.scope.projectId, requirementKey, expectedCapabilityHash: binding.bindingHash,
-      category: 'text-open-world.production.crafting-economy-catalog',
+      category: SKILL_ID,
       system: prompt, contextText: execution.contextText,
       maximumOutputTokens: Math.max(1, Math.min(32_000, execution.task.budgetReservation.outputTokens)), signal: execution.signal,
     })
