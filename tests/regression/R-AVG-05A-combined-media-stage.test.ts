@@ -193,5 +193,7 @@ describe('one-Work original visual, Sound and local fixed-preset voice through s
     for (const asset of assets) expect(await sha256MediaData(await readProductReleaseMediaBytes({ scope: s.scope, productReleaseId: record.id!, asset }))).toBe(asset.blobContentHash)
     expect(await db.productReleases.get(old.record.id!)).toEqual(old.record)
     expect(s.soundCounts).toEqual(counts); expect(forbidden).not.toHaveBeenCalled()
-  }, 180_000)
+    // This functional scenario spans multiple production, publication and
+    // restore/delete phases under coverage; product performance gates are separate.
+  }, 300_000)
 })

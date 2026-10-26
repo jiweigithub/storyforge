@@ -207,6 +207,32 @@
       "largestAsyncChunkRawKiB": 587.9,
       "largestAsyncChunkGzipKiB": 162.5,
       "runtimeProductLogicChanged": false
+    },
+    "completedAttempt90e49a3": {
+      "head": "90e49a3db1987583df4799269ebf6e5bad7808e9",
+      "session": 50231,
+      "exitCode": 1,
+      "files": 1103,
+      "tests": 7425,
+      "passed": 7421,
+      "failed": 1,
+      "skipped": 3,
+      "testReportSha256": "4678530a848a2d6a176951e961d420712d9e11efc9440b0e1808f9b90d78df07",
+      "coverageSummaryPresent": false,
+      "durationSeconds": 6715.13,
+      "failure": "one whole nine-media production/publication/restore/delete functional test reached 180000ms; first case passed in 101680ms",
+      "at": 1793035734.02987
+    },
+    "singleFunctionalDeadlineRepair": {
+      "file": "tests/regression/R-AVG-05A-combined-media-stage.test.ts",
+      "case": "second: nine-media local voice, frozen Releases, closed-factory restore/remap/delete",
+      "fromMs": 180000,
+      "toMs": 300000,
+      "assertionsChanged": false,
+      "firstCaseDeadlineChanged": false,
+      "globalOrProductPerformanceBudgetsChanged": false,
+      "runtimeProductLogicChanged": false,
+      "status": "pending final CI"
     }
   },
   "limitations": [
