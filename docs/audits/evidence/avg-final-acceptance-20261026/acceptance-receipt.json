@@ -151,8 +151,23 @@
       "newTestsAdded": 0
     },
     "baselineObservationsUnchanged": true,
-    "finalFullCI": "pending canonical workflow after new ddd merged candidate; no new full local run",
-    "serialIsolatedE2E": "pending existing hosted core and AVG media workflows; no new matrix",
+    "finalFullCI": "Existing ba785/6c7 full-engineering jobs remain in progress; their unchanged application/unit source results are retained separately. No additional full local CI.",
+    "serialIsolatedE2E": {
+      "avgMediaStatus": "passed existing isolated remaining AVG recipe plus corrected original sound closed-read; no new cases or paid models",
+      "wholeProjectHostedStatus": "pending existing full-engineering/core-E2E workflows",
+      "counts": {
+        "allAvgPassed": 103,
+        "allAvgConditionalSkipped": 17,
+        "visualClosedPassed": 1,
+        "combinedProductionPassed": 1,
+        "combinedClosedPassed": 1,
+        "correctedSoundClosedPassed": 2,
+        "failed": 0,
+        "flaky": 0
+      },
+      "guards": "existing visual and combined actual-report validators passed; combined closed consumer matched exact current successful export SHA256",
+      "applicationSourceUnchangedFrom": "ba785f0d6be5cbe99b930c7e1dea5b8136fe88b5"
+    },
     "documentPreflightFailure": {
       "session": 8618,
       "exitCode": 1,
@@ -737,6 +752,144 @@
         "scope": "Only the two existing failed import/reverify/publication and dependent explicit inheritance cases; isolated snapshot/browser, no retry",
         "runtimeSourceUnchangedFrom": "ba785f0d6be5cbe99b930c7e1dea5b8136fe88b5"
       }
+    },
+    "hostedAttempt6c7": {
+      "head": "6c7f8872ffa916558fed6b130e481aa117c2f2e2",
+      "tree": "1e6dd8a07e4fb26024fe97b12ca172d08f067bf6",
+      "runId": 40395188882,
+      "avgJobId": 121826238950,
+      "avgJobConclusion": "failure",
+      "root": "Closed publisher reload asserted automatic one-shot ambience replay, contrary to the existing persisted requested/unknown recovery contract. Initial publisher playback passed; original sound production/publication exports succeeded.",
+      "repair": "Preserve unknown after refresh and no automatic replay; explicitly click reader replay, then verify actual playback. No player behavior, release bytes, source/grant or zero production-write guard changed.",
+      "contract": "docs/products/avg-production/02-SYSTEMS-AND-RUNTIME.md:259",
+      "artifact": {
+        "id": 12686743946,
+        "bytes": 44210167,
+        "sha256": "4f9637528813a2e0899f15dee492fb352c41f5100c61858ffc0189deef8d57a7"
+      },
+      "targetedExistingClosedRead": {
+        "stats": {
+          "startTime": "2026-10-26T20:51:41.734Z",
+          "duration": 24690.078,
+          "expected": 2,
+          "skipped": 0,
+          "unexpected": 0,
+          "flaky": 0
+        },
+        "inputArtifactId": 12686743946,
+        "inputBackups": {
+          "original-sound-native-release.json": {
+            "bytes": 8077525,
+            "sha256": "637f674f6ebf729ec97c30fab6c9187658b38bdc5bb51231a135b88bedbe53d1"
+          },
+          "publisher-original-release.json": {
+            "bytes": 1914244,
+            "sha256": "c5eb8384cc76285b204851c7ff25cb398cece0c9760110bf13a8e9ae33f6be2c"
+          }
+        },
+        "contract": "Persisted once-audio requested state after refresh is unknown; explicit reader replay issues a new generation. No hidden autoplay retry. Exact grant/release/hash and zero producer/quality writes retained.",
+        "newModelCalls": 0
+      },
+      "runtimeSourceChangedByRepair": false,
+      "fullCI": "still running; retained to terminal",
+      "remainingAvgIntegration": "Existing remaining visual/all AVG and same-backup nine-media production/closed-read recipe in progress; no new cases or model calibration.",
+      "clientJobs": {
+        "runId": 40395188857,
+        "results": [
+          {
+            "id": 121826238682,
+            "platform": "macos-arm64",
+            "conclusion": "success"
+          },
+          {
+            "id": 121826238775,
+            "platform": "macos-x64",
+            "conclusion": "success"
+          },
+          {
+            "id": 121826238333,
+            "platform": "windows",
+            "conclusion": "success"
+          },
+          {
+            "id": 121826238740,
+            "platform": "android",
+            "conclusion": "success"
+          }
+        ]
+      }
+    },
+    "remainingExistingAvgIntegration": {
+      "sourceHead": "6c7f8872ffa916558fed6b130e481aa117c2f2e2",
+      "ownedE2EOnlyRepair": "Closed sound one-shot refresh preserves unknown; explicit replay required by existing runtime contract. No application source changed.",
+      "phases": {
+        "all": {
+          "startTime": "2026-10-26T20:56:38.022Z",
+          "duration": 1959680.455,
+          "expected": 103,
+          "skipped": 17,
+          "unexpected": 0,
+          "flaky": 0
+        },
+        "visual-frozen": {
+          "startTime": "2026-10-26T21:29:31.342Z",
+          "duration": 20042.115999999998,
+          "expected": 1,
+          "skipped": 0,
+          "unexpected": 0,
+          "flaky": 0
+        },
+        "combined-production": {
+          "startTime": "2026-10-26T21:30:04.900Z",
+          "duration": 288383.78500000003,
+          "expected": 1,
+          "skipped": 0,
+          "unexpected": 0,
+          "flaky": 0
+        },
+        "combined-frozen": {
+          "startTime": "2026-10-26T21:35:06.957Z",
+          "duration": 28575.053,
+          "expected": 1,
+          "skipped": 0,
+          "unexpected": 0,
+          "flaky": 0
+        }
+      },
+      "exports": {
+        "visual-release.json": {
+          "bytes": 3040932,
+          "sha256": "122ee2dd404c0f968d47056eb3c41b4066af35ac1485d4fe4b50985ad7a6d9ae"
+        },
+        "combined-release.json": {
+          "bytes": 13755142,
+          "sha256": "f96381b016da9a073f1483773d05cddc3d2a3b3f983603be21c99a7710bf51e3"
+        }
+      },
+      "existingReportGuards": {
+        "visual": "passed seven required native cases and accurate export",
+        "combined": {
+          "modes": [
+            {
+              "directory": "combined-production",
+              "expected": 1,
+              "flaky": 0
+            },
+            {
+              "directory": "combined-frozen",
+              "expected": 1,
+              "flaky": 0
+            }
+          ],
+          "sourceFileSHA256": "f96381b016da9a073f1483773d05cddc3d2a3b3f983603be21c99a7710bf51e3",
+          "backupSHA256": "0f7762e56c7aaf89a12b6fde354882545d1bfd37010766ce35c4ed0b2d02e70c",
+          "classification": "Executed same-Work nine-media UI/export/native closed-read evidence only; never real generation, hearing, art or commercial authority"
+        }
+      },
+      "noRetries": true,
+      "newPaidModelCalls": 0,
+      "classification": "Existing controlled-provider browser integration; real workers/audio/browser lifecycle/export/read; no independent art/hearing acceptance",
+      "at": 1793050546.087828
     }
   },
   "limitations": [

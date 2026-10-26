@@ -120,7 +120,12 @@ test('published publisher-page V2 original ambience restores exact grant and Rel
   const playing = () => page.locator('audio[data-channel="ambience"]').evaluateAll(rows=>rows.some(a=>!(a as HTMLAudioElement).paused&&(a as HTMLAudioElement).currentTime>.1))
   await expect.poll(playing,{timeout:30_000}).toBe(true)
   await expect(page.locator('audio[data-channel="ambience"]')).toHaveJSProperty('loop',false)
-  await page.reload(); await expect.poll(playing,{timeout:30_000}).toBe(true)
+  await page.reload()
+  const recovery = page.getByRole('status',{name:'环境音恢复',exact:true})
+  await expect(recovery).toContainText('上次声音播放未确认结束。',{timeout:30_000})
+  await expect.poll(playing).toBe(false)
+  await recovery.getByRole('button',{name:'重新播放声音片段',exact:true}).click()
+  await expect.poll(playing,{timeout:30_000}).toBe(true)
   const read = await page.evaluate(async ({scope,sessionId})=>{
     const load = new Function('p','return import(p)') as (p:string)=>Promise<any>
     const [{db},pkg,module,media,hash,config]=await Promise.all([load('/storyforge/src/lib/db/schema.ts'),load('/storyforge/src/lib/product-production/runtime-package.ts'),
