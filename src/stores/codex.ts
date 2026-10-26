@@ -1,3 +1,4 @@
+import { transactionTablesForReferences } from '../lib/registry/lifecycle'
 /**
  * Phase 35-a — 词条系统 store
  *
@@ -175,7 +176,7 @@ export const useCodexStore = create<CodexStore>((set, get) => ({
       }
     }
     const entryIds = get().entries.filter(e => toDeleteCatIds.has(e.categoryId)).map(e => e.id!).filter(Boolean)
-    await db.transaction('rw', db.codexCategories, db.codexEntries, db.characters, async () => {
+    await db.transaction('rw', [db.codexCategories, ...transactionTablesForReferences('codexEntries')], async () => {
       await removeCodexEntryReferences(cat.projectId, new Set(entryIds))
       await db.codexEntries.bulkDelete(entryIds)
       await db.codexCategories.bulkDelete([...toDeleteCatIds])
@@ -238,7 +239,7 @@ export const useCodexStore = create<CodexStore>((set, get) => ({
     const scope = await resolveScopeLike(existingEntry.projectId)
     const entry = await db.codexEntries.get(id)
     if (!entry || !await assertRecordInScope(scope, 'codexEntries', entry, { owner: 'world' })) return
-    await db.transaction('rw', db.codexEntries, db.characters, async () => {
+    await db.transaction('rw', transactionTablesForReferences('codexEntries'), async () => {
       await removeCodexEntryReferences(entry.projectId, new Set([id]))
       await db.codexEntries.delete(id)
     })

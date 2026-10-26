@@ -27,6 +27,11 @@ export interface ProductWorldSourceSelectionV1 {
   resourceKeys: string[]
   roleBindings: Record<string, string[]>
 }
+export interface ProductWorldSourceSelectionV2 extends Omit<ProductWorldSourceSelectionV1, 'version' | 'productType'> {
+  version: 2
+  productType: 'character-interaction' | 'avg'
+}
+export type ProductWorldSourceSelection = ProductWorldSourceSelectionV1 | ProductWorldSourceSelectionV2
 
 export const NARRATIVE_BEAT_KINDS = ['narration', 'dialogue', 'action', 'system'] as const
 export type NarrativeBeatKind = typeof NARRATIVE_BEAT_KINDS[number]
@@ -152,7 +157,7 @@ export interface ProductRuntimePackageV1 {
   }
   sourceWorld: {
     contentHash: string
-    selection: ProductWorldSourceSelectionV1
+    selection: ProductWorldSourceSelection
   }
   narrative: FrozenProductNarrativeV1
   interaction?: FrozenInteractionRuntimeV2
@@ -187,9 +192,9 @@ export interface ProductReleaseManifestV1 {
     rootTerminalReceiptHash: string
   }
   sourceContracts: {
-    sourcePlan: import('./world-product-contracts').ProductSourcePlanV1
+    sourcePlan: import('./world-product-contracts').ProductSourcePlan
     confirmedBrief: import('./world-product-contracts').ConfirmedProductBriefV1
-    sourceManifest: import('./world-product-contracts').ProductSourceManifestV1
+    sourceManifest: import('./world-product-contracts').ProductSourceManifest
   } | import('./text-open-world-production').TextOpenWorldCreatorReleaseSourceContractsV1
   /** Hash of every release field except lineage. */
   releaseIdentityHash: string

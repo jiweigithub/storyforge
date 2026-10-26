@@ -1,3 +1,4 @@
+import type { NarrativeDomainMetadataV1, NarrativeDomainFieldsV1 } from './narrative-domain'
 import type { RagDocumentMetadata } from './rag-library'
 
 /**
@@ -74,7 +75,9 @@ export interface CodexCategory extends RagDocumentMetadata {
 }
 
 /** 一条词条 */
-export interface CodexEntry extends RagDocumentMetadata {
+type CodexEntryNarrativeFieldsV1 = NarrativeDomainMetadataV1 & Pick<NarrativeDomainFieldsV1, 'narrativeAliasesV1'>
+
+export interface CodexEntry extends RagDocumentMetadata, CodexEntryNarrativeFieldsV1 {
   id?: number
   projectId: number
   categoryId: number

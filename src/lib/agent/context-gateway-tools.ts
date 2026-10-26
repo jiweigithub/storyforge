@@ -27,6 +27,9 @@ import type {
 } from '../registry/types'
 import { CONTEXT_RESOURCE_KINDS_V1 } from '../registry/types'
 import { CONTEXT_SOURCES } from '../registry/context-sources'
+import { authorWorldQueryV1 } from '../context-gateway/world-query-client'
+import { parseWorldQueryV1 } from '../context-gateway/world-query-contract'
+import { WORLD_QUERY_TOOL_SCHEMA_V1 } from './world-query-tool-schema'
 import type {
   AgentToolDefinition,
   AgentToolExecutionContext,
@@ -43,6 +46,7 @@ const RESOURCE_DEPTHS = ['index', 'summary', 'focused', 'full'] as const
 const TOOL_RESULT_BUDGETS: Readonly<Record<string, number>> = {
   list_context_catalog: 12_000,
   search_context: 12_000,
+  query_world_release: 12_000,
   read_context_resource: MAX_RESOURCE_READ_TOKENS,
   read_original_evidence: MAX_RESOURCE_READ_TOKENS,
 }
@@ -199,6 +203,7 @@ function publicDescriptor(
     sourceKey: descriptor.sourceKey,
     kind: descriptor.kind,
     title: descriptor.title,
+    ...(descriptor.worldSemantic?.authorSource ? { authorSource: descriptor.worldSemantic.authorSource } : {}),
     shortSummary: descriptor.shortSummary,
     authority: descriptor.authority,
     contentRevision: descriptor.contentRevision,
@@ -481,6 +486,45 @@ async function executeSearch(
   }
 }
 
+async function executeWorldQuery(context: AgentToolExecutionContext, raw: Record<string, unknown>): Promise<AgentToolResult> {
+  const session = context.contextGatewaySession
+  try {
+    exactArgs(raw, Object.keys(WORLD_QUERY_TOOL_SCHEMA_V1.properties))
+    if (!session?.worldQueryAccess) throw new Error('当前 Gateway 未授权叙事查询；此版本或路径 unsupported')
+    assertExecutionContext(context, session)
+    claimContextGatewayReadCallV1(session)
+    const binding = session.providers.find(item => item.source.key === 'worldRelease')
+    if (!binding?.provider.queryWorldMetadata) throw new Error('已绑定 Provider 不支持叙事查询')
+    const maxTokens = integer(raw.maxTokens ?? Math.min(10000, session.policy.maxRetrievedTokens - session.usage.retrievedTokens), 'maxTokens', 1024, 10000)
+    assertContextGatewayTokenRequestV1(session, maxTokens)
+    // Absent optional tool fields become explicit null only here; malformed
+    // discriminated unions remain rejected by the canonical codec.
+    const time = raw.time == null ? null : structuredClone(raw.time) as Record<string, unknown>
+    if (time && (time.axis === 'narrated' || time.axis === 'disclosed') && time.audienceKey === undefined) time.audienceKey = null
+    if (time?.interval && typeof time.interval === 'object' && !Array.isArray(time.interval)) {
+      const interval = time.interval as Record<string, unknown>
+      if (interval.end === undefined) interval.end = null
+    }
+    const base = authorWorldQueryV1(session.worldQueryAccess)
+    const query = parseWorldQueryV1({ ...base, mode: raw.mode ?? base.mode, text: raw.text ?? null,
+      kinds: raw.kinds ?? [], entityKeys: raw.entityKeys ?? [], storyArcKeys: raw.storyArcKeys ?? [], time,
+      relationExpansion: raw.relationExpansion ?? base.relationExpansion, causalDepth: raw.causalDepth ?? 0,
+      evidenceDepth: 'metadata', cursor: raw.cursor ?? null,
+      budget: { maxTokens: maxTokens - 512, maxRecords: integer(raw.limit ?? 10, 'limit', 1, MAX_PAGE_SIZE), maxEvidenceBytes: 0 } })
+    const { result, descriptors } = await binding.provider.queryWorldMetadata({ scope: session.scope, query })
+    for (const descriptor of descriptors) {
+      assertContextResourceDescriptorV1({ descriptor, source: binding.source })
+      if (!isContextGatewayResourceAllowedV1(session, descriptor.resourceKey) || !session.policy.allowedResourceKinds.includes(descriptor.kind)) {
+        throw new Error('叙事查询返回了 Gateway 未授权的资源')
+      }
+    }
+    const content = JSON.stringify({ version: 1, result, descriptors: descriptors.map(item => publicDescriptor(item, session)) })
+    if (estimateTokens(content) > maxTokens) throw new Error('叙事查询目录超过完整输出预算；请减少本页条数')
+    return success({ toolName: 'query_world_release', session, operation: 'search', bindings: [binding], descriptors,
+      content, nextCursor: result.nextCursor })
+  } catch (error) { return failure('query_world_release', session, error) }
+}
+
 async function executeReadResource(
   context: AgentToolExecutionContext,
   raw: Record<string, unknown>,
@@ -590,6 +634,7 @@ async function executeReadOriginal(
       contentHash: original.contentHash,
       tokenCount: original.tokenCount,
       source: { revision: original.sourceRef.revision, contentHash: original.sourceRef.contentHash },
+      ...(original.descriptor.worldSemantic?.authorSource ? { authorSource: original.descriptor.worldSemantic.authorSource } : {}),
     })
     return success({
       toolName: 'read_original_evidence', session, operation: 'original', bindings: [binding],
@@ -601,6 +646,12 @@ async function executeReadOriginal(
 }
 
 export const CONTEXT_GATEWAY_READ_TOOLS_V1: readonly AgentToolDefinition[] = [
+  {
+    name: 'query_world_release',
+    description: '在宿主已授权的冻结世界和视角内按实体、故事线、明确时间轴与有界关系查询目录。返回匹配回执；原子与原文仍须通过 read_context_resource/read_original_evidence 实际读取。',
+    risk: 'read', parameters: WORLD_QUERY_TOOL_SCHEMA_V1, sourceKeys: ['worldRelease'],
+    inputBudgetTokens: 12_000, execute: executeWorldQuery,
+  },
   {
     name: 'list_context_catalog',
     description: '分页列出当前冻结作用域内获授权的 Canon 资源短元数据与本页分类计数，不返回正文。',

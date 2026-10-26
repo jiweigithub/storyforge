@@ -11,6 +11,7 @@ import type { FactStatus } from '../../lib/types/temporal-fact'
 import { exportFactMemoryMarkdown } from '../../lib/fact-ledger/human-readable-io'
 import KnowledgeLedgerPanel from './KnowledgeLedgerPanel'
 import WorldConstitutionPanel from './WorldConstitutionPanel'
+import NarrativeAnnotationPanel from './NarrativeAnnotationPanel'
 import {
   INITIAL_RECORD_TARGET_CLASS,
   initialRecordTargetAttributes,
@@ -56,7 +57,7 @@ export default function FactLibraryPanel({
   const [tab, setTab] = useState<FactTab>('exceptions')
   const [diffText, setDiffText] = useState('')
   const [ioMsg, setIoMsg] = useState('')
-  const [libraryMode, setLibraryMode] = useState<'facts' | 'knowledge' | 'constitution'>('facts')
+  const [libraryMode, setLibraryMode] = useState<'facts' | 'knowledge' | 'constitution' | 'narrative'>('facts')
 
   useEffect(() => { if (project.id != null) void load(project.id) }, [project.id, load])
 
@@ -110,6 +111,10 @@ export default function FactLibraryPanel({
     }
   }
 
+  const narrativePreview = import.meta.env.DEV && new URLSearchParams(window.location.search).has('narrative-preview')
+  if (narrativePreview && libraryMode === 'narrative') {
+    return <NarrativeAnnotationPanel project={project} onBack={() => setLibraryMode('facts')} />
+  }
   if (libraryMode === 'knowledge') {
     return <KnowledgeLedgerPanel project={project} onShowFacts={() => setLibraryMode('facts')} />
   }
@@ -125,6 +130,7 @@ export default function FactLibraryPanel({
           <h1 className="text-lg font-bold text-text-primary">事实库（NS-4 长期一致性）</h1>
         </div>
         <div className="flex items-center gap-2">
+          {narrativePreview && <button onClick={() => setLibraryMode('narrative')} className="px-3 py-1.5 text-xs rounded-md bg-sky-500/10 text-sky-300">叙事注释（实验）</button>}
           <button onClick={() => setLibraryMode('constitution')}
             className="px-3 py-1.5 text-xs rounded-md bg-amber-500/10 text-amber-300 hover:bg-amber-500/20">
             查看世界宪法

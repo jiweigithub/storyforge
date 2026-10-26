@@ -276,6 +276,7 @@ export async function generateTtrpgCampaignProposalCandidateV2(input: {
   if (!objective || objective.length > 8_000) fail('作者目标为空或过长')
   if (!input.aiConfig && !input.runAI) fail('缺少 AI 配置')
   const catalog = await loadProductProductionConsultationSourceV2({ scope: input.scope, worldReleaseId: input.worldReleaseId })
+  if (catalog.worldReference.version !== 1) fail('TTRPG 提案尚未支持增强世界引用')
   const worldContentHash = catalog.release.contentHash
   const requiredSourceRef = `world-reference:${catalog.worldReference.referenceHash}`
   const allowedSourceRefs = [...new Set([

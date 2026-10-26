@@ -34,6 +34,8 @@ export interface DeriveNovelToWorldInput {
   selectedTables?: string[]
   /** A draft always receives revision 1; publish additionally seals release 1. */
   publish?: boolean
+  /** Explicit development preview; v3 remains the released default. */
+  formatVersion?: 3 | 4
 }
 
 export interface DerivedNovelWorldResult {
@@ -43,6 +45,20 @@ export interface DerivedNovelWorldResult {
   revision: WorldRevision
   release: WorldRelease | null
   derivation: WorldDerivationV1
+}
+
+/** Shared metadata seam for a newly-created derived World. Never rename the
+ * independent source, and keep Work metadata on its existing Work owner. */
+export async function nameDerivedWorldV1(scope: WorkspaceScope, name: string, description: string): Promise<void> {
+  scope = { ...scope }
+  await db.transaction('rw', scopeTransactionTables(), async () => {
+    const resolved = await resolveScope({ scope })
+    if ((await db.projects.get(resolved.projectId))?.workspacePurpose !== 'world-engine') throw Error('[derivation] 目标不是独立世界草稿')
+    const updatedAt = Date.now()
+    await db.projects.update(resolved.projectId, { name, updatedAt })
+    await db.worlds.update(resolved.worldId, { name, description, updatedAt })
+    await db.works.update(resolved.workId, { title: name, description, updatedAt })
+  })
 }
 
 /**
@@ -56,6 +72,8 @@ export interface DerivedNovelWorldResult {
 export async function deriveNovelToWorld(
   input: DeriveNovelToWorldInput,
 ): Promise<DerivedNovelWorldResult> {
+  if (input.formatVersion !== undefined && input.formatVersion !== 3 && input.formatVersion !== 4) throw Error('[derivation] 未知派生封存格式')
+  if (input.formatVersion === 4) return (await import('./narrative-derivation')).deriveNarrativeNovelToWorldV4(input)
   const sourceScope = await resolveScope({ scope: input.sourceScope })
   const [sourceProject, sourceWork] = await Promise.all([
     db.projects.get(sourceScope.projectId),
@@ -101,14 +119,7 @@ export async function deriveNovelToWorld(
     const targetName = input.targetName?.trim() || `${sourceWork.title} · 世界`
     const targetDescription = sourceWork.description?.trim()
       || `由作品《${sourceWork.title}》的已确认语义内容显式派生。`
-    const renamedAt = Date.now()
-    await db.transaction('rw', scopeTransactionTables(db.worldDerivations), async () => {
-      await Promise.all([
-        db.projects.update(targetProjectId!, { name: targetName, updatedAt: renamedAt }),
-        db.worlds.update(targetScope.worldId, { name: targetName, description: targetDescription, updatedAt: renamedAt }),
-        db.works.update(targetScope.workId, { title: targetName, description: targetDescription, updatedAt: renamedAt }),
-      ])
-    })
+    await nameDerivedWorldV1(targetScope, targetName, targetDescription)
 
     const revision = await createWorldRevision({
       scope: targetScope,

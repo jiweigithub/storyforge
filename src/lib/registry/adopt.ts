@@ -76,7 +76,18 @@ export async function adopt(input: AdoptInput): Promise<AdoptResult> {
   const tableSpec = REGISTRY_BY_NAME.get(input.target)
   if (!tableSpec) throw new Error(`[adopt] target ${input.target} 不在 PROJECT_TABLES`)
 
+  if (input.narrativeCandidate) {
+    const scope = await resolveScope(input)
+    const narrative = await Dexie.waitFor(import('../agent/run/narrative-annotation-durable'))
+    return narrative.commitNarrativeAnnotationFromAdoptV1({ ...input, scope })
+  }
+
   const payloads = Array.isArray(input.data) ? input.data : [input.data]
+  if (payloads.some(payload => payload && (tableSpec.worldSemantic?.projector?.annotationFields ?? [])
+    .some(field => Object.prototype.hasOwnProperty.call(payload, field)))) {
+    result.skipped.push({ reason: '叙事注释必须经过领域候选确认与来源 CAS；模型不能自行签发确认凭据', data: input.data })
+    return result
+  }
   if (payloads.some(payload => payload && (Object.prototype.hasOwnProperty.call(payload, 'worldId')
     || Object.prototype.hasOwnProperty.call(payload, 'workId')))) {
     result.skipped.push({ reason: 'AI/结构化输入不得携带 World/Work owner ID；owner 由 WorkspaceScope 派生', data: input.data })

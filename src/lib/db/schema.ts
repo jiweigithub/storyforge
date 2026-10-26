@@ -6,6 +6,7 @@ import type { TtrpgNarrativeMemoryV1 } from '../ttrpg/narrative-memory'
 import type { ChatAuthoringDraftV1 } from '../character-interaction/authoring-contract'
 import type { AvgAuthoringDraftV1, AvgDraftMediaV1 } from '../avg/authoring-contract'
 import Dexie, { type Table } from 'dexie'
+import type { WorldNarrativeIndexCacheV1 } from '../types/narrative-index-cache'
 import type {
   AdaptationProject,
   AdaptationCausalEdgeV1,
@@ -128,7 +129,7 @@ import type { RetrievalChunk } from '../types/retrieval-chunk'
 import type { TemporalFact } from '../types/temporal-fact'
 
 export const STORYFORGE_DATABASE_NAME = 'storyforge-core'
-export const STORYFORGE_SCHEMA_VERSION = 12
+export const STORYFORGE_SCHEMA_VERSION = 13
 
 /** The hard-cutover baseline released before independent creation releases. */
 export const STORYFORGE_STORES_V1 = {
@@ -310,9 +311,16 @@ export const STORYFORGE_STORES_V11 = {
   extensionOperations: '++id, projectId, worldId, workId, profileId, createdAt',
 } as const satisfies Record<string, string>
 
-export const STORYFORGE_STORES = {
+// Both product branches used v12 with different added stores. The union bridge
+// preserves rows from either declaration instead of recreating an existing store.
+export const STORYFORGE_STORES_V12 = {
   ...STORYFORGE_STORES_V11,
   ttrpgNarrativeMemories: '++id, projectId, worldGroupId, worldId, workId, sessionId, &[sessionId+revisionKey], [sessionId+reliability], [sessionId+stale], sourceSessionId, fromEventSequence, toEventSequence, derivedFromHash, updatedAt',
+  worldNarrativeIndexCaches: '++id, projectId, worldId, &releaseId, lastAccessedAt',
+} as const satisfies Record<string, string>
+
+export const STORYFORGE_STORES = {
+  ...STORYFORGE_STORES_V12,
 } as const satisfies Record<string, string>
 
 export class StoryForgeDB extends Dexie {
@@ -390,6 +398,7 @@ export class StoryForgeDB extends Dexie {
   narrativeChoices!: Table<NarrativeChoice, number>
   worldRevisions!: Table<WorldRevision, number>
   worldReleases!: Table<WorldRelease, number>
+  worldNarrativeIndexCaches!: Table<WorldNarrativeIndexCacheV1, number>
   worldDerivations!: Table<WorldDerivationV1, number>
   workspaceDocuments!: Table<WorkspaceDocumentBindingV1, number>
   adaptationProjects!: Table<AdaptationProject, number>
@@ -461,6 +470,7 @@ export class StoryForgeDB extends Dexie {
     this.version(9).stores({ ...STORYFORGE_STORES_V9, chatAuthoringDrafts: STORYFORGE_STORES.chatAuthoringDrafts })
     this.version(10).stores(STORYFORGE_STORES_V10)
     this.version(11).stores(STORYFORGE_STORES_V11)
+    this.version(12).stores(STORYFORGE_STORES_V12)
     this.version(STORYFORGE_SCHEMA_VERSION).stores(STORYFORGE_STORES)
   }
 }

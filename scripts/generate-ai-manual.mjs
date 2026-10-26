@@ -143,6 +143,31 @@ function extractContextSources() {
 }
 
 // ── ④ FIELD_REGISTRY 可写字段(target → field 列表) ──
+function narrativeProjectorFields() {
+  const sourceFile = parseSource('src/lib/registry/project-tables.ts')
+  const byTarget = new Map()
+  let metadata = []
+  visit(sourceFile, node => {
+    if (ts.isVariableDeclaration(node) && node.name.getText(sourceFile) === 'NARRATIVE_METADATA_FIELDS_V1') {
+      const initializer = ts.isAsExpression(node.initializer) ? node.initializer.expression : node.initializer
+      metadata = stringArrayValue(initializer)
+    }
+  })
+  if (!metadata.length) throw new Error('Narrative metadata declaration missing')
+  visit(sourceFile, node => {
+    if (!ts.isObjectLiteralExpression(node)) return
+    const target = stringValue(objectProperty(node, 'name')?.initializer)
+    const semantic = objectProperty(node, 'worldSemantic')?.initializer
+    if (!target || !semantic || !ts.isObjectLiteralExpression(semantic)) return
+    for (const property of semantic.properties) {
+      const call = ts.isSpreadAssignment(property) ? property.expression : null
+      if (!call || !ts.isCallExpression(call) || call.expression.getText(sourceFile) !== 'NARRATIVE_PROJECTOR_V1') continue
+      byTarget.set(target, [...metadata, ...stringArrayValue(call.arguments[3])].filter(field => field !== 'narrativeAuthorityV1'))
+    }
+  })
+  return byTarget
+}
+
 function extractFields() {
   const sourceFile = parseSource('src/lib/registry/field-registry.ts')
   const byTarget = {}
@@ -153,6 +178,7 @@ function extractFields() {
     const field = stringValue(node.arguments[1])
     if (target && field) (byTarget[target] ??= new Set()).add(field)
   })
+  for (const [target, fields] of narrativeProjectorFields()) for (const field of fields) (byTarget[target] ??= new Set()).add(field)
   for (const target of Object.keys(byTarget)) {
     byTarget[target] = [...byTarget[target]].sort()
   }
@@ -175,6 +201,23 @@ function extractAdoptionExtensions() {
       reviewAfter: stringValue(objectProperty(node, 'reviewAfter')?.initializer) ?? '',
     })
   })
+  const constants = new Map()
+  visit(sourceFile, node => {
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.name.text.startsWith('NARRATIVE_ADOPTION_')) {
+      constants.set(node.name.text, node.initializer)
+    }
+  })
+  const entrypoints = stringArrayValue(constants.get('NARRATIVE_ADOPTION_ENTRYPOINTS'))
+  const policyRegistry = stringValue(constants.get('NARRATIVE_ADOPTION_POLICY'))
+  const reviewAfter = stringValue(constants.get('NARRATIVE_ADOPTION_REVIEW_AFTER'))
+  if (!entrypoints.length || !policyRegistry || !reviewAfter) throw new Error('Narrative adoption contract missing')
+  for (const target of narrativeProjectorFields().keys()) {
+    const existing = extensions.find(extension => extension.target === target)
+    if (existing) {
+      existing.entrypoints.push(...entrypoints)
+      existing.policyRegistry += ` + ${policyRegistry}`
+    } else extensions.push({ id: `narrative-annotation-${target}`, target, policyRegistry, entrypoints, reviewAfter })
+  }
   return extensions
 }
 
@@ -324,7 +367,7 @@ function buildMarkdown() {
   // 三、可写字段
   lines.push('## 三、AI 可写字段（FIELD_REGISTRY · adopt 写什么）')
   lines.push('')
-  lines.push('AI 输出经 `adopt({ target, data })` 写回,只有这里登记的字段可写(别名自动归一)。')
+  lines.push('AI 输出只可提议这里登记的规范字段。普通写回经 `adopt({ target, data })`；标注领域政策的字段必须经过相应扩展的确认、引用和来源 CAS 校验。叙事确认凭据是系统字段，模型不得签发或嵌套提供。')
   lines.push('')
   lines.push('| 目标表 | 可写字段 |')
   lines.push('|---|---|')

@@ -10,6 +10,45 @@ import { parseTtrpgRuntimeStateV2 } from './open-runtime-contract'
 import { projectTtrpgOpenMemoryRowV1, assertTtrpgOpenMemoryLocatorV1 } from './open-memory-proof'
 import { stableProductRuntimeJsonV1 as stable } from '../product/runtime-values'
 import { cloneTtrpgOpenAudioMediaV1 } from './open-audio-media'
+import { runtimeInstanceTablesV1, transactionTablesForReferenceCascade } from '../registry/lifecycle'
+import { prepareReleasedProductRuntimeSessionRecordV1, preparePreviewProductRuntimeSessionRecordV1,
+  insertPreparedProductRuntimeSessionV1, type CreateProductRuntimeSessionInput } from '../product/runtime-core'
+
+/** Open TTRPG owns cutpoint authorization, source CAS and media/memory cloning. */
+export async function createTtrpgRuntimeOwnedBranchV1(input: {
+  parent: ProductRuntimeSession; state: ProductRuntimeState; childInput: CreateProductRuntimeSessionInput
+  events: ProductRuntimeEvent[]; throughSequence: number
+}): Promise<ProductRuntimeSession | null> {
+  const { parent, state, childInput, events, throughSequence } = input
+  if (!state.ttrpg || !('runFormat' in state.ttrpg) || state.ttrpg.runFormat !== 'open') return null
+  if (parent.kind !== 'ttrpg' || childInput.kind !== 'ttrpg' || parent.id == null) {
+    throw new Error('[ttrpg] open 分支不属于跑团实例')
+  }
+  const release = parent.productReleaseId == null ? null : await db.productReleases.get(parent.productReleaseId)
+  const build = parent.productBuildId == null ? null : await db.productBuilds.get(parent.productBuildId)
+  const lineage = { parentSessionId: parent.id, parentThroughSequence: throughSequence }
+  const prepared = release
+    ? await prepareReleasedProductRuntimeSessionRecordV1({ ...childInput, worldId: parent.worldId, workId: parent.workId,
+      productReleaseId: parent.productReleaseId!, origin: 'branch' }, lineage)
+    : build ? await preparePreviewProductRuntimeSessionRecordV1({ ...childInput, worldId: parent.worldId, workId: parent.workId,
+      productBuildId: parent.productBuildId!, expectedPreviewHash: build.previewHash!, runtimeSourceHash: parent.runtimeSourceHash!,
+      origin: 'branch' }, lineage)
+      : (() => { throw new Error('[ttrpg] open 分支冻结运行源不存在') })()
+  const cutEvents = events.filter(event => event.sequence <= throughSequence).sort((a, b) => a.sequence - b.sequence)
+  const tables = [...new Set([db.productReleases, db.productBuilds, ...runtimeInstanceTablesV1(),
+    ...transactionTablesForReferenceCascade('productRuntimeSessions'), ...transactionTablesForReferenceCascade('mediaBlobObjects')])]
+  return db.transaction('rw', tables, async () => {
+    const currentParent = await db.productRuntimeSessions.get(parent.id!)
+    const currentSource = release ? await db.productReleases.get(release.id!) : await db.productBuilds.get(build!.id!)
+    const currentEvents = (await db.productRuntimeEvents.where('sessionId').equals(parent.id!).toArray())
+      .filter(event => event.sequence <= throughSequence).sort((a, b) => a.sequence - b.sequence)
+    if (stable(currentParent) !== stable(parent) || stable(currentSource) !== stable(release ?? build)
+      || stable(currentEvents) !== stable(cutEvents)) throw new Error('[ttrpg] open 分支创建期间父切点或冻结来源已变化')
+    const child = await insertPreparedProductRuntimeSessionV1(prepared)
+    await cloneTtrpgRuntimeBranchExtensionsV1({ parent, child, throughSequence, state, events })
+    return child
+  })
+}
 
 /**
  * Clone the TTRPG-owned side tables represented by a replayed branch state.

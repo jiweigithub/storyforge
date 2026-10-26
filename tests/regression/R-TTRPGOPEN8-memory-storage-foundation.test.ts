@@ -23,7 +23,7 @@ describe('R-TTRPGOPEN8 unique memory storage foundation', { timeout: 60000 }, ()
   afterEach(() => db.close())
   it('roundtrips the closed memory shape with remapped instance/World/Work while preserving private reliability and evidence hash', async () => {
     const f = await setup(), backup = await exportProjectJSON(f.scope.projectId)
-    expect(backup.version).toBe(16)
+    expect(backup.version).toBe(CURRENT_BACKUP_VERSION)
     expect(backup.ttrpgNarrativeMemories).toHaveLength(1)
     expect(backup.ttrpgNarrativeMemories[0]).not.toHaveProperty('sessionId')
     const projectId = await importProjectJSON(backup)

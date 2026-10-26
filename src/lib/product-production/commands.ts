@@ -6,6 +6,7 @@ import { canReviseTextContentBuildV1, createTextContentRevisionPlanV1 } from './
 import type { prepareTtrpgOpenContentRevisionV1 } from '../ttrpg/open-production-content-revision'
 import type { prepareProductProductionLocalNoDispatchBookingV1 } from './local-no-dispatch-booking'
 import Dexie from 'dexie'
+import { readTtrpgProductSourcePlanV1, verifyTtrpgOpenProductionSourcePlanV1 } from '../ttrpg/production-source-plan'
 import { db } from '../db/schema'
 import type {
   ConfirmedProductBriefV1,
@@ -18,7 +19,7 @@ import type {
   ProductProductionCommandRecordV1,
   ProductProductionCommandV1,
   ProductProductionRecordV1,
-  ProductSourcePlanV1,
+  ProductSourcePlan,
   TextOpenWorldCreatorBriefV1,
   TextOpenWorldCreatorSourceBindingV1,
   TextOpenWorldCreatorSourceLocatorV1,
@@ -31,6 +32,7 @@ import { parseProductProductionBriefV3, parseProductProductionCommandV1 } from '
 import {
   createConfirmedProductBriefV1,
   createProductProductionSourcePlanV1,
+  refreezeProductProductionEvolutionSourcePlanV2,
   parseProductProductionSourcePlanV1,
 } from './source-contracts'
 import {
@@ -38,7 +40,7 @@ import {
   type TtrpgProductionBriefContentV3,
 } from '../ttrpg/production-brief-v3'
 import { assertFormalProductProductionStartV1 } from '../product/source-contracts'
-import { createWorldReferenceV1 } from '../product/source'
+import { createWorldReferenceV1, createWorldReference } from '../product/source'
 import { assertAiTownWorldSourceSelectionHashV1 } from '../ai-town/contracts'
 import {
   createProductProductionPlanV3,
@@ -1057,7 +1059,7 @@ async function applyCommand(input: {
   production: ProductProductionRecordV1 & { id: number }
   command: ProductProductionCommandV1
   preparedBriefHash: string | null
-  preparedSourcePlan: ProductSourcePlanV1 | null
+  preparedSourcePlan: ProductSourcePlan | null
   preparedConfirmedBrief: ConfirmedProductBriefV1 | null
   preparedTtrpgOpenBrief?: TtrpgOpenBriefCommandPreparationV3 | null
   preparedCreatorSource: {
@@ -2892,7 +2894,7 @@ async function applyCommand(input: {
   if (production.productType === 'ttrpg') {
     if (previous.sourceWorldReleaseId == null || priorBrief.source.worldContentHash !== previous.sourceWorldContentHash) reject('source-stale','演化缺少实际冻结世界定位或内容 hash')
     if (evolvedOpen) {
-      const sourcePlan = await Dexie.waitFor(parseProductProductionSourcePlanV1(previous))
+      const sourcePlan = await Dexie.waitFor(readTtrpgProductSourcePlanV1(previous))
       if (sourcePlan.worldReference.localReleaseRecordId !== previous.sourceWorldReleaseId
         || sourcePlan.worldReference.releaseHash !== previous.sourceWorldContentHash
         || sourcePlan.worldReference.referenceHash !== evolvedOpen.worldReference.referenceHash
@@ -2937,7 +2939,7 @@ async function applyCommand(input: {
       ...priorBrief.source,
       // A new author revision receives the current row locator; the original
       // frozen Brief and hash remain untouched after import remapped IDs.
-      worldReleaseId: production.productType === 'ttrpg' ? previous.sourceWorldReleaseId : priorBrief.source.worldReleaseId,
+      worldReleaseId: previous.sourceWorldReleaseId,
       // Evolution lineage belongs to evolution.base/userGoal. Product source
       // semantics remain public, authored facts and must never become a repair
       // prompt. Recover the latest non-evolution revision so legacy polluted
@@ -2963,6 +2965,9 @@ async function applyCommand(input: {
   })
   const revision = await nextBriefRevision(production.id)
   const briefHash = await Dexie.waitFor(hashProductProductionValueV2(nextBrief))
+  const sourcePlan = await Dexie.waitFor(refreezeProductProductionEvolutionSourcePlanV2({
+    previous, nextBrief, createdAt: now,
+  }))
   await db.productProductionBriefs.add(stampNewRecord(scope, 'productProductionBriefs', {
     projectId: scope.projectId, worldId: scope.worldId, workId: scope.workId,
     productionId: production.id, revision, parentRevision: previous.revision, status: 'draft' as const,
@@ -2975,8 +2980,8 @@ async function applyCommand(input: {
       evolutionImpact: nextBrief.evolution,
     }),
     briefJson: canonicalProductProductionJsonV2(nextBrief), briefHash,
-    sourcePlanJson: previous.sourcePlanJson,
-    sourcePlanHash: previous.sourcePlanHash,
+    sourcePlanJson: sourcePlan.version === 1 ? previous.sourcePlanJson : canonicalProductProductionJsonV2(sourcePlan),
+    sourcePlanHash: sourcePlan.planHash,
     confirmedBriefJson: '{}',
     confirmedBriefHash: '',
     authorizedAt: null, createdAt: now,
@@ -2999,7 +3004,7 @@ async function executeTransaction(input: {
   command: ProductProductionCommandV1
   payloadHash: string
   preparedBriefHash: string | null
-  preparedSourcePlan: ProductSourcePlanV1 | null
+  preparedSourcePlan: ProductSourcePlan | null
   preparedConfirmedBrief: ConfirmedProductBriefV1 | null
   preparedTtrpgOpenBrief?: TtrpgOpenBriefCommandPreparationV3 | null
   preparedCreatorSource: {
@@ -3312,7 +3317,7 @@ export async function executeProductProductionCommand(input: {
   const preparedBriefHash = command.type === 'save-brief-revision' && !input.preparedTtrpgOpenBrief
     ? await hashProductProductionValueV2(command.brief)
     : null
-  let preparedSourcePlan: ProductSourcePlanV1 | null = null
+  let preparedSourcePlan: ProductSourcePlan | null = null
   let preparedConfirmedBrief: ConfirmedProductBriefV1 | null = null
   let preparedCreatorSource: {
     locator: TextOpenWorldCreatorSourceLocatorV1
@@ -3334,7 +3339,8 @@ export async function executeProductProductionCommand(input: {
   let preparedCreatorMedia: TextOpenWorldCreatorMediaPreparationV1 | null = input.preparedCreatorMedia ?? null
   let preparedCreatorMediaAuthorization: TextOpenWorldCreatorMediaAuthorizationV1 | null = null
   const preparedWorldReferenceHash = command.type === 'create-intent'
-    ? (await createWorldReferenceV1(command.worldReleaseId)).referenceHash
+    ? (await (command.productType === 'character-interaction' || command.productType === 'avg'
+      ? createWorldReference(command.worldReleaseId) : createWorldReferenceV1(command.worldReleaseId))).referenceHash
     : null
   const preparedTextRevision = command.type === 'revise-text-content'
     ? await prepareTextContentRevisionV1(scope, input.productionId!, command) : null
@@ -3503,8 +3509,8 @@ export async function executeProductProductionCommand(input: {
         if (storedBrief.aiTown) await assertAiTownWorldSourceSelectionHashV1(storedBrief.aiTown.sourceSelection)
         preparedSourcePlan = await parseProductProductionSourcePlanV1(briefRow)
         if (storedBrief.ttrpgOpen) {
-          const actualOpenPlan = await createProductProductionSourcePlanV1({ scope, productionKey: production.productionKey,
-            brief: storedBrief, verifiedSourcePlan: preparedSourcePlan })
+          const actualOpenPlan = await verifyTtrpgOpenProductionSourcePlanV1({ scope, productionKey: production.productionKey,
+            brief: storedBrief, verifiedSourcePlan: await readTtrpgProductSourcePlanV1(briefRow) })
           if (actualOpenPlan.planHash !== preparedSourcePlan.planHash) {
             throw new Error('[product-production] open 制作来源已变化，不能开始')
           }

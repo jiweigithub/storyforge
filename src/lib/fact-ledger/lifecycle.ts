@@ -1,5 +1,5 @@
 import { db } from '../db/schema'
-import type { FactStatus } from '../types/temporal-fact'
+import type { FactStatus, TemporalFact } from '../types/temporal-fact'
 
 const now = () => Date.now()
 
@@ -23,7 +23,7 @@ export async function remapTemporalFactCharacterRefs(args: {
   let touched = 0
   for (const fact of rows) {
     if (fact.id == null) continue
-    const patch: Record<string, unknown> = {}
+    const patch: Partial<TemporalFact> = {}
     let changed = false
 
     if (fact.characterId === args.fromCharacterId) {
@@ -62,7 +62,7 @@ export async function detachTemporalFactsForDeletedChapters(chapterIds: number[]
   let touched = 0
   for (const fact of rows) {
     if (fact.id == null) continue
-    const patch: Record<string, unknown> = {}
+    const patch: Partial<TemporalFact> = {}
     let changed = false
     let nextStatus: FactStatus | null = null
 

@@ -146,6 +146,7 @@ function fail(code: string, message: string): never {
 }
 
 function assertScope(scope: FrozenResourceScopeV1): { releaseId: number; releaseHash: string } {
+  if (scope.characterId !== undefined) fail('unsupported', '旧版世界不支持角色视角；请使用带授权的叙事查询')
   if (!Number.isSafeInteger(scope.worldReleaseId) || Number(scope.worldReleaseId) < 1) {
     fail('scope', '冻结 scope 缺少 worldReleaseId')
   }
@@ -428,6 +429,7 @@ async function requestHash(input: ResourceListInputV1 | ResourceSearchInputV1, f
     entityKeys: 'entityKeys' in input ? [...(input.entityKeys ?? [])].sort() : [],
     storyArcKeys: 'storyArcKeys' in input ? [...(input.storyArcKeys ?? [])].sort() : [],
     timeRange: 'timeRange' in input ? input.timeRange ?? null : null,
+    limit: input.limit,
   })
 }
 
@@ -454,10 +456,21 @@ async function page(input: ResourceListInputV1 | ResourceSearchInputV1): Promise
     fail('cursor', '世界资源 cursor 不属于当前 release/filter')
   }
   const kinds = new Set(input.kinds ?? WORLD_RELEASE_RESOURCE_PROVIDER_V1.kinds)
+  if ([...kinds].some(kind => !WORLD_RELEASE_RESOURCE_PROVIDER_V1.kinds.includes(kind))) fail('unsupported', '世界目录不支持请求的资源类型')
+  if ('timeRange' in input && input.timeRange) fail('unsupported', '旧版世界没有独立时间轴索引；不能忽略时间条件')
   const query = 'query' in input ? input.query.trim().toLocaleLowerCase('zh-CN') : ''
   if ('query' in input && !query) fail('query', '搜索 query 不能为空')
-  const all = (await projections(loaded)).filter(item => {
+  const projected = await projections(loaded)
+  const available = new Map(projected.map(item => [item.descriptor.resourceKey, item.descriptor]))
+  const entityKeys = 'entityKeys' in input ? input.entityKeys ?? [] : []
+  const storyArcKeys = 'storyArcKeys' in input ? input.storyArcKeys ?? [] : []
+  if ([...entityKeys, ...storyArcKeys].some(key => !available.has(key))
+    || storyArcKeys.some(key => available.get(key)!.kind !== 'story-arc')) fail('access-unavailable', '请求的资源身份不可用')
+  const matches = (descriptor: ContextResourceDescriptorV1, keys: string[]) => !keys.length
+    || keys.some(key => descriptor.resourceKey === key || descriptor.relations.some(relation => relation.targetResourceKey === key))
+  const all = projected.filter(item => {
     if (!kinds.has(item.descriptor.kind)) return false
+    if (!matches(item.descriptor, entityKeys) || !matches(item.descriptor, storyArcKeys)) return false
     if (!query) return true
     const searchable = [
       item.descriptor.resourceKey,
@@ -493,6 +506,7 @@ function capped(content: string, maxTokens: number): string {
   if (!Number.isSafeInteger(maxTokens) || maxTokens < 1 || maxTokens > MAX_READ_TOKENS) fail('budget', 'maxTokens 非法')
   if (estimateTokens(content) <= maxTokens) return content
   const marker = '\n…（WorldRelease resource 已按显式预算截断；可提高预算或读取 original）'
+  if (estimateTokens(marker) > maxTokens) fail('budget', '显式预算不足以容纳截断说明；拒绝返回超预算内容')
   let low = 0
   let high = content.length
   while (low < high) {
@@ -563,11 +577,24 @@ export const WORLD_RELEASE_RESOURCE_PROVIDER_V1: ContextResourceProviderV1 = {
   read,
   readOriginal,
   fingerprint: async scope => (await load(scope)).fingerprint,
+  worldQuery: {
+    openAuthor: async input => (await import('./world-release-query-provider')).WORLD_RELEASE_QUERY_PROTOCOL_V1.openAuthor(input),
+    openPreparation: async input => (await import('./world-release-query-provider')).WORLD_RELEASE_QUERY_PROTOCOL_V1.openPreparation(input),
+    openProduction: async input => (await import('./world-release-query-provider')).WORLD_RELEASE_QUERY_PROTOCOL_V1.openProduction(input),
+    describe: async access => (await import('./world-release-query-provider')).WORLD_RELEASE_QUERY_PROTOCOL_V1.describe(access),
+    bind: async (access, narrowing) => (await import('./world-release-query-provider')).WORLD_RELEASE_QUERY_PROTOCOL_V1.bind(access, narrowing),
+    query: async (access, query) => (await import('./world-release-query-provider')).WORLD_RELEASE_QUERY_PROTOCOL_V1.query(access, query),
+    close: async access => (await import('./world-release-query-provider')).WORLD_RELEASE_QUERY_PROTOCOL_V1.close(access),
+  },
 }
 
 /** Stable neutral protocol names used by product adapters and non-Agent tools. */
 export async function searchWorldReleaseV1(input: ResourceSearchInputV1): Promise<ResourcePageV1> {
   return WORLD_RELEASE_RESOURCE_PROVIDER_V1.searchMetadata(input)
+}
+
+export async function listWorldReleaseV1(input: ResourceListInputV1): Promise<ResourcePageV1> {
+  return WORLD_RELEASE_RESOURCE_PROVIDER_V1.listMetadata(input)
 }
 
 export async function readWorldResourceV1(input: ResourceReadInputV1): Promise<ContextResourceReadV1> {
@@ -647,4 +674,20 @@ export async function openWorldReleaseV1(input: {
     scope,
     description: await describeWorldReleaseV1(scope),
   }
+}
+
+/** Author browser dispatch. Old consumers continue to explicitly request V1;
+ * v4 reads require the separately bound perspective capability. */
+export async function openWorldReleaseAuthorBrowserV1(input: {
+  localReleaseRecordId: number; expectedProjectId: number; expectedWorldId: number
+}): Promise<{ version: 3; opened: OpenWorldReleaseV1 } | { version: 4; access: import('../types/world-query').WorldQueryAccessV1 }> {
+  const release = await db.worldReleases.get(input.localReleaseRecordId)
+  if (!release?.id || release.projectId !== input.expectedProjectId || release.worldId !== input.expectedWorldId) fail('open-scope', '世界版本不属于请求的作者工作区')
+  let version: unknown
+  try { version = (JSON.parse(release.manifestJson) as { version?: unknown }).version } catch { fail('release-codec', '世界版本编码损坏') }
+  if (version === 4) return { version: 4, access: await WORLD_RELEASE_RESOURCE_PROVIDER_V1.worldQuery!.openAuthor({
+    scope: { projectId: input.expectedProjectId, worldId: input.expectedWorldId }, localReleaseRecordId: release.id,
+    view: 'canon', perspective: { kind: 'author' }, knowledgeThrough: null, disclosedThrough: null }) }
+  if (version !== 3) fail('unsupported', '此世界版本不支持当前浏览器')
+  return { version: 3, opened: await openWorldReleaseV1(input) }
 }

@@ -40,6 +40,9 @@ export interface WorldReferenceCatalogEntryV1 {
   label: string
   createdAt: number
 }
+export type WorldReferenceCatalogEntry = Omit<WorldReferenceCatalogEntryV1, 'reference'> & {
+  reference: WorldReferenceV1 | import('./world-query').WorldReferenceV2
+}
 
 export type WorldRequirementLevelV1 =
   | 'stable-required'
@@ -95,7 +98,6 @@ export interface ContextManifestPointerV1 {
   attempt: number
   manifestHash: string
 }
-
 /** Local locator accepted while aggregating evidence. It is deliberately not
  * serialized into ProductSourceManifest so import/remapping cannot change the
  * product release identity. */
@@ -143,6 +145,64 @@ export interface ProductSourcePlanV1 {
   createdAt: number
   planHash: string
 }
+
+/** Exact read authority. V1 stays readable with its original count-based
+ * semantics; saving an enhanced product Brief creates a new V2 plan. */
+export interface ProductSourcePlanV2 extends Omit<ProductSourcePlanV1, 'version' | 'worldReference'> {
+  version: 2
+  worldReference: WorldReferenceV1 | import('./world-query').WorldReferenceV2
+  compiler: {
+    compilerId: string
+    compilerVersion: 1
+    briefHash: string
+    configurationHash: string
+    resolverVersion: 'world-neutral-closure-v2' | 'narrative-neutral-closure-v1'
+  }
+  configuration: {
+    inheritStoryContinuity: boolean
+    allowCrossWorld: boolean
+    roleBindings: Record<string, string[]>
+  }
+  exact: {
+    authorResourceKeys: string[]
+    dependencyResourceKeys: string[]
+    requiredResourceKeys: string[]
+    permittedResourceKeys: string[]
+    closureHash: string
+    resources: Array<{
+      resourceKey: string
+      minimumDepth: 'original'
+      area: WorldCapabilityArea
+      resourceKind: string
+      contextKind: ContextResourceKind
+      contentHash: string
+      /** Portable references omit only the local WorldRelease row locator. */
+      sourceRefsHash: string
+    }>
+    requirements: Array<{
+      requirementKey: string
+      requiredResourceKeys: string[]
+      condition: null | {
+        expressionVersion: 'brief-derived-boolean-v1'
+        field: 'inheritStoryContinuity' | 'allowCrossWorld'
+        value: boolean
+        result: boolean
+        briefHash: string
+      }
+    }>
+    slices: Array<{
+      key: 'adaptation' | 'content' | 'integration'
+      purpose: string
+      resourceKeys: string[]
+    }>
+    views: ['canon']
+    audiences: ['product-author']
+    branches: ['canon']
+    timeBound: null
+  }
+}
+
+export type ProductSourcePlan = ProductSourcePlanV1 | ProductSourcePlanV2
 
 /** Cross-product logical projection of a product-owned confirmed Brief row. */
 export interface ConfirmedProductBriefV1 {
@@ -199,6 +259,17 @@ export interface ProductSourceManifestV1 {
   manifestHash: string
 }
 
+export interface ProductSourceManifestV2 extends Omit<ProductSourceManifestV1, 'version'> {
+  version: 2
+  exactEvidence: {
+    compilerHash: string
+    closureHash: string
+    requiredResourceKeys: string[]
+    resourceRequirementsHash: string
+  }
+}
+export type ProductSourceManifest = ProductSourceManifestV1 | ProductSourceManifestV2
+
 export interface ProductReleaseLineageV1 {
   schema: 'storyforge.product-release-lineage'
   version: 1
@@ -221,4 +292,20 @@ export interface ProductReleaseLineageV1 {
   }
   createdAt: number
   lineageHash: string
+}
+/** Runtime inherits a frozen plan; these products make no direct world reads. */
+export interface ProductRuntimeSourceManifestV1 {
+  schema: 'storyforge.product-runtime-source-manifest'
+  version: 1
+  productType: 'character-interaction' | 'avg'
+  sourceKind: 'release' | 'build-preview'
+  sourceIdentityHash: string
+  packageHash: string
+  sourceWorldContentHash: string
+  sourcePlanHash: string
+  worldReferenceHash: string
+  inheritedSourceManifestHash: string | null
+  readMode: 'frozen-product-package'
+  directWorldReads: []
+  manifestHash: string
 }

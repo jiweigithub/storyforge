@@ -18,10 +18,11 @@ import type {
   TextOpenWorldCreatorSourceLocatorV1,
   TextOpenWorldSourceRightsBasisV1,
   WorkspaceScope,
-  WorldReferenceCatalogEntryV1,
+  WorldReferenceCatalogEntry,
 } from '../types'
 import { assertRecordInScope, resolveScope } from '../workspace/scope'
 import { listWorldReferenceCatalogV1 } from '../product/source'
+import { listWorldReferenceCatalog } from '../world-engine/world-reference-v2'
 import { prepareProductProductionAdoption, publishProductProductionBuild } from './adoption'
 import {
   canReviseTextAdventureContentBeforeMediaV1,
@@ -41,6 +42,7 @@ import {
 } from './recovery-policy'
 import { draftProductProductionBriefV3, suggestProductStartingPoints } from './consultation'
 import { parseProductProductionBriefV3 } from './contracts'
+import { parseProductProductionSourcePlanV1 } from './source-contracts'
 import {
   inspectConfiguredTextCapabilityV1,
   resolveConfiguredTextCapabilityV1,
@@ -964,13 +966,15 @@ export async function authorizeTextOpenWorldCreatorProductionStartV1(
 export async function listProductProductionWorkspaceV1(
   scopeInput: WorkspaceScope,
   allowedProducts: readonly ProductionProductKindV1[],
+  option: { narrativePreview?: boolean } = {},
 ): Promise<{
-  worldReleases: WorldReferenceCatalogEntryV1[]
+  worldReleases: WorldReferenceCatalogEntry[]
   productions: ProductProductionRecordV1[]
 }> {
   const scope = await resolveScope({ scope: scopeInput })
   const [worldReleases, rows] = await Promise.all([
-    listWorldReferenceCatalogV1(scope),
+    option.narrativePreview && allowedProducts.length === 1 && ['character-interaction', 'avg'].includes(allowedProducts[0])
+      ? listWorldReferenceCatalog(scope) : listWorldReferenceCatalogV1(scope),
     db.productProductions.where('workId').equals(scope.workId).toArray(),
   ])
   const productions: ProductProductionRecordV1[] = []
@@ -1070,6 +1074,7 @@ export async function readProductProductionDetailsV1(
 export async function consultProductProductionStartV1(input: {
   scope: WorkspaceScope
   worldReleaseId: number
+  productType?: ProductionProductKindV1
 }) {
   return suggestProductStartingPoints(input)
 }
@@ -1789,6 +1794,7 @@ export async function runAuthorizedProductProductionV1(input: {
     : createConfiguredProductProductionExecutorV1({
       production: details.production, brief, mediaCapabilities,
       ...(authoredWithoutText ? { runText: async () => { throw new Error('[product-production-service] 作者确认的兼容开局不允许文本模型调用，请保留当前制作证据') } } : {}),
+      sourcePlan: await parseProductProductionSourcePlanV1(details.brief),
     })
   const projection = await runProductProductionUntilBlockedV1({
     scope, productionId: input.productionId, executor, capabilityBindings, signal: input.signal,

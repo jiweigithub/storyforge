@@ -17,6 +17,20 @@ export default tseslint.config(
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
+    // Historical Node diagnostic sources keep their original bytes and lint
+    // rules; declare only the runtime globals those archived probes used.
+    files: [
+      'tests/acceptance/narrative-world/raw/nw2e-checkpoint-20261015-v6/nw2e-record-hash-probe.mjs',
+      'tests/acceptance/narrative-world/raw/nw2e-checkpoint-20261015-v7/run.mjs',
+    ],
+    languageOptions: {
+      globals: {
+        performance: 'readonly', process: 'readonly', console: 'readonly',
+        TextEncoder: 'readonly', URL: 'readonly',
+      },
+    },
+  },
+  {
     files: ['**/*.{ts,tsx}'],
     plugins: { 'react-hooks': reactHooks },
     languageOptions: {

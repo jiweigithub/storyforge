@@ -27,6 +27,7 @@ import {
   worldReleaseSectionTables,
 } from '../../lib/world-engine/releases'
 import { useDialog } from '../shared/Dialog'
+import NarrativeCompilationPanel from './NarrativeCompilationPanel'
 
 interface Props {
   projectId: number
@@ -58,6 +59,7 @@ export default function WorldNarrativeReleasePanel({
   } | null>(null)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
+  const narrativePreview = import.meta.env.DEV && new URLSearchParams(window.location.search).has('narrative-preview')
 
   const load = useCallback(async () => {
     const resolved = await resolveScopeLike(projectId)
@@ -106,7 +108,7 @@ export default function WorldNarrativeReleasePanel({
       scope,
       label: revisionLabel,
       parentRevisionId: latestRevision?.id ?? null,
-      selectedTables: [...selectedSections].flatMap(worldReleaseSectionTables),
+      selectedTables: [...selectedSections].flatMap(section => worldReleaseSectionTables(section)),
     })
     setSelectedRevisionId(created.id!)
     setRevisionLabel('')
@@ -173,13 +175,17 @@ export default function WorldNarrativeReleasePanel({
           <label className="sf-world-pipeline-field">修订名称<input value={revisionLabel} onChange={event => setRevisionLabel(event.target.value)} placeholder={`例如：世界修订 ${revisions.length + 1}`} /></label>
           <label className="sf-world-pipeline-field">待发布修订<select value={selectedRevisionId ?? ''} onChange={event=>setSelectedRevisionId(Number(event.target.value)||null)}><option value="">选择冻结修订</option>{revisions.map(row=><option key={row.id} value={row.id}>修订 {row.revision} · {row.label}</option>)}</select></label>
           <div className="sf-world-pipeline-actions">
-            <button className="sf-button sf-button-secondary" onClick={createRevision} disabled={busy || selectedSections.size === 0}>
+            {!narrativePreview && <button className="sf-button sf-button-secondary" onClick={createRevision} disabled={busy || selectedSections.size === 0}>
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}冻结修订
-            </button>
+            </button>}
             <button className="sf-button sf-button-primary" onClick={publish} disabled={busy || !selectedRevision?.id || releases.some(release=>release.revisionId === selectedRevision.id)}>
               <Rocket className="h-4 w-4" />发布版本
             </button>
           </div>
+          {narrativePreview && scope && <NarrativeCompilationPanel scope={scope}
+            selectedTables={[...selectedSections].flatMap(section => worldReleaseSectionTables(section, 4))}
+            label={revisionLabel} parentRevisionId={latestRevision?.id ?? null} revisions={revisions} disabled={busy}
+            onSealed={async revision => { setSelectedRevisionId(revision.id!); setRevisionLabel(''); await load() }} />}
           <div className="sf-world-pipeline-status"><span>修订 {revisions.length}</span><span>发布 {releases.length}</span>{latestRelease && <span>当前 v{latestRelease.version}</span>}</div>
           {revisionDiff && <div className="sf-world-revision-diff" role="region" aria-label="最新修订差异">
             <strong>最新修订相对修订 {revisions[1]?.revision}（数据表计数）</strong>

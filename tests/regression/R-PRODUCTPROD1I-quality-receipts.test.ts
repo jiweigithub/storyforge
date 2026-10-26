@@ -97,6 +97,7 @@ async function fixture() {
   const now = Date.now()
   const brief = commercialBrief()
   const briefHash = await hashProductProductionValueV2(brief)
+  const sourcePlan = { schema: 'storyforge.product-source-plan', version: 1, worldReleaseId: 1 }
   const owned = await createWorkspace({
     name: 'browser receipt fixture',
     genres: ['interactive-fiction'],
@@ -118,7 +119,7 @@ async function fixture() {
     sourceWorldReleaseId: 1, sourceWorldContentHash: PACKAGE_HASH,
     userIntentSummary: brief.intent.openingSituation, unresolvedJson: '[]', estimateJson: '{}',
     briefJson: canonicalProductProductionJsonV2(brief), briefHash,
-    sourcePlanJson: '{}', sourcePlanHash: PACKAGE_HASH,
+    sourcePlanJson: JSON.stringify(sourcePlan), sourcePlanHash: await hashProductProductionValueV2(sourcePlan),
     confirmedBriefJson: canonicalProductProductionJsonV2(brief), confirmedBriefHash: briefHash,
     authorizedAt: now, createdAt: now,
   })

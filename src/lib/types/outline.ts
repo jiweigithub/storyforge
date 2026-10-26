@@ -1,3 +1,4 @@
+import type { NarrativeDomainMetadataV1, NarrativeDomainFieldsV1 } from './narrative-domain'
 import type { RagDocumentMetadata } from './rag-library'
 
 /** 大纲节点类型 */
@@ -97,7 +98,9 @@ export interface ChapterPlanReconciliation {
 }
 
 /** 章节 */
-export interface Chapter extends RagDocumentMetadata {
+type ChapterNarrativeFieldsV1 = NarrativeDomainMetadataV1 & Pick<NarrativeDomainFieldsV1, 'narrativeDisclosuresV1'>
+
+export interface Chapter extends RagDocumentMetadata, ChapterNarrativeFieldsV1 {
   id?: number
   projectId: number
   outlineNodeId: number      // 关联的大纲节点

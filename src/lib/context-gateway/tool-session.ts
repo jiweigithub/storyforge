@@ -9,8 +9,9 @@ import type {
   FrozenResourceScopeV1,
 } from '../registry/types'
 import { normalizeContextAccessPolicyV1 } from './contracts'
+import type { WorldQueryAccessV1 } from '../types/world-query'
 
-const MAX_SOURCE_CAPABILITIES_PER_RESOURCE = 64
+export const MAX_SOURCE_CAPABILITIES_PER_RESOURCE = 64
 
 export interface ContextGatewayProviderBindingV1 {
   source: ContextSource
@@ -38,6 +39,8 @@ export interface ContextGatewayToolSessionV1 {
   readonly usage: { readCalls: number; retrievedTokens: number }
   readonly capabilities: Map<string, SourceRefCapabilityV1>
   readonly readSessionGuards?: readonly (() => Promise<void>)[]
+  /** Host-issued, unforgeable v4 perspective. Never supplied by model args. */
+  readonly worldQueryAccess?: WorldQueryAccessV1
 }
 
 export class ContextGatewayToolSessionErrorV1 extends Error {
@@ -56,6 +59,7 @@ export async function createContextGatewayToolSessionV1(input: {
   policy: ContextAccessPolicyV1
   allowedResourceKeys?: readonly string[]
   freezeProviderReads?: boolean
+  worldQueryAccess?: WorldQueryAccessV1
   excludedRecordResourceKeys?: readonly string[]
 }): Promise<ContextGatewayToolSessionV1> {
   const policy = normalizeContextAccessPolicyV1(input.policy, CONTEXT_SOURCES)
@@ -66,12 +70,17 @@ export async function createContextGatewayToolSessionV1(input: {
   if (policy.perKindMinimumTokens) Object.freeze(policy.perKindMinimumTokens)
   Object.freeze(policy)
   const allowed = new Set(policy.allowedSourceKeys)
-  let providers = CONTEXT_SOURCES
+  const registered = CONTEXT_SOURCES
     .filter((source): source is ContextSource & { resources: ContextResourceProviderV1 } => (
       allowed.has(source.key) && source.resources != null
     ))
     .map(source => ({ source, provider: source.resources }))
     .sort((left, right) => left.source.key.localeCompare(right.source.key))
+  if (input.worldQueryAccess && !registered.some(binding => binding.source.key === 'worldRelease')) fail('provider', '叙事读取未登记 worldRelease 来源')
+  let providers = await Promise.all(registered.map(async binding => input.worldQueryAccess && binding.source.key === 'worldRelease'
+    ? { source: binding.source, provider: await binding.provider.worldQuery!.bind(input.worldQueryAccess, {
+      allowedResourceKeys: input.allowedResourceKeys ?? null, allowedKinds: policy.allowedResourceKinds, maxTokens: policy.maxRetrievedTokens,
+    }) } : binding))
   if (!providers.length) fail('provider', 'Policy 没有可用的 CONTEXT_SOURCES Provider')
   if (providers.some(binding => binding.source.requiresResourceKeyAllowList) && input.allowedResourceKeys == null) {
     fail('resource-allow-list', '角色运行来源必须提供内核计算的明确资源 allow-list')
@@ -110,6 +119,7 @@ export async function createContextGatewayToolSessionV1(input: {
     usage: { readCalls: 0, retrievedTokens: 0 },
     capabilities: new Map(),
     readSessionGuards: Object.freeze(readSessionGuards),
+    ...(input.worldQueryAccess ? { worldQueryAccess: input.worldQueryAccess } : {}),
   }
 }
 

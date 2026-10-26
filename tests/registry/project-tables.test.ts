@@ -148,6 +148,18 @@ describe('PROJECT_TABLES 当前注册表', () => {
           'codexEntries',
           'temporalFacts',
           'cultivationProgress',
+          // Confirmed narrative evidence may reference a cultivation system
+          // from any of these governed owners; they share the same transaction.
+          'historicalTimelineEvents',
+          'importantLocations',
+          'characterRelations',
+          'chapters',
+          'foreshadows',
+          'storyArcs',
+          'storylineProgress',
+          'storyTimelineEvents',
+          'knowledgeLedger',
+          'worldGroups',
         ])
     })
   })

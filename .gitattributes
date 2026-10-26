@@ -19,3 +19,6 @@ src/lib/ttrpg/open-local-voice-transport.ts text eol=lf
 src/lib/ttrpg/open-voice-execution.ts text eol=lf
 src/lib/ttrpg/open-voice-execution-input.ts text eol=lf
 src/lib/ttrpg/open-voice-product-profile.ts text eol=lf
+# Verification evidence must keep the exact emitted bytes, including coverage
+# table padding and trailing blank lines. Source files retain normal checks.
+tests/acceptance/narrative-world/raw/** -text whitespace=-blank-at-eol,-blank-at-eof

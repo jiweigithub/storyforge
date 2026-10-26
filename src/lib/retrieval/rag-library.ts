@@ -16,6 +16,8 @@ import {
 } from '../types'
 import type { ContextResourceDescriptorV1 } from '../registry/types'
 import type { WorkspaceScope } from '../types/world-ownership'
+import type { RagAnnotationTargetSelectionV1, RagAnnotationTargetStateV1 } from '../types/rag-library'
+import { deriveNarrativeTargetStateV1 } from './narrative-target-state'
 import {
   assertRecordInScope,
   readOwnedRows,
@@ -27,9 +29,11 @@ import {
 import { REGISTRY_BY_NAME } from '../registry/project-tables'
 import { FIELD_BY_TARGET } from '../registry/field-registry'
 import { hashCanonicalValue } from '../agent/run/hash'
+import { canonicalNarrativeJsonV1 } from '../world-engine/narrative-json'
 import { ContextResourceIdentityError, isPortableResourceUidV1 } from '../context-gateway/resource-uid'
 import {
   CANON_RESOURCE_PROVIDER_V1,
+  CanonResourceProviderError,
   logicalFieldKeyFromResourceKeyV1,
   readCanonicalDescriptorV1,
 } from '../context-gateway/canon-provider'
@@ -130,16 +134,27 @@ function descriptorFieldLabel(
   return separator >= 0 ? descriptor.title.slice(separator + 3) : registered
 }
 
-async function listAllFieldDescriptors(scope: WorkspaceScope, worldGroupId: number | null): Promise<ContextResourceDescriptorV1[]> {
+async function listAllFieldDescriptors(scope: WorkspaceScope, worldGroupId: number | null,
+  onReadRestart?: () => void): Promise<ContextResourceDescriptorV1[]> {
   const frozen = { ...scope, worldGroupId }
-  const descriptors: ContextResourceDescriptorV1[] = []
-  let cursor: string | undefined
-  do {
-    const page = await CANON_RESOURCE_PROVIDER_V1.listMetadata({ scope: frozen, limit: 100, cursor })
-    descriptors.push(...page.items.filter(item => item.resourceKey.includes(':field:')))
-    cursor = page.nextCursor ?? undefined
-  } while (cursor)
-  return descriptors
+  for (let attempt = 0; ; attempt++) {
+    const descriptors: ContextResourceDescriptorV1[] = []
+    let cursor: string | undefined
+    try {
+      do {
+        const page = await CANON_RESOURCE_PROVIDER_V1.listMetadata({ scope: frozen, limit: 100, cursor })
+        descriptors.push(...page.items.filter(item => item.resourceKey.includes(':field:')))
+        cursor = page.nextCursor ?? undefined
+      } while (cursor)
+      return descriptors
+    } catch (error) {
+      // The original-evidence caller may restart a read once before any model
+      // request. Discard every old page; never combine catalog generations.
+      if (!onReadRestart || attempt !== 0 || !(error instanceof CanonResourceProviderError)
+        || !(error.code === 'catalog-mutated' || (cursor && error.code === 'cursor-scope'))) throw error
+      onReadRestart()
+    }
+  }
 }
 
 /** 当前资料目录投影：字段集合由 Canon Provider 派生，不维护第二份表或字段清单。 */
@@ -306,12 +321,17 @@ export async function readRagSelectionContext(input: {
   scope?: WorkspaceScope
   worldGroupId?: number | null
   entryKeys?: string[]
+  originalEvidence?: boolean
+  annotationTarget?: RagAnnotationTargetSelectionV1
   inputBudgetTokens?: number
   trace?: RagSelectionTraceCollector
 }): Promise<string> {
   input.trace?.clear()
+  if (input.annotationTarget && !input.originalEvidence) throw new Error('目标注释状态只允许通过精确原文模式读取')
   const requested = input.entryKeys ?? []
+  if (input.annotationTarget && !requested.length) throw new Error('注释目标必须包含在已选原文中')
   if (!requested.length) return ''
+  if (input.originalEvidence) return readRagOriginalSelectionV1(input)
   const library = await buildRagLibrary(input)
   const byKey = new Map(library.map(entry => [entry.key, entry]))
   const order = new Map(requested.map((key, index) => [key, index]))
@@ -348,6 +368,66 @@ export async function readRagSelectionContext(input: {
     if (capped.trimmed) input.trace?.trimmed.push(`${label}（字段 token 上限）`)
   }
   return blocks.join('\n\n')
+}
+
+export interface RagOriginalFieldV1 {
+  key: string
+  table: string
+  sourceUid: string
+  fieldPointer: string
+  text: string
+  contentHash: string
+  policyHash: string
+}
+
+/** Exact selection uses the existing resource permissions and original reader.
+ * The returned transport has stable identities only, so a restored candidate
+ * never points at another record merely because its local number was reused. */
+async function readRagOriginalSelectionV1(input: {
+  projectId: number; scope?: WorkspaceScope; worldGroupId?: number | null
+  entryKeys?: string[]; inputBudgetTokens?: number
+  annotationTarget?: RagAnnotationTargetSelectionV1
+}): Promise<string> {
+  const requested = input.entryKeys ?? []
+  if (requested.length > 64 || new Set(requested).size !== requested.length) throw new Error('原文选择必须唯一且不超过 64 个字段')
+  const scope = await resolveScope({ projectId: input.projectId, scope: input.scope })
+  const frozenScope = { ...scope, worldGroupId: input.worldGroupId ?? null }
+  let catalogReadRestarts = 0
+  const descriptors = await listAllFieldDescriptors(scope, frozenScope.worldGroupId, () => { catalogReadRestarts++ })
+  const fields: RagOriginalFieldV1[] = []
+  let targetState: RagAnnotationTargetStateV1 | undefined
+  for (const key of requested) {
+    const matches = descriptors.filter(descriptor => {
+      const field = logicalFieldKeyFromResourceKeyV1(descriptor.resourceKey)
+      return field != null && descriptor.resourceKey.includes(`${key.split('::')[0]}:field:`)
+        && makeRagEntryKey(key.split('::')[0], field) === key
+    })
+    if (matches.length !== 1) throw new Error(`选定原文不存在、不可读或身份不唯一：${key}`)
+    const descriptor = matches[0]
+    if (descriptor.sourceRefs.length !== 1) throw new Error('抽取需要未切片的单一原文字段')
+    const ref = descriptor.sourceRefs[0]
+    const row = await REGISTRY_BY_NAME.get(ref.table)?.table.get(ref.recordId as number) as RagRow | undefined
+    if (!row || !effectiveFieldPolicy(row, logicalFieldKeyFromResourceKeyV1(descriptor.resourceKey)!).enabled) {
+      throw new Error('选定资料字段已停用；未调用模型')
+    }
+    const original = await CANON_RESOURCE_PROVIDER_V1.readOriginal({ scope: frozenScope,
+      resourceKey: descriptor.resourceKey, sourceRef: ref, maxTokens: 100_000 })
+    if (original.contentHash !== ref.contentHash || original.descriptor.policyHash !== descriptor.policyHash
+      || (ref.anchor && (ref.anchor.start !== 0 || ref.anchor.end !== original.content.length))
+      || ref.field !== logicalFieldKeyFromResourceKeyV1(descriptor.resourceKey)) {
+      throw new Error('选定原文被裁剪或读取期间权限变化；请缩小选择后重试')
+    }
+    fields.push({ key, table: ref.table, sourceUid: key.split('::')[0],
+      fieldPointer: `/${ref.field.replace(/~/g, '~0').replace(/\//g, '~1')}`,
+      text: original.content, contentHash: original.contentHash, policyHash: descriptor.policyHash })
+    if (input.annotationTarget?.table === ref.table && input.annotationTarget.sourceUid === key.split('::')[0]) {
+      targetState = deriveNarrativeTargetStateV1(input.annotationTarget, row as unknown as Record<string, unknown>)
+    }
+  }
+  if (input.annotationTarget && !targetState) throw new Error('注释目标必须包含在已选原文中')
+  const text = canonicalNarrativeJsonV1({ version: 1, fields, catalogReadRestarts, ...(targetState ? { targetState } : {}) })
+  if (estimateTokens(text) > (input.inputBudgetTokens ?? 12_000)) throw new Error('选定原文超过输入预算；未裁剪，请缩小选择')
+  return text
 }
 
 export interface RecentRagRecall {

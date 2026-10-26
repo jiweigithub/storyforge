@@ -21,6 +21,8 @@ type RuntimeSourceInput = { scope: WorkspaceScope; source: ProductRuntimeSourceV
 type RuntimeSessionSourceInput = { scope: WorkspaceScope; session: ProductRuntimeSession }
 type LegacyVerifiedRuntimeSource = Omit<ResolvedProductRuntimeSourceV1, 'mediaResolver'>
 type VersionedVerifiedRuntimeSource = Omit<ResolvedProductRuntimeSourceWithTtrpgV2, 'mediaResolver'>
+import { assertProductRuntimeSourceSnapshotV2, runtimeSourceManifestFromBuildRecordsV1,
+  runtimeSourceManifestFromReleaseV1 } from '../product/runtime-source-manifest'
 
 export async function productRuntimeSourceForSessionV1(session: ProductRuntimeSession): Promise<ProductRuntimeSourceV1> {
   if (session.productReleaseId != null) return { kind: 'release', productReleaseId: session.productReleaseId }
@@ -36,11 +38,13 @@ export function verifyProductRuntimeSessionSourceV1(input: RuntimeSessionSourceI
 export function verifyProductRuntimeSessionSourceV1(input: RuntimeSessionSourceInput & { ttrpgProtocol?: 1 }): Promise<LegacyVerifiedRuntimeSource>
 export function verifyProductRuntimeSessionSourceV1(input: RuntimeSessionSourceInput & { ttrpgProtocol?: 1 | 2 }): Promise<VersionedVerifiedRuntimeSource>
 export async function verifyProductRuntimeSessionSourceV1(input: RuntimeSessionSourceInput & { ttrpgProtocol?: 1 | 2 }): Promise<VersionedVerifiedRuntimeSource> {
-  return verifyProductRuntimeSource({
+  const verified = await verifyProductRuntimeSource({
     scope: input.scope,
     source: await productRuntimeSourceForSessionV1(input.session),
     ttrpgProtocol: input.ttrpgProtocol,
   })
+  assertProductRuntimeSourceSnapshotV2({ canonSnapshot: input.session.canonSnapshotJson, manifest: verified.sourceManifest })
+  return verified
 }
 
 export function resolveProductRuntimeSource(input: RuntimeSourceInput & { ttrpgProtocol: 2 }): Promise<ResolvedProductRuntimeSourceWithTtrpgV2>
@@ -85,11 +89,13 @@ export async function verifyProductRuntimeSource(input: RuntimeSourceInput & { t
       : await verifyProductReleaseManifestV1(release.manifestJson)
     const runtimePackage = parsed.runtimePackage
     const packageHash = parsed.packageHash
+    const sourceManifest = await runtimeSourceManifestFromReleaseV1(parsed)
     return {
       source: input.source,
       runtimePackage,
       packageHash,
       runtimeSourceHash: packageHash,
+      ...(sourceManifest ? { sourceManifest } : {}),
     }
   }
 
@@ -121,10 +127,12 @@ export async function verifyProductRuntimeSource(input: RuntimeSourceInput & { t
   if (preview.runtimePackage.sourceWorld.contentHash !== brief.sourceWorldContentHash) {
     throw new Error('[product-runtime-source] Build Preview 的冻结世界来源证据损坏')
   }
+  const sourceManifest = await runtimeSourceManifestFromBuildRecordsV1({ build, brief })
   return {
     source: input.source,
     runtimePackage: preview.runtimePackage,
     packageHash: preview.packageHash,
     runtimeSourceHash: preview.packageHash,
+    ...(sourceManifest ? { sourceManifest } : {}),
   }
 }

@@ -6,7 +6,7 @@ import { resolveScope } from '../workspace/scope'
 import { createWorldReferenceV1 } from '../world-engine/world-reference'
 import { assertWorldSemanticReleaseCurrentV1 } from '../context-gateway/world-release-client'
 import { draftTtrpgOpenProductionCommonBriefV3 } from '../product-production/consultation'
-import { createProductProductionSourcePlanV1 } from '../product-production/source-contracts'
+import { createTtrpgProductSourcePlanV1 } from './production-source-plan'
 import { canonicalProductProductionJsonV2, hashProductProductionValueV2 } from '../product-production/hash'
 import { readTtrpgDraft } from './authoring-service'
 import { isTtrpgAuthoringSettingsV2, settingsFromTtrpgDraft } from './authoring-contract'
@@ -81,7 +81,7 @@ async function prepare(input: { scope: WorkspaceScope; revision: number }, origi
   const draftRecordHash = await hashProductProductionValueV2(draft), ruleRecordHash = await hashProductProductionValueV2(rule.record)
   const instance = await hashProductProductionValueV2({ scope, draftId: draft.id, revision: draft.revision,
     settingsHash, selectionHash, draftRecordHash, ruleRecordHash, worldReferenceHash: worldReference.referenceHash, rulePackHash: rule.record.contentHash })
-  const sourcePlan = await createProductProductionSourcePlanV1({ scope, productionKey: `ttrpg-authoring.${instance.slice(0, 40)}`,
+  const sourcePlan = await createTtrpgProductSourcePlanV1({ scope, productionKey: `ttrpg-authoring.${instance.slice(0, 40)}`,
     brief: common, ...(originalCreatedAt === undefined ? {} : { createdAt: originalCreatedAt }) })
   if (sourcePlan.worldReference.referenceHash !== worldReference.referenceHash) fail('来源计划与实际世界不一致')
   await verifyTtrpgOpenAuthoringSourceProvenanceV1({ sourcePlan, facts: policy.factPolicy.map(item => item.fact) })

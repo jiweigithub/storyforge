@@ -4,7 +4,7 @@ import { EventEmitter } from 'node:events'
 import { PassThrough, Writable } from 'node:stream'
 import { CodexRuntime, ISOLATION } from './runtime.mjs'
 
-function fixture(t, { account = { type: 'chatgpt', email: 'test@example.com' }, config = ISOLATION, instructions = [], model = 'test', tool = false, version = '0.162.0' } = {}) {
+function fixture(t, { account = { type: 'chatgpt', email: 'test@example.com' }, config = ISOLATION, instructions = [], model = 'test', tool = false, version = '0.162.0', events = [], completion = { status: 'completed' } } = {}) {
   const calls = []; const spawned = []
   const runtime = new CodexRuntime({ spawnProcess: (executable, args, options) => {
     spawned.push({ executable, args, options })
@@ -23,11 +23,12 @@ function fixture(t, { account = { type: 'chatgpt', email: 'test@example.com' }, 
       emit({ id: m.id, result: replies[m.method] ?? {} }); done()
       if (m.method === 'turn/start') queueMicrotask(() => {
         emit({ method: 'turn/started', params: { threadId: 'thread', turn: { id: 'turn' } } })
+        for (const event of events) emit(event)
         if (tool) emit({ id: 900, method: 'item/commandExecution/requestApproval', params: { threadId: 'thread' } })
         emit({ method: 'item/completed', params: { threadId: 'thread', item: { type: 'agentMessage', id: 'comment', phase: 'commentary', text: 'not author content' } } })
         emit({ method: 'item/completed', params: { threadId: 'thread', item: { type: 'agentMessage', id: 'answer', phase: 'final_answer', text: '{"title":"候选"}' } } })
         emit({ method: 'thread/tokenUsage/updated', params: { threadId: 'thread', tokenUsage: { last: { inputTokens: 10, outputTokens: 5, totalTokens: 15 } } } })
-        emit({ method: 'turn/completed', params: { threadId: 'thread', turn: { status: 'completed' } } })
+        emit({ method: 'turn/completed', params: { threadId: 'thread', turn: { id: 'turn', ...completion } } })
       })
     } })
     return child
@@ -75,4 +76,62 @@ test('managed policy that keeps tools enabled blocks inference', async t => {
   const { runtime, calls } = fixture(t, { config: { ...ISOLATION, features: { ...ISOLATION.features, shell_tool: true } } })
   await assert.rejects(runtime.generate(input, () => {}, new AbortController().signal), /隔离/)
   assert.equal(calls.some(v => v.method === 'turn/start'), false)
+})
+
+test('failed turns retain only allowlisted codes and numeric HTTP status, without a resend', async t => {
+  const cases = [
+    ['usageLimitExceeded', { code: 'usageLimitExceeded', httpStatusCode: null }],
+    ['unauthorized', { code: 'unauthorized', httpStatusCode: null }],
+    [{ responseStreamDisconnected: { httpStatusCode: 503, secret: 'POISON' } }, { code: 'responseStreamDisconnected', httpStatusCode: 503 }],
+    [{ httpConnectionFailed: { httpStatusCode: '401 POISON' } }, { code: 'httpConnectionFailed', httpStatusCode: null }],
+    [{ responseTooManyFailedAttempts: { httpStatusCode: 1000 } }, { code: 'responseTooManyFailedAttempts', httpStatusCode: null }],
+    ['future-POISON-variant', { code: 'unclassified', httpStatusCode: null }],
+    [{ httpConnectionFailed: { httpStatusCode: 429 }, extra: 'POISON' }, { code: 'unclassified', httpStatusCode: null }],
+  ]
+  for (const [codexErrorInfo, expected] of cases) {
+    const { runtime, calls } = fixture(t, { completion: { status: 'failed', error: { codexErrorInfo,
+      message: 'POISON prompt or credential', additionalDetails: '/POISON/private', misalignment: { explanation: 'POISON' } } } })
+    await assert.rejects(runtime.generate(input, () => {}, new AbortController().signal), error => {
+      assert.deepEqual(error.codexDiagnostic, expected)
+      assert.doesNotMatch(String(error) + JSON.stringify(error), /POISON/)
+      return true
+    })
+    assert.equal(calls.filter(value => value.method === 'turn/start').length, 1)
+    assert.equal(calls.filter(value => value.method === 'thread/start').length, 1)
+  }
+})
+test('matching error notification fills only an absent terminal error, never overrides it', async t => {
+  const events = [{ method: 'error', params: { threadId: 'thread', turnId: 'turn', willRetry: false,
+    error: { codexErrorInfo: 'rateLimitExceeded', message: 'POISON' } } }]
+  for (const [error, code] of [[null, 'rateLimitExceeded'], [{ codexErrorInfo: 'badRequest' }, 'badRequest'],
+    [{ codexErrorInfo: 'future-POISON' }, 'unclassified']]) {
+    const { runtime } = fixture(t, { events, completion: { status: 'failed', error } })
+    await assert.rejects(runtime.generate(input, () => {}, new AbortController().signal), failure => {
+      assert.equal(failure.codexDiagnostic.code, code)
+      assert.doesNotMatch(String(failure), /POISON/)
+      return true
+    })
+  }
+})
+test('another thread or turn cannot supply the failure diagnosis or complete this request', async t => {
+  const error = { codexErrorInfo: 'unauthorized', message: 'POISON' }
+  const events = [
+    { method: 'error', params: { threadId: 'other', turnId: 'turn', error } },
+    { method: 'error', params: { threadId: 'thread', turnId: 'other', error } },
+    { method: 'turn/completed', params: { threadId: 'thread', turn: { id: 'other', status: 'completed' } } },
+  ]
+  const { runtime } = fixture(t, { events, completion: { status: 'failed', error: null } })
+  await assert.rejects(runtime.generate(input, () => {}, new AbortController().signal), failure => {
+    assert.deepEqual(failure.codexDiagnostic, { code: 'unclassified', httpStatusCode: null })
+    return true
+  })
+})
+test('completed output stays successful after an error notification and no retry is dispatched', async t => {
+  const { runtime, calls } = fixture(t, { events: [{ method: 'error', params: { threadId: 'thread', turnId: 'turn',
+    willRetry: false, error: { codexErrorInfo: 'other', message: 'POISON' } } }] })
+  const updates = []
+  await runtime.generate(input, update => updates.push(update), new AbortController().signal)
+  assert.equal(updates.find(update => update.text)?.text, '{"title":"候选"}')
+  assert.doesNotMatch(JSON.stringify(updates), /POISON/)
+  assert.equal(calls.filter(value => value.method === 'turn/start').length, 1)
 })

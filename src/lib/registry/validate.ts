@@ -109,6 +109,13 @@ export function checkRegistry(): RegistryValidationResult {
         if (!REGISTRY_BY_NAME.has(ref.ownerTable)) {
           errors.push(`${spec.name}.refs(blob-owner) ownerTable 不存在: ${ref.ownerTable}`)
         }
+      } else if (ref.kind === 'narrative-source-refs-v1') {
+        for (const target of ref.targetTables) if (!REGISTRY_BY_NAME.has(target)) {
+          errors.push(`${spec.name}.${ref.field} 叙事引用目标未登记: ${target}`)
+        }
+        if (!spec.exportRefRemap?.some(remap => remap.kind === ref.kind && remap.field === ref.field)) {
+          errors.push(`${spec.name}.${ref.field} 叙事引用缺少便携重映射`)
+        }
       }
     }
     for (const rm of spec.exportRemap ?? []) {
@@ -121,6 +128,15 @@ export function checkRegistry(): RegistryValidationResult {
     }
   }
 
+  for (const spec of PROJECT_TABLES) {
+    const projector = spec.worldSemantic?.projector
+    if (projector && (spec.worldSemantic?.publishPolicy !== 'reviewed-narrative-v1'
+      || !projector.sourceFields.includes(projector.provenanceField)
+      || !spec.resourceIdentity
+      || projector.annotationFields.length !== new Set(projector.annotationFields).size)) {
+      errors.push(`${spec.name} 叙事投影缺少身份、来源、确认政策或重复字段`)
+    }
+  }
   const fieldKeys = new Set<string>()
   const candidateIds = new Set<string>()
   const generatableFieldsByDomain = new Map<string, Set<string>>()

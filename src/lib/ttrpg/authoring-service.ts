@@ -17,10 +17,7 @@ import {
   assertWorldSemanticReleaseCurrentV1,
   worldSemanticReleaseTransactionTablesV1,
 } from "../context-gateway/world-release-client";
-import {
-  parseConfirmedProductBriefV1,
-  parseProductProductionSourcePlanV1,
-} from "../product-production/source-contracts";
+import { parseConfirmedProductBriefV1 } from "../product-production/source-contracts";
 import { readTtrpgRulePackVersionedV1 } from "./rule-pack-library";
 import {
   createTtrpgProductionBriefContentV3,
@@ -387,7 +384,7 @@ export async function prepareTtrpgOpenProductionBriefV3(input: {
   if (rule.rulePack.version !== 2) throw new Error('open 制作不能使用旧 RulePack V1')
   const rulePack = rule.rulePack
   const { draftTtrpgOpenProductionCommonBriefV3, suggestProductStartingPoints } = await import('../product-production/consultation')
-  const { createProductProductionSourcePlanV1 } = await import('../product-production/source-contracts')
+  const { createTtrpgProductSourcePlanV1 } = await import('./production-source-plan')
   const { createTtrpgOpenProductionBriefV3 } = await import('./open-production-brief')
   const { hashProductProductionValueV2 } = await import('../product-production/hash')
   const { executeProductProductionCommand } = await import('../product-production/commands')
@@ -408,7 +405,7 @@ export async function prepareTtrpgOpenProductionBriefV3(input: {
     revision: input.revision, commandId, worldReferenceHash: worldReference.referenceHash })).slice(0, 40)}`
   const sourcePlan = releaseRevision
     ? priorEnvelope!.ttrpgOpen!.sourcePlan
-    : await createProductProductionSourcePlanV1({ scope, productionKey, brief: common })
+    : await createTtrpgProductSourcePlanV1({ scope, productionKey, brief: common })
   await verifyTtrpgOpenAuthoringSourceProvenanceV1({ sourcePlan, facts: settings.openAuthoring.factPolicy.map(item => item.fact) })
   const content = await createTtrpgProductionBriefContentV3({ settingsRevision: input.revision, settings,
     rulePack, worldReference, sourcePlan })
@@ -539,7 +536,7 @@ async function withTtrpgOpenBriefSnapshotV3<T>(
     expectedWorldId: scope.worldId,
     expectedReleaseHash: worldReference.releaseHash,
   });
-  const sourcePlan = await parseProductProductionSourcePlanV1(row);
+  const sourcePlan = await (await import('./production-source-plan')).readTtrpgProductSourcePlanV1(row);
   if (sourcePlan.productInstanceKey !== production.productionKey ||
     sourcePlan.productType !== "ttrpg" ||
     row.sourceWorldReleaseId !== draft.worldReleaseId ||

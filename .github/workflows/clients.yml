@@ -66,6 +66,12 @@ jobs:
           retention-days: 14
   windows:
     runs-on: windows-latest
+    env:
+      # Retained acceptance evidence includes paths beyond Windows MAX_PATH.
+      # Apply only to this job's Git processes, without changing global config.
+      GIT_CONFIG_COUNT: '1'
+      GIT_CONFIG_KEY_0: core.longpaths
+      GIT_CONFIG_VALUE_0: 'true'
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7

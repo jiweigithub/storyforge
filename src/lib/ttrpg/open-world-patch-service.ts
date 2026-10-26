@@ -26,6 +26,9 @@ async function loadReview(input: TtrpgWorldPatchDeskInputV1) {
   const manifest = await verifyProductReleaseManifestV1(loaded.immutable.raw!, { ttrpgProtocol: 2 })
   if (!('confirmedBrief' in manifest.sourceContracts) || manifest.lineage.schema !== 'storyforge.product-release-lineage') throw new Error('当前跑团发布包没有完整的世界来源合同。')
   const contracts = manifest.sourceContracts, lineage = manifest.lineage
+  if (contracts.sourcePlan.version !== 1 || contracts.sourcePlan.worldReference.version !== 1) {
+    throw new Error('当前跑团世界补丁尚未登记增强来源协议。')
+  }
   const provenance = content.campaign.designProvenance
   if (!provenance || !('sourcePlanHash' in provenance) || provenance.sourcePlanHash !== contracts.sourcePlan.planHash) throw new Error('战役来源与发布 SourcePlan 不一致。')
   const sourceStamp = parseTtrpgWorldPatchSourceV1({ worldReference: await portableWorldReferenceV1(contracts.sourcePlan.worldReference), packageHash: source.packageHash,

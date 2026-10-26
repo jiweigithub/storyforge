@@ -1,3 +1,4 @@
+import type { NarrativeDomainMetadataV1, NarrativeDomainFieldsV1 } from './narrative-domain'
 /**
  * 故事进程年表 — Phase 25.5.2-a
  *
@@ -16,7 +17,9 @@ export const STORY_IMPORTANCE_LABELS: Record<number, string> = {
 }
 
 /** 一条故事进程事件 */
-export interface StoryTimelineEvent {
+type StoryTimelineEventNarrativeFieldsV1 = NarrativeDomainMetadataV1 & Pick<NarrativeDomainFieldsV1, 'narrativeEventV1'>
+
+export interface StoryTimelineEvent extends StoryTimelineEventNarrativeFieldsV1 {
   id?: number
   projectId: number
   /** 事件标题 */

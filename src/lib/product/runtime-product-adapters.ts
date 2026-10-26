@@ -1,4 +1,3 @@
-import { consumePreparedTtrpgOpenContinuationV1 } from '../ttrpg/open-release-continuation'
 /**
  * Composition root for product-owned runtime adapters.
  *
@@ -24,10 +23,12 @@ import {
 import { assertInitialTtrpgProductStateV1, assertInitialTtrpgOpenProductStateV1 } from '../ttrpg/runtime'
 import { projectTtrpgRulePackMechanicalCoreV1 } from '../ttrpg/rule-pack-v2'
 import { applyTtrpgRuntimeEventV1 } from '../ttrpg/runtime-event-reducer'
-import { cloneTtrpgRuntimeBranchExtensionsV1 } from '../ttrpg/runtime-branch'
+import { cloneTtrpgRuntimeBranchExtensionsV1, createTtrpgRuntimeOwnedBranchV1 } from '../ttrpg/runtime-branch'
 import { parseTtrpgState } from '../ttrpg/runtime-state'
 import { parseTtrpgRuntimeStateV2 } from '../ttrpg/open-runtime-contract'
-import { prepareTtrpgOpenBranchStateV1, consumePreparedTtrpgOpenBranchStateV1 } from '../ttrpg/open-branch'
+import { TTRPG_RUNTIME_CONTENT_READER_V1, prepareTtrpgRuntimeBranchStateV1,
+  consumeTtrpgRuntimeBranchPreparationV1 } from '../ttrpg/runtime-product-adapter'
+import type { CreateProductRuntimeSessionInput } from './runtime-core'
 import { applyAiTownEventV1, createInitialAiTownStateV1, parseAiTownStateV1, rebaseAiTownStateForBranchV1 } from '../ai-town/runtime'
 import {
   isTtrpgRuntimeContentV1,
@@ -38,6 +39,7 @@ import type {
   ProductRuntimeEvent,
   ProductRuntimeSession,
   ProductRuntimeState,
+  ProductRuntimeKind,
   FrozenNarrativeChoice,
 } from '../types'
 import {
@@ -45,6 +47,13 @@ import {
   stableProductRuntimeJsonV1,
   type ProductRuntimeJsonObjectV1,
 } from './runtime-values'
+
+export type ProductRuntimePackageForAdaptersV1 = ProductRuntimePackageWithTtrpgV2
+
+/** Protocol selection belongs to the product composition root, not the runtime core. */
+export function productRuntimeContentReaderV1(kind: ProductRuntimeKind) {
+  return kind === 'ttrpg' ? TTRPG_RUNTIME_CONTENT_READER_V1 : undefined
+}
 
 export function parseProductOwnedRuntimeStateV1(
   value: ProductRuntimeState,
@@ -437,17 +446,24 @@ export function rebaseProductRuntimeStateForBranchV1(
 export async function prepareProductRuntimeStateForBranchV1(input: {
   parent: ProductRuntimeSession; state: ProductRuntimeState; events: ProductRuntimeEvent[]; throughSequence: number;
 }): Promise<ProductRuntimeState> {
-  if (input.state.ttrpg && 'runFormat' in input.state.ttrpg && input.state.ttrpg.runFormat === 'open') {
-    return prepareTtrpgOpenBranchStateV1({ ...input, childSessionKey: `ttrpg.session.${crypto.randomUUID()}` })
+  if (input.parent.kind === 'ttrpg') {
+    const state = await prepareTtrpgRuntimeBranchStateV1(input)
+    if (state) return state
   }
   return rebaseProductRuntimeStateForBranchV1(input.state, input.throughSequence)
 }
-export async function consumeProductRuntimeBranchPreparationV1(state: ProductRuntimeState | undefined, runtimeSourceHash: string): Promise<void> {
-  if (state?.ttrpg && 'runFormat' in state.ttrpg && state.ttrpg.runFormat === 'open') {
-    const runtime = parseTtrpgRuntimeStateV2(state.ttrpg)
-    if (runtime?.openRun?.releaseContinuation?.plan.childSessionKey === runtime?.sessionKey && !runtime?.openRun?.releaseContinuation?.confirmedRef) await consumePreparedTtrpgOpenContinuationV1(state, runtimeSourceHash)
-    else await consumePreparedTtrpgOpenBranchStateV1(state, runtimeSourceHash)
-  }
+export async function consumeProductRuntimeBranchPreparationV1(
+  kind: ProductRuntimeKind, state: ProductRuntimeState | undefined, runtimeSourceHash: string,
+): Promise<void> {
+  if (kind === 'ttrpg') await consumeTtrpgRuntimeBranchPreparationV1(state, runtimeSourceHash)
+}
+
+/** Product-owned atomic branch strategies; null keeps the original generic path. */
+export async function createProductOwnedRuntimeBranchV1(input: {
+  parent: ProductRuntimeSession; state: ProductRuntimeState; childInput: CreateProductRuntimeSessionInput
+  events: ProductRuntimeEvent[]; throughSequence: number
+}): Promise<ProductRuntimeSession | null> {
+  return input.parent.kind === 'ttrpg' ? createTtrpgRuntimeOwnedBranchV1(input) : null
 }
 
 export function assertProductNarrativeChoiceReadyV1(input: {

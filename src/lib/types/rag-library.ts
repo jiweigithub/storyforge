@@ -1,3 +1,5 @@
+import type { NarrativeDomainFieldsV1 } from './narrative-domain'
+
 /**
  * RAG-1 · 可见资料与检索管理。
  *
@@ -24,6 +26,19 @@ export interface RagDocumentMetadata {
   /** Retrieval policy evolves independently from Canon content revisions. */
   ragPolicyRevision?: number
   ragPolicyHash?: string
+}
+
+/** Trusted authoring selection of one already selected source record. */
+export interface RagAnnotationTargetSelectionV1 {
+  table: string
+  sourceUid: string
+}
+
+/** Editable target state, separately labelled from original story fields.
+ * References use portable UIDs; this is not a confirmation or new evidence. */
+export interface RagAnnotationTargetStateV1 extends RagAnnotationTargetSelectionV1 {
+  version: 1
+  annotations: Partial<Pick<NarrativeDomainFieldsV1, 'narrativeDevelopmentsV1' | 'narrativeDisclosuresV1'>>
 }
 
 export type RagVectorState = 'none' | 'keyword' | 'partial' | 'ready'
