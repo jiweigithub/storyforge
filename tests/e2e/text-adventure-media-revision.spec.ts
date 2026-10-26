@@ -77,6 +77,8 @@ test('旧两图商业 Build 可在同一 Production 取消、修订为十二图 
 
   await openTextAdventurePage(page, seeded.scope, 'production')
   const studio = page.getByTestId('product-production-studio')
+  // DOMContentLoaded precedes the selected Production and its review-artifact read.
+  await expect(studio.getByRole('heading', { name: '媒资修订浏览器验收', exact: true })).toBeVisible()
   await expect(page.getByTestId('text-adventure-author-workbench')).toBeVisible()
   await expect(studio).toContainText('潮门灯塔 · 媒资修订验收')
   await expect(page.getByTestId('text-adventure-media-plan-blocker')).toContainText('2 张图片')
