@@ -2,7 +2,7 @@
 
 ## 当前文档描述哪个版本
 
-本轮增量核对至 **2026-10-22，main 基线 463b6473**；从上次成功维护基线 `50062745` 核对用户可见变化。产品状态以各自指南标记为准。
+本轮增量核对至 **2026-10-26，main 基线 51688aee**；从上次成功维护基线 `c5a1cab7` 核对用户可见变化。产品状态以各自指南标记为准。
 
 当前正式版本为 [**v4.0.4**](https://github.com/yuanbw2025/storyforge/releases/tag/v4.0.4)，于 **2026-10-23 03:17 UTC** 发布，固定源码 `d90961a2`。本次交付 [PR #185](https://github.com/yuanbw2025/storyforge/pull/185) 的大型运行合同保存与恢复修复，[发行准备 PR #190](https://github.com/yuanbw2025/storyforge/pull/190) 已合并。合同和事件快照共用 32 MiB UTF-8 有限记录预算，完整保留快照；超预算仍明确拒绝，不改变模型预算、候选采纳、权限或过期检查，也没有数据库迁移。独立发行通过完整生产/浏览器检查、全部客户端和四平台便携启动，以及从正式 v4.0.3 的覆盖升级；Android 保留旧包重启基线、新包恢复和最终重启四阶段验证。升级前仍请导出完整备份，见下方步骤。
 
@@ -17,6 +17,12 @@ v4.0.2 于 2026-10-16 正式发布，固定源码 `04de86d7`。发行页提供 W
 [PR #158](https://github.com/yuanbw2025/storyforge/pull/158) 的大纲候选采纳修复晚于 v4.0.1 固定源码 `e8ce0a0d`，已包含在 4.0.2 客户端源码中。正式可下载状态以发行页为准；其他待合并开发见[开发记录](/updates/development-status)。
 
 当前 main 包含 [PR #165](https://github.com/yuanbw2025/storyforge/pull/165) 的长篇入口整合、[PR #166](https://github.com/yuanbw2025/storyforge/pull/166) 的续写/细纲错误处理，以及 [PR #141](https://github.com/yuanbw2025/storyforge/pull/141) 的系统文规划与全章评审。上述增量分别合入 `a45cb1db`、`b344cc0b`、`1b96e80a`；对应操作见[长篇指南](/features/longform/)。固定 v4.0.2 的源码仍为上方列出的 `04de86d7`。
+
+## v4.0.4 之后的主干变化
+
+[PR #195](https://github.com/yuanbw2025/storyforge/pull/195) 的模块加载重试、[PR #197](https://github.com/yuanbw2025/storyforge/pull/197) 的叙事世界工程成果，[PR #134](https://github.com/yuanbw2025/storyforge/pull/134) 的开放世界三线制作与返修，以及 [PR #201](https://github.com/yuanbw2025/storyforge/pull/201) 的角色候选编辑与原生故障去重已合入 main，尚未进入新的正式安装包。当前正式版本仍为上方的 v4.0.4；后续发行日期未定。
+
+主干数据库由 v11 升为 v12，新增可重建的世界叙事索引缓存；世界与作品原记录仍是内容来源，缓存不进入完整备份。已有 v12 数据库不要直接用只支持 v11 的旧源码打开；回退应保留兼容 v12 的环境，并使用升级前备份与隔离副本核对。叙事增强入口的试用与限制见[世界引擎](/features/world-engine)。
 
 ## 升级前
 

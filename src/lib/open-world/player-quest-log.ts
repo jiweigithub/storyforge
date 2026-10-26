@@ -353,7 +353,7 @@ function locationReferences(input: {
           && (scene.stageKey == null || input.disclosedStageKeys.has(scene.stageKey))
       ))
       .forEach(scene => add(
-        effectiveTextOpenWorldSceneLocationKeyV1(scene, input.modules.actors.actors),
+        effectiveTextOpenWorldSceneLocationKeyV1(scene, input.modules.actors.actors, input.modules.actions),
         'quest-scene',
         scene.stageKey ?? undefined,
         scene.objectiveKey ?? undefined,

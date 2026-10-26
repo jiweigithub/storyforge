@@ -171,10 +171,14 @@ export default function TextGameDevelopmentPage({ openWorld = false }: { openWor
     aiGmBetaGatePassed: currentAiGmBetaGatePassedV1(),
   })
 
-  const workspacePath = (nextPage: string, extra?: { session?: number | null; mode?: PageMode }) => {
+  const workspacePath = (nextPage: string, extra?: {
+    session?: number | null; mode?: PageMode; scope?: WorkspaceScope
+  }) => {
     const next = new URLSearchParams()
-    if (projectId != null) next.set('project', String(projectId))
-    if (workId != null) next.set('work', String(workId))
+    const nextProjectId = extra?.scope?.projectId ?? projectId
+    const nextWorkId = extra?.scope?.workId ?? workId
+    if (nextProjectId != null) next.set('project', String(nextProjectId))
+    if (nextWorkId != null) next.set('work', String(nextWorkId))
     const nextSession = extra?.session === undefined ? session : extra.session
     if (nextSession != null) next.set('session', String(nextSession))
     if (openWorld && extra?.mode) next.set('mode', extra.mode)
@@ -206,10 +210,11 @@ export default function TextGameDevelopmentPage({ openWorld = false }: { openWor
     setHandoff(null)
   }
 
-  const openPlayer = (nextSession: number | null) => {
+  const openPlayer = (nextSession: number | null, playerScope?: WorkspaceScope) => {
     navigate(workspacePath(openWorld ? 'runtime' : 'play', {
       session: nextSession,
       mode: 'play',
+      scope: playerScope,
     }))
   }
 
@@ -282,6 +287,8 @@ export default function TextGameDevelopmentPage({ openWorld = false }: { openWor
                 initialView={settingsReturn ? 'readiness' : 'brief'}
                 initialResumeTarget={settingsReturn}
                 onOpenSettings={openCreatorSettings}
+                onPreviewStarted={(creatorScope, id) => openPlayer(id, creatorScope)}
+                onPublished={creatorScope => openPlayer(null, creatorScope)}
               />
             : productionDecision.enabled
             ? <ProductProductionStudio
@@ -311,10 +318,16 @@ export default function TextGameDevelopmentPage({ openWorld = false }: { openWor
                 </button>
               </div>
           : <TextOpenWorldPlayer
-              key={`${scope!.workId}:${session}`}
+              key={`${scope!.projectId}:${scope!.worldId}:${scope!.workId}`}
               project={project!} scope={scope!}
               worldGroupId={project!.enableMultiWorld ? activeWorldGroupId : null}
               initialSessionId={session}
+              onSessionSelected={selectedSessionId => {
+                const next = new URLSearchParams(params)
+                if (selectedSessionId == null) next.delete('session')
+                else next.set('session', String(selectedSessionId))
+                navigate({ search: next.toString() }, { replace: true, state: location.state })
+              }}
             />}
       </Suspense>
     </section>}
