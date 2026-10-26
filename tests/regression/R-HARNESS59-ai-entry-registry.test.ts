@@ -94,7 +94,7 @@ describe('R-HARNESS59 / WEH-0H · 正式 AI 入口机器绑定', () => {
 
   it('显式音频评测传输保持脚本、只读和零采纳边界，不进入正式创作执行器', () => {
     const full = JSON.parse(JSON.stringify(registry))
-    const entry = { entryId: 'eval.avg.audio-input-calibration', boundary: 'eval-only', adoptAllowed: false,
+    const entry = { entryId: 'eval.avg.audio-input-test', boundary: 'eval-only', adoptAllowed: false,
       caller: 'scripts/evaluate-avg-audio-input.mjs', contract: 'scripts/avg-audio-input-contract.mjs',
       transport: 'configured-chat-audio-input-v1', reason: '仅显式工程WAV/静音对照；不读作者数据库、不采纳、不发布。' }
     full.offlineEvaluations.push(entry)
