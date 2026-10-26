@@ -1,21 +1,22 @@
-import type { AIConfig, AIProvider } from '../types/ai'
+import { PROVIDER_PRESETS, type AIConfig, type AIProvider } from '../types/ai'
 import { AI_PROXY_ENDPOINTS } from './proxy-endpoints'
 import { normalizeOpenAIBaseUrl } from './openai-endpoint'
 
 type ModelTarget = Pick<AIConfig, 'provider' | 'baseUrl' | 'model'>
 
 /** A provider label does not establish the identity of a private gateway. */
-function targetsOfficialProvider(config: ModelTarget): boolean {
+export function targetsOfficialProvider(config: ModelTarget): boolean {
   const endpoint = AI_PROXY_ENDPOINTS[config.provider]
-  if (!endpoint) return false
+  const direct = endpoint?.direct ?? PROVIDER_PRESETS[config.provider]?.baseUrl
+  if (!direct) return false
   const base = normalizeOpenAIBaseUrl(config.baseUrl).baseUrl
-  const proxyPaths = [endpoint.proxy, `/storyforge${endpoint.proxy}`]
+  const proxyPaths = endpoint ? [endpoint.proxy, `/storyforge${endpoint.proxy}`] : []
   if (proxyPaths.includes(base)) return true
   try {
     const actual = new URL(base)
     if (actual.username || actual.password || actual.search || actual.hash) return false
     if (typeof location !== 'undefined' && actual.origin === location.origin && proxyPaths.includes(actual.pathname)) return true
-    const official = new URL(endpoint.direct)
+    const official = new URL(direct)
     return actual.origin === official.origin && actual.pathname === official.pathname
   } catch {
     return false
