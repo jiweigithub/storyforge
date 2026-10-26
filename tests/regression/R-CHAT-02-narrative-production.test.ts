@@ -47,7 +47,7 @@ it('keeps v3 setup and source confirmation across saving, refresh and project tr
   expect(JSON.parse((await readChatDraftV1(f.scope)).settingsJson)).toEqual(changed)
   const importedId = await importProjectJSON(await exportProjectJSON(f.scope.projectId))
   expect(JSON.parse((await db.chatAuthoringDrafts.where('projectId').equals(importedId).first())!.settingsJson)).toEqual(changed)
-  const {narrative: _setup, ...old} = changed
+  const {narrative: _setup, visuals: _visuals, ...old} = changed
   await expect(saveChatDraftV1(f.scope, saved.revision, {...old, version: 2})).rejects.toThrow('旧版')
   expect(() => parseChatAuthoringSettings({...changed, narrative: {...changed.narrative, permissions: {...changed.narrative.permissions, triggers: ['offline']}}})).toThrow()
   expect(() => parseChatAuthoringSettings({...changed, narrative: {...changed.narrative, openingCount: 2}})).toThrow()
@@ -63,7 +63,7 @@ it('requires actual different candidates, own goals and exact permissions; candi
     option.situation.facts[0].text = n === 4 ? '刚送来的齿轮装在木盒里。' : '一封尚未打开的委托信放在工作台上。'
     five.options.push(option)
   }
-  expect(parseChatSituationCandidatesV1(five, {...f.source, settings: {...f.settings, narrative: {...f.settings.narrative, openingCount: 5}}}).options).toHaveLength(5)
+  expect(parseChatSituationCandidatesV1(five, {...f.source, settings: {...f.source.settings, narrative: {...f.source.settings.narrative, openingCount: 5}}}).options).toHaveLength(5)
   expect(() => parseChatSituationCandidatesV1(five, f.source)).toThrow('数量')
   expect(JSON.stringify(f.source)).not.toContain('知道失踪船队真相')
   const invalid = structuredClone(f.candidates)

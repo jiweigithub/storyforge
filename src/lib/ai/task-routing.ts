@@ -104,6 +104,7 @@ function matchesPrefix(category: string, prefixes: readonly string[]): boolean {
 export function classifyAITask(category?: string): AITaskKind | null {
   const normalized = category?.trim().toLowerCase()
   if (!normalized) return null
+  if (normalized.startsWith('runtime.character.')) return 'agent-character'
   const agentRole = AGENT_ROLE_CATEGORY_ENTRIES.find(([prefix]) => (
     normalized === prefix || normalized.startsWith(`${prefix}.`)
   ))

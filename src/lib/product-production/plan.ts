@@ -401,12 +401,13 @@ export function parseProductProductionPlanV3(
       fail('Plan 预算预留超过 Brief 授权')
     }
     const canonicalInputBudget = Math.floor(
-      Math.min(budget.maximumInputTokens, 180_000) / (productType === 'character-interaction' && taskByKey.has('media.chat-review') ? 7 : productType === 'character-interaction' && taskByKey.has('content.chat-opening-review') ? 6 : 5),
+      Math.min(budget.maximumInputTokens, 180_000) / (productType === 'character-interaction' && taskByKey.has('media.chat-design') ? 8 : productType === 'character-interaction' && taskByKey.has('media.chat-review') ? 7 : productType === 'character-interaction' && taskByKey.has('content.chat-opening-review') ? 6 : 5),
     )
     const canonicalInputTasks = [
       'content.design', 'content.narrative', 'content.product-module',
       'media.requirements', 'integration.package',
       ...(productType === 'character-interaction' && taskByKey.has('media.chat-review') ? ['media.chat-review'] : []),
+      ...(productType === 'character-interaction' && taskByKey.has('media.chat-design') ? ['media.chat-design'] : []),
       ...(productType === 'character-interaction' && taskByKey.has('content.chat-opening-review') ? ['content.chat-opening-review'] : []),
     ]
     const isCanonicalProductionPlan = !['text-adventure', 'text-open-world'].includes(productType)
@@ -485,6 +486,7 @@ export async function createProductProductionPlanV3(input: {
   const textAdventure = brief.intent.productType === 'text-adventure'
   const narrativeChat = brief.intent.productType === 'character-interaction' && brief.characterChat?.version === 3
   const chatVisual = narrativeChat && activeVisual
+  const chatDesignedVisual = chatVisual && brief.characterChat?.version === 3 && brief.characterChat.visuals?.version === 2
   const chatStoryInputs = ['design.game', 'content.chat-candidates', 'content.chat-selection', 'quality.chat-openings', 'content.narrative']
   const visualReviewBatches = textAdventure && activeVisual
     ? textAdventureVisualReviewArtifactBatchesV1(visualArtifactKeys)
@@ -683,7 +685,7 @@ export async function createProductProductionPlanV3(input: {
   const perInput = Math.floor(
     (textAdventure
       ? brief.productionBudget.maximumInputTokens / (modelTaskCount + retryReserveSlots)
-      : Math.min(brief.productionBudget.maximumInputTokens, 180_000) / (chatVisual ? 7 : narrativeChat ? 6 : 5)),
+      : Math.min(brief.productionBudget.maximumInputTokens, 180_000) / (chatDesignedVisual ? 8 : chatVisual ? 7 : narrativeChat ? 6 : 5)),
   )
   const perOutput = Math.floor(
     (textAdventure
@@ -698,9 +700,9 @@ export async function createProductProductionPlanV3(input: {
   const perDuration = Math.floor(
     (textAdventure
       ? brief.productionBudget.maximumDurationMs / Math.max(1, durationSlots + retryReserveSlots)
-      : Math.min(brief.productionBudget.maximumDurationMs, 3_600_000) / (narrativeChat ? 8 + activeMediaLaneCount + (chatVisual ? 2 : 0) : 8)),
+      : Math.min(brief.productionBudget.maximumDurationMs, 3_600_000) / (narrativeChat ? 8 + activeMediaLaneCount + (chatVisual ? 2 : 0) + (chatDesignedVisual ? 3 : 0) : 8)),
   )
-  const costTaskCount = modelTaskCount + activeMediaTaskCount
+  const costTaskCount = modelTaskCount + activeMediaTaskCount + Number(chatDesignedVisual)
   const perCost = brief.productionBudget.maximumCostUsd == null
     ? null
     : brief.productionBudget.maximumCostUsd / Math.max(1, costTaskCount + retryReserveSlots)
@@ -1233,7 +1235,34 @@ export async function createProductProductionPlanV3(input: {
       acceptanceGateIds: ['artifact.protocol', 'adventure.narrative-quality-review'],
     }))
   }
-  const mediaDependenciesForContent = textAdventure
+  if (chatDesignedVisual) tasks.push(
+    productionTask({
+      taskKey: 'system.chat-config', lane: 'planning', kind: 'chat-system-config', skillId: null, executionMode: 'deterministic',
+      dependsOn: ['content.narrative'], inputArtifactKeys: chatStoryInputs, outputArtifactKeys: ['system.chat-config'],
+      requirementKeys: [], capabilityRequirementKeys: [], concurrencyGroup: 'deterministic', subjectLockKeys: ['system.chat-config'], priority: 91,
+      budgetReservation: reservation({durationMs: perDuration}), maxAttempts: 1, timeoutMs: 30_000,
+      failurePolicy: 'pause', fallbackTaskKey: null, acceptanceGateIds: ['artifact.protocol', 'chat.system-content-bindings'],
+    }),
+    productionTask({
+      taskKey: 'media.chat-context', lane: 'planning', kind: 'chat-visual-content-handoff', skillId: null,
+      executionMode: 'deterministic', dependsOn: ['system.chat-config'], inputArtifactKeys: [...chatStoryInputs, 'system.chat-config'],
+      outputArtifactKeys: ['media.chat-context'], requirementKeys: [], capabilityRequirementKeys: [],
+      concurrencyGroup: 'deterministic', subjectLockKeys: ['media.chat-context'], priority: 90,
+      budgetReservation: reservation({durationMs: perDuration}), maxAttempts: 1, timeoutMs: 30_000,
+      failurePolicy: 'pause', fallbackTaskKey: null,
+      acceptanceGateIds: ['artifact.protocol', CHAT_OPENING_DEVELOPMENT_GATE_V3, CHAT_OPENING_AGENCY_GATE_V2],
+    }),
+    productionTask({
+      taskKey: 'media.chat-design', lane: 'planning', kind: 'chat-visual-design', skillId: 'character.chat-visual-design',
+      executionMode: 'model', dependsOn: ['media.chat-context'], inputArtifactKeys: ['media.chat-context'],
+      outputArtifactKeys: ['media.chat-design'], requirementKeys: [], capabilityRequirementKeys: textCapabilities,
+      concurrencyGroup: 'text-provider', subjectLockKeys: ['media.chat-design'], priority: 89,
+      budgetReservation: modelBudget('media.chat-design'), maxAttempts: 1, timeoutMs: 180_000,
+      failurePolicy: 'pause', fallbackTaskKey: null, acceptanceGateIds: ['artifact.protocol'],
+    }),
+  )
+  const chatDesignInputs = chatDesignedVisual ? ['system.chat-config', 'media.chat-context', 'media.chat-design'] : []
+  const mediaDependenciesForContent = chatDesignedVisual ? ['media.chat-design'] : textAdventure
     ? ['content.adventure-quality-review']
     : narrativeChat ? ['content.narrative'] : ['content.design']
   const mediaInputsForContent = textAdventure
@@ -1244,7 +1273,7 @@ export async function createProductProductionPlanV3(input: {
         'content.dialogue-pass.act-1', 'content.dialogue-pass.act-2',
         'content.dialogue-pass.act-3', 'content.narrative', 'quality.adventure-review',
       ]
-    : chatVisual ? chatStoryInputs : narrativeChat ? ['content.narrative', 'content.product-module'] : ['design.game']
+    : chatVisual ? [...chatStoryInputs, ...chatDesignInputs] : narrativeChat ? ['content.narrative', 'content.product-module'] : ['design.game']
   tasks.push(
     productionTask({
       taskKey: 'media.requirements', lane: 'planning', kind: chatVisual ? 'chat-media-requirements' : 'media-requirements',
@@ -1259,7 +1288,7 @@ export async function createProductProductionPlanV3(input: {
   )
   if (textAdventure) tasks.push(productionTask({
     taskKey: 'media.visual-bible.compile', lane: 'planning', kind: 'text-adventure-visual-bible',
-    skillId: null, executionMode: 'deterministic', dependsOn: ['media.requirements'],
+    skillId: null, executionMode: 'deterministic', dependsOn: ['media.requirements', ...chatDesignInputs],
     inputArtifactKeys: ['content.cast-bible', 'content.adventure-architecture', 'media.requirements'],
     outputArtifactKeys: ['media.visual-bible'], requirementKeys: [], capabilityRequirementKeys: [],
     concurrencyGroup: 'deterministic', subjectLockKeys: ['media.visual-bible'], priority: 75,
@@ -1295,10 +1324,10 @@ export async function createProductProductionPlanV3(input: {
     for (const taskKey of taskKeys) tasks.push(productionTask({
       taskKey, lane: 'visual', kind: textAdventure ? 'image-asset' : 'image-bundle',
       skillId: 'product-production.media-request.v1', executionMode: 'media-provider',
-      dependsOn: textAdventure ? ['media.anchor-author-gate'] : ['media.requirements'],
+      dependsOn: textAdventure ? ['media.anchor-author-gate'] : ['media.requirements', ...chatDesignInputs],
       inputArtifactKeys: textAdventure
         ? ['media.requirements', 'content.cast-bible', 'media.visual-bible', 'media.anchor-decision']
-        : ['media.requirements'],
+        : ['media.requirements', ...chatDesignInputs],
       outputArtifactKeys: textAdventure ? [taskKey] : visualArtifactKeys,
       requirementKeys: brief.media.requiredMediaKinds.filter(kind => !['bgm', 'sfx', 'voice'].includes(kind)),
       capabilityRequirementKeys: imageCapabilities, concurrencyGroup: 'media-provider',
@@ -1307,7 +1336,7 @@ export async function createProductProductionPlanV3(input: {
         mediaCalls: textAdventure ? 1 : brief.media.imageCount, maximumCostUsd: perCost,
         durationMs: perDuration, storageBytes: mediaStorage,
       }),
-      maxAttempts: 2, timeoutMs: 600_000,
+      maxAttempts: chatDesignedVisual ? 1 : 2, timeoutMs: 600_000,
       failurePolicy: !chatVisual && brief.fallbackPolicy.allowTextOnly ? 'skip-optional' : 'pause',
       fallbackTaskKey: null, acceptanceGateIds: ['media.integrity', 'media.rights'],
     }))
@@ -1318,7 +1347,7 @@ export async function createProductProductionPlanV3(input: {
     for (const taskKey of taskKeys) tasks.push(productionTask({
       taskKey, lane: 'audio', kind: textAdventure ? 'audio-asset' : 'audio-bundle',
       skillId: 'product-production.media-request.v1', executionMode: 'media-provider',
-      dependsOn: ['media.requirements'], inputArtifactKeys: ['media.requirements'],
+      dependsOn: ['media.requirements'], inputArtifactKeys: ['media.requirements', ...chatDesignInputs],
       outputArtifactKeys: textAdventure ? [taskKey] : audioArtifactKeys,
       requirementKeys: brief.media.requiredMediaKinds.filter(kind => ['bgm', 'sfx', 'voice'].includes(kind)),
       capabilityRequirementKeys: audioCapabilities, concurrencyGroup: 'media-provider',
@@ -1380,7 +1409,7 @@ export async function createProductProductionPlanV3(input: {
     productionTask({
       taskKey: 'media.chat-review', lane: 'qa', kind: 'chat-media-review', skillId: null,
       executionMode: 'deterministic', dependsOn: ['media.visual'],
-      inputArtifactKeys: [...chatStoryInputs, 'media.requirements', ...visualArtifactKeys],
+      inputArtifactKeys: [...chatStoryInputs, ...chatDesignInputs, 'media.requirements', ...visualArtifactKeys],
       outputArtifactKeys: ['media.chat-review'], requirementKeys: [], capabilityRequirementKeys: [],
       concurrencyGroup: 'deterministic', subjectLockKeys: ['media.chat-review'], priority: 59,
       budgetReservation: reservation({inputTokens: perInput, durationMs: perDuration}), maxAttempts: 1,
@@ -1434,7 +1463,7 @@ export async function createProductProductionPlanV3(input: {
     skillId: null, executionMode: 'deterministic', dependsOn: integrationDependencies,
     inputArtifactKeys: [
       'content.narrative', 'content.product-module', ...textAdventureIntegrationArtifactKeys,
-      ...(chatVisual ? ['media.chat-review', 'media.chat-selection'] : []),
+      ...(chatVisual ? ['media.chat-review', 'media.chat-selection', ...chatDesignInputs] : []),
       ...(narrativeChat ? ['design.game', 'content.chat-candidates', 'content.chat-selection', 'quality.chat-openings'] : []),
       'media.requirements', ...(textAdventure ? ['media.visual-bible'] : []),
       ...(textAdventure && activeVisual ? ['media.anchor-decision'] : []),

@@ -60,7 +60,8 @@ test('author maps a world player separately from AI cast and confirms private pl
       productType: 'character-interaction', characterChat: settings, playerRole: settings.playerRole, openingSituation: settings.openingSituation, visualLevel: 'none', audioLevel: 'none'})
     const sourceCatalog = await sourceService.loadProductProductionWorldSourceCatalogV2({scope: f.scope, worldReleaseId: f.worldReleaseId, selection: brief.source.selection})
     const prepared = compiler.prepareChatNarrativeCompilerSourceV1({brief, sourceCatalog})
-    const source = {schema: 'storyforge.chat-narrative-production-source', version: 1, settings, source: prepared.content,
+    const {visuals: _visuals, experienceInfo: _experienceInfo, privateCharacters: _privateCharacters, ...reviewedSettings} = settings
+    const source = {schema: 'storyforge.chat-narrative-production-source', version: 1, settings: reviewedSettings, source: prepared.content,
       participants: prepared.participantKeys.map((participantKey: string, i: number) => ({participantKey, characterKey: prepared.characterKeys[i], name: prepared.names[i], voiceRules: '自然说话'}))}
     const candidates = (await load('/storyforge/tests/helpers/chat-narrative-production-fixture.ts')).chatSituationCandidatesFixture(source)
     const content = await production.selectChatNarrativeCandidateV1({source, candidates, selection: {schema: 'storyforge.chat-situation-selection', version: 1, sourceHash: await hash(source), candidatesHash: await hash(candidates), selectedOptionKey: 'option-1', authorCommandId: 'author.choose'}})

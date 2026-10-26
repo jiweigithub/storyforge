@@ -18,29 +18,35 @@ for (const {width, imageFailure} of [{width: 390, imageFailure: false}, {width: 
   })
   const calls: string[] = []
   const imageCalls: string[] = []
+  const providerImageHashes: string[] = []
   let actionCount = 0
   await page.route('https://chat-journey.invalid/**', async route => {
     if (route.request().url().endsWith('/images/generations')) {
       const request = route.request().postDataJSON()
       expect(request.model).toBe('agnes-image-2.1-flash')
       imageCalls.push(request.ratio)
-      if (imageFailure) return route.fulfill({status: 503, contentType: 'application/json', body: JSON.stringify({error: {message: 'Isolated image provider failure'}})})
+      if (imageFailure || width === 1440 && imageCalls.length === 3) return route.fulfill({status: 503, contentType: 'application/json', body: JSON.stringify({error: {message: 'Isolated image provider failure'}})})
       // A PNG provider response exercises the actual registered transport,
       // byte validation and blob path. It is not evidence of generated artwork.
-      const png = await page.evaluate(portrait => {
+      const png = await page.evaluate(async ({portrait, index}) => {
         const canvas = document.createElement('canvas')
         canvas.width = portrait ? 768 : 1536; canvas.height = 1024
         const ctx = canvas.getContext('2d')!
-        ctx.fillStyle = '#496787'; ctx.fillRect(64, 64, canvas.width - 128, canvas.height - 128)
-        return canvas.toDataURL('image/png').split(',')[1]
-      }, request.ratio === '3:4')
-      return route.fulfill({contentType: 'application/json', body: JSON.stringify({created: 1, task_id: `fixture.image.${imageCalls.length}`, data: [{b64_json: png}]})})
+        ctx.fillStyle = '#eee8da'; ctx.fillRect(0, 0, canvas.width, canvas.height)
+        ctx.fillStyle = `hsl(${index * 43}, 35%, 40%)`; ctx.fillRect(64, 64, canvas.width - 128, canvas.height - 128)
+        const encoded = canvas.toDataURL('image/png').split(',')[1]
+        const bytes = Uint8Array.from(atob(encoded), value => value.charCodeAt(0))
+        const hash = [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map(value => value.toString(16).padStart(2, '0')).join('')
+        return {encoded, hash}
+      }, {portrait: request.ratio === '3:4', index: imageCalls.length})
+      providerImageHashes.push(png.hash)
+      return route.fulfill({contentType: 'application/json', body: JSON.stringify({created: 1, task_id: `fixture.image.${imageCalls.length}`, data: [{b64_json: png.encoded}]})})
     }
     if (await fulfillChatActionChoiceFixture(route)) {calls.push('choice'); return}
     const prompt = JSON.stringify(route.request().postDataJSON().messages)
     const opening = prompt.includes('初始情境编辑'), review = prompt.includes('开场的语义审查者')
-    const actionReview = prompt.includes('本次持久化行动候选')
-    calls.push(opening ? 'opening' : review ? 'opening-review' : actionReview ? 'action-review' : 'action')
+    const actionReview = prompt.includes('本次持久化行动候选'), design = prompt.includes('美术设计师')
+    calls.push(opening ? 'opening' : review ? 'opening-review' : design ? 'visual-design' : actionReview ? 'action-review' : 'action')
     let output: unknown
     if (opening || review) output = await page.evaluate(async review => {
       const load = new Function('p', 'return import(p)'), {db} = await load('/storyforge/src/lib/db/schema.ts')
@@ -49,12 +55,17 @@ for (const {width, imageFailure} of [{width: 390, imageFailure: false}, {width: 
       const candidates = review ? JSON.parse((await db.productBuildArtifacts.filter((row: {artifactKey: string}) => row.artifactKey === 'content.chat-candidates').last()).payloadJson) : helper.chatSituationCandidatesFixture(source)
       return review ? helper.chatOpeningPerspectiveReviewFixture(source, candidates) : candidates
     }, review)
+    else if (design) output = await page.evaluate(async () => {
+      const load = new Function('p', 'return import(p)'), {db} = await load('/storyforge/src/lib/db/schema.ts')
+      const context = JSON.parse((await db.productBuildArtifacts.filter((row: {artifactKey: string}) => row.artifactKey === 'media.chat-context').last()).payloadJson)
+      return (await load('/storyforge/tests/helpers/chat-media-production-fixture.ts')).chatVisualDesignFixture(context)
+    })
     else if (actionReview) output = {checks: ['continuity', 'permissions', 'player-agency', 'visibility', 'consequences', 'meaningful-direction'].map(check => ({check, passed: true, reason: '单角色完整流程的工程输入，不是模型质量评分。'}))}
     else {
       actionCount++
-      output = {kind: 'pause', text: actionCount === 1 ? '我先自己核对旧账本，你可以安心休息。' : '我记得你想先看书，我会继续核对自己的记录。',
+      output = {kind: actionCount === 1 ? 'pause' : 'complete', text: actionCount === 1 ? '我先自己核对旧账本，你可以安心休息。' : '我核对了旧账本，账本记载这台旧钟上次更换过发条。你可以继续看书，我来检查对应部件。',
         goalKey: 'repair', evidenceFactKeys: ['clock'], audienceKeys: ['player', 'participant.001'], waitingForPlayer: false,
-        newFacts: [], disclosures: [], threadUpdates: [], goalStatus: null}
+        newFacts: actionCount === 1 ? [] : [{factKey: 'repair-record', kind: 'observation', text: '账本记载这台旧钟上次更换过发条。', evidenceFactKeys: ['clock'], evidenceExcerpt: '账本记载这台旧钟上次更换过发条。'}], disclosures: [], threadUpdates: [], goalStatus: null}
     }
     await route.fulfill({contentType: 'application/json', body: JSON.stringify({choices: [{message: {role: 'assistant', content: chatActionResponseFixture(route, output)}, finish_reason: 'stop'}], usage: {prompt_tokens: 100, completion_tokens: 100, total_tokens: 200}})})
   })
@@ -81,14 +92,13 @@ for (const {width, imageFailure} of [{width: 390, imageFailure: false}, {width: 
   await page.getByLabel('新角色 1 身份', {exact: true}).fill('修钟铺店主')
   await page.getByLabel('新角色 1 经历与目标', {exact: true}).fill('希望修好旧钟，愿意自己检查工具。')
   await page.getByLabel('新角色 1 性格与顾虑', {exact: true}).fill('温和而有主见。')
-  const visuals = page.getByLabel('公开画面描述', {exact: true})
-  await visuals.locator('summary').click()
-  await page.getByLabel('苏禾 · 公开外观', {exact: true}).fill('短发，蓝色围裙，手中没有物品。')
-  await page.getByLabel('开场背景画面描述', {exact: true}).fill('木质修钟铺，窗边书架和整洁的工作台。')
+  // The author specifies the world/story and role, not individual image prompts.
   await page.getByRole('button', {name: '保存方案', exact: true}).click()
   await page.getByRole('button', {name: '读取并检查完整资料', exact: true}).click()
   await page.getByLabel('苏禾 姓名 用途', {exact: true}).selectOption('identity')
   await page.getByLabel('苏禾 姓名 可见范围', {exact: true}).selectOption('public')
+  await page.getByLabel('苏禾 身份 用途', {exact: true}).selectOption('identity')
+  await page.getByLabel('苏禾 身份 可见范围', {exact: true}).selectOption('public')
   await page.getByLabel('苏禾 背景 用途', {exact: true}).selectOption('motivation')
   await page.getByLabel('苏禾 背景 可见范围', {exact: true}).selectOption('participants')
   await page.getByRole('button', {name: '确认可见范围并用于新制作', exact: true}).click()
@@ -122,12 +132,13 @@ for (const {width, imageFailure} of [{width: 390, imageFailure: false}, {width: 
   }
   await expect(media.getByRole('img')).toHaveCount(2, {timeout: 30_000})
   expect(imageCalls).toEqual(['3:4', '3:2'])
-  const imageHashes = await page.evaluate(async () => {
+  let imageHashes = await page.evaluate(async () => {
     const load = new Function('p', 'return import(p)'), {db} = await load('/storyforge/src/lib/db/schema.ts')
     return (await db.mediaBlobObjects.toArray()).map((row: {contentHash: string; mimeType: string}) => ({hash: row.contentHash, mimeType: row.mimeType})).sort((a: {hash: string}, b: {hash: string}) => a.hash.localeCompare(b.hash))
   })
   expect(imageHashes).toHaveLength(2)
   expect(imageHashes.every((image: {mimeType: string}) => image.mimeType === 'image/png')).toBe(true)
+  expect(imageHashes.map((image: {hash: string}) => image.hash).sort()).toEqual([...providerImageHashes].sort())
   await media.getByRole('button', {name: '确认这些图片与用途并继续', exact: true}).click()
   await expect(page.getByRole('button', {name: '复验并原子发布', exact: true})).toBeEnabled({timeout: 30_000})
   await page.getByRole('button', {name: '复验并原子发布', exact: true}).click()
@@ -137,8 +148,17 @@ for (const {width, imageFailure} of [{width: 390, imageFailure: false}, {width: 
   await expect(messages).toContainText('我先自己核对旧账本，你可以安心休息。', {timeout: 30_000})
   await expect(messages.getByRole('img')).toHaveCount(1)
   await expect.poll(() => messages.evaluate(el => getComputedStyle(el).backgroundImage)).toContain('blob:')
-  await page.getByText('查看画面', {exact: true}).click()
+  await page.getByTestId('chat-media-details').click()
   await expect(page.getByLabel('当前人物与场景', {exact: true}).getByRole('img')).toHaveCount(2)
+  if (width === 1440) {
+    const retry = page.getByRole('button', {name: '重做失败画面', exact: true})
+    await expect(retry).toBeVisible()
+    expect(imageCalls).toHaveLength(3)
+    await retry.click()
+    await expect(page.getByTestId('chat-media-details')).toHaveText('查看画面')
+    await expect(retry).toHaveCount(0)
+    expect(imageCalls).toHaveLength(4)
+  }
   await page.getByRole('button', {name: '朗读', exact: true}).click()
   const voice = page.getByTestId('chat-voice-controls')
   await voice.locator('summary').first().click()
@@ -152,11 +172,22 @@ for (const {width, imageFailure} of [{width: 390, imageFailure: false}, {width: 
   await voice.getByRole('button', {name: '添加到输入框', exact: true}).click()
   await voice.locator('summary').first().click()
   await page.getByRole('button', {name: '发送并生成', exact: true}).click()
-  await expect(messages).toContainText('我记得你想先看书，我会继续核对自己的记录。', {timeout: 30_000})
+  await expect(messages).toContainText('我核对了旧账本，账本记载这台旧钟上次更换过发条。你可以继续看书，我来检查对应部件。', {timeout: 30_000})
+  await expect(page.getByRole('img', {name: '剧情画面：账本记载这台旧钟上次更换过发条。', exact: true})).toBeVisible({timeout: 30_000})
+  await expect(page.getByTestId('chat-media-details')).toHaveText('查看画面')
+  expect(calls.filter(call => call === 'visual-design')).toHaveLength(1)
+  expect(imageCalls.length).toBeGreaterThanOrEqual(5)
+  imageHashes = await page.evaluate(async () => {
+    const load = new Function('p', 'return import(p)'), {db} = await load('/storyforge/src/lib/db/schema.ts')
+    return (await db.mediaBlobObjects.toArray()).map((row: {contentHash: string; mimeType: string}) => ({hash: row.contentHash, mimeType: row.mimeType})).sort((a: {hash: string}, b: {hash: string}) => a.hash.localeCompare(b.hash))
+  })
+  const beforeImages = imageCalls.length
+  expect(imageHashes.map((image: {hash: string}) => image.hash).sort()).toEqual([...providerImageHashes].sort())
   const beforeReload = calls.length
   await page.reload()
-  await expect(messages).toContainText('我记得你想先看书，我会继续核对自己的记录。')
+  await expect(messages).toContainText('我核对了旧账本，账本记载这台旧钟上次更换过发条。你可以继续看书，我来检查对应部件。')
   expect(calls).toHaveLength(beforeReload)
+  expect(imageCalls).toHaveLength(beforeImages)
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   await expect(page.getByRole('button', {name: '发送并生成', exact: true})).toBeInViewport({ratio: 1})
   await page.screenshot({path: info.outputPath(`single-story-${width}.png`)})
@@ -178,7 +209,7 @@ for (const {width, imageFailure} of [{width: 390, imageFailure: false}, {width: 
       return {projectId, workId: session.workId, sessionId: session.id}
     }, backup)
     await restored.goto(new URL(`/storyforge/chat/play?project=${ids.projectId}&work=${ids.workId}&session=${ids.sessionId}`, page.url()).href)
-    await expect(restored.getByRole('region', {name: '对话记录', exact: true})).toContainText('我记得你想先看书，我会继续核对自己的记录。')
+    await expect(restored.getByRole('region', {name: '对话记录', exact: true})).toContainText('我核对了旧账本，账本记载这台旧钟上次更换过发条。你可以继续看书，我来检查对应部件。')
     await expect.poll(() => restored.getByRole('region', {name: '对话记录', exact: true}).evaluate(el => getComputedStyle(el).backgroundImage)).toContain('blob:')
     await restored.reload()
     await expect(restored.getByLabel('发送给角色的消息', {exact: true})).toBeVisible()

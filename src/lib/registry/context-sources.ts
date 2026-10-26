@@ -2083,6 +2083,16 @@ export const CONTEXT_SOURCES: ContextSource[] = [
     },
   },
   {
+    key: 'chat.runtime-visuals', label: '角色聊天已提交事件的画面依据', scope: 'project', layer: 'L0', ownerFrom: 'work',
+    budgetTokens: 12000, protectedFromTrim: true, atomic: true,
+    enabled: input => Number.isInteger(input.productRuntimeSessionId),
+    read: async input => {
+      if (!input.productRuntimeSessionId) throw new Error('请选择当前聊天存档')
+      const {readChatRuntimeVisualContextV1} = await import('../character-interaction/runtime-visual-context')
+      return JSON.stringify(await readChatRuntimeVisualContextV1(await resolveScope(input), input.productRuntimeSessionId))
+    },
+  },
+  {
     key: 'chat.authoring', label: '角色聊天作者方案与会谈', scope: 'project', layer: 'L0', ownerFrom: 'work',
     budgetTokens: 16000, protectedFromTrim: true,
     read: async input => {

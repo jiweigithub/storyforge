@@ -81,7 +81,7 @@ export default function CharacterInteractionPanel(props: {
   useEffect(() => {setMediaOpen(false)}, [selected?.id])
   const interaction = store.runtimeState.interaction
   const scene = interaction?.activeScene ?? null
-  const media = useChatMedia({scope: props.workspaceScope, session: selected, interaction: interaction ?? null, enabled: !store.loading && props.view !== 'memory' && props.view !== 'history'})
+  const media = useChatMedia({scope: props.workspaceScope, session: selected, interaction: interaction ?? null, busy: store.busy, enabled: !store.loading && props.view !== 'memory' && props.view !== 'history'})
   const visibleMessages = useMemo(() => {
     if (!interaction) return []
     const messages = interaction.messages.filter(item => item.supersededBySequence == null && (item.role === 'player' || item.audienceKeys == null || item.audienceKeys.includes(interaction.playerKey)))

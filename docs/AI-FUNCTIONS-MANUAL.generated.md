@@ -80,7 +80,7 @@
 
 ## 二、上下文源清单（CONTEXT_SOURCES · AI 读什么）
 
-共 144 个上下文源。assembleContext({ sourceKeys }) 按 key 装配。
+共 145 个上下文源。assembleContext({ sourceKeys }) 按 key 装配。
 
 | key | 标签 | 作用域 | 层级 | 预算(token) |
 |---|---|---|---|---|
@@ -96,6 +96,7 @@
 | `ttrpgPlayerRuntime` | 正式 TTRPG 单角色玩家运行视角 | runtime | L0 | 10000 |
 | `ai-town.authoring` | AI 小镇 作者方案与会谈 | project | L0 | 16000 |
 | `avg.authoring` | AVG 作者方案与会谈 | project | L0 | 16000 |
+| `chat.runtime-visuals` | 角色聊天已提交事件的画面依据 | project | L0 | 12000 |
 | `chat.authoring` | 角色聊天作者方案与会谈 | project | L0 | 16000 |
 | `chat.consultation` | 角色聊天本轮方案与所选证据 | project | L0 | 20000 |
 | `chat.source-review` | 角色聊天作者选中的原文资料 | project | L0 | 20000 |
@@ -527,4 +528,4 @@ AI 输出只可提议这里登记的规范字段。普通写回经 `adopt({ targ
 
 ---
 
-生成时间基准:commit `d419524f`
+生成时间基准:commit `04f3a9e6d`

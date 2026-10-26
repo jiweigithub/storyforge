@@ -63,7 +63,7 @@ test('author creates chat-owned cast, confirms private knowledge and restores st
       playerRole: settings.playerRole, openingSituation: settings.openingSituation, visualLevel: 'none', audioLevel: 'none'})
     const sourceCatalog = await world.loadProductProductionWorldSourceCatalogV2({scope: f.scope, worldReleaseId: f.worldReleaseId, selection: brief.source.selection, chatPrivateCharacters: settings.privateCharacters})
     const prepared = compiler.prepareChatNarrativeCompilerSourceV1({brief, sourceCatalog})
-    const {privateCharacters, ...reviewed} = settings
+    const {privateCharacters, visuals: _visuals, experienceInfo: _experienceInfo, ...reviewed} = settings
     const source = {schema: 'storyforge.chat-narrative-production-source', version: 1, settings: reviewed, source: prepared.content,
       participants: prepared.participantKeys.map((participantKey: string, i: number) => ({participantKey, characterKey: prepared.characterKeys[i], name: prepared.names[i], voiceRules: '自然说话'}))}
     const candidates = (await load('/storyforge/tests/helpers/chat-narrative-production-fixture.ts')).chatSituationCandidatesFixture(source)

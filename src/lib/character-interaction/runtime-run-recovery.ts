@@ -28,6 +28,9 @@ export async function readResumableInteractionRunsV1(scope: WorkspaceScope, sess
   for (const row of rows) {
     if (['completed', 'failed', 'cancelled'].includes(row.status)) continue
     const snapshot = await readInstanceAgentRunV1(scope, row.id!)
+    // Runtime media has its own request/recovery UI and never produces a
+    // dialogue candidate. Imported media receipts must not offer story adoption.
+    if (snapshot.contract.executionBindings?.some(binding => binding.skillId === 'character.chat-runtime-visuals')) continue
     if (!isImportedCompletedInteractionRunV1(snapshot, events)) resumable.push(snapshot.run)
   }
   return resumable

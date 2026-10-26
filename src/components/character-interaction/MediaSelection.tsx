@@ -59,9 +59,14 @@ export default function MediaSelection({scope, build, disabled, onConfirm}: {
   const allVisible = !!current && current.ready.length === current.review.images.length && !current.failed.length
   return <section className="mt-3 rounded border border-accent/40 bg-accent/5 p-4 text-xs" data-testid="chat-media-selection">
     <h3 className="font-semibold">确认角色和开场图片</h3>
-    <p className="mt-2 text-text-muted">请检查原图、人物外观和用途。确认后，图片才会进入本次聊天版本。若不合适，可取消本次制作，修改公开画面描述后重新开始。</p>
+    <p className="mt-2 text-text-muted">请检查原图、人物外观和用途。确认后，图片才会进入本次聊天版本。若不合适，可取消本次制作，调整角色或美术偏好后重新制作。</p>
     {failure?.identity === identity && <p role="alert" className="mt-2 text-error">图片无法确认：{failure.message}</p>}
     {!current && failure?.identity !== identity && <p role="status">正在读取并校验当前原图…</p>}
+    {current?.review.source.interaction.chatVisualDesign && <details className="mt-3" open><summary>角色与情境的美术设计</summary>
+      <p>{current.review.source.interaction.chatVisualDesign.style}</p>
+      {current.review.source.interaction.chatVisualDesign.characters.map(character => <p key={character.characterKey}>{character.name}：{character.appearance}；{character.costume}</p>)}
+      <p>{current.review.source.interaction.chatVisualDesign.scene.location} · {current.review.source.interaction.chatVisualDesign.scene.timeLabel}：{current.review.source.interaction.chatVisualDesign.scene.depiction}</p>
+    </details>}
     <div className="mt-3 grid gap-3 sm:grid-cols-2">{current?.review.images.map(({asset}) => {
       const participant = current.decision.bindings.participants.find(binding => binding.avatarAssetKey === asset.assetKey)
       const role = participant && current.review.source.interaction.profiles.find(profile => profile.participantKey === participant.participantKey)

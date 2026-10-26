@@ -50,7 +50,7 @@ it('rejects missing, stale, author-only, motive, player, already-known or unknow
     await expect(readChatSourceProjectionViewV1({draft, classifications: review.classifications, viewerKey: 'player'}), kind).rejects.toThrow()
   }
   expect(() => parseChatAuthoringSettings({...f.settings, narrative: {...f.settings.narrative, permissions: {...f.settings.narrative.permissions, maxDiscoveriesPerSituation: 0}}})).toThrow('额度')
-  const {narrative: _setup, ...legacy} = f.settings
+  const {narrative: _setup, visuals: _visuals, ...legacy} = f.settings
   expect(() => parseChatAuthoringSettings({...legacy, version: 2})).toThrow('实验')
 })
 

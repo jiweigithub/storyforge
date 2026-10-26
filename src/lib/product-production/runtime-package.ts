@@ -1,3 +1,4 @@
+import {parseChatVisualDesignV1} from '../character-interaction/visual-design'
 import {parseChatExperienceInfoV1} from '../character-interaction/experience-info'
 import { parseAdventureContent } from '../adventure/runtime'
 import {parseChatMediaBindingsV1} from '../character-interaction/media-contract'
@@ -326,6 +327,8 @@ export function parseProductRuntimePackageV1(value: string | unknown): ProductRu
     fail('角色资料投影只属于角色聊天产品')
   }
   if (selectedProduct !== 'character-interaction' && (pkg.interaction as {chatNarrative?: unknown} | undefined)?.chatNarrative !== undefined) fail('主动叙事情境只属于角色聊天产品')
+  const chatVisualDesign = (pkg.interaction as {chatVisualDesign?: unknown} | undefined)?.chatVisualDesign
+  if (selectedProduct !== 'character-interaction' && chatVisualDesign !== undefined) fail('角色美术设计只属于角色聊天产品')
   const chatMedia = (pkg.interaction as {chatMedia?: unknown} | undefined)?.chatMedia
   if (selectedProduct !== 'character-interaction' && (pkg.interaction as {chatCardCredits?: unknown} | undefined)?.chatCardCredits !== undefined) fail('角色卡署名只属于角色聊天产品')
   if (selectedProduct !== 'character-interaction' && (pkg.interaction as {chatExperienceInfo?: unknown} | undefined)?.chatExperienceInfo !== undefined) fail('聊天作品说明只属于角色聊天产品')
@@ -449,6 +452,15 @@ export function parseProductRuntimePackageV1(value: string | unknown): ProductRu
     if (!parsed.presentation || chatMedia === undefined) fail('角色图片目录与绑定必须同时存在')
     if (parsed.presentation.cues.length) fail('角色聊天图片不能执行预设节拍演出')
     parsed.interaction!.chatMedia = parseChatMediaBindingsV1(chatMedia, parsed.interaction!, parsed.presentation.assets)
+  }
+  if (chatVisualDesign !== undefined) {
+    if (!parsed.interaction?.chatMedia || !parsed.interaction.chatNarrative) fail('角色美术设计缺少内容与消费槽')
+    const design = parseChatVisualDesignV1(chatVisualDesign), content = parsed.interaction
+    const initial = content.chatNarrative!.initialSituation
+    if (design.characters.length !== content.profiles.length || design.characters.some(character => !content.profiles.some(profile =>
+      profile.characterKey === character.characterKey && profile.participantKey === character.participantKey && profile.name === character.name))
+      || design.scene.sceneKey !== initial.sceneKey || design.scene.location !== initial.location || design.scene.timeLabel !== initial.timeLabel) fail('美术设计与发布角色或场景不一致')
+    content.chatVisualDesign = design
   }
   if (selectedProduct === 'text-open-world' && (!hasTextOpenWorldVNext || hasTextOpenWorldLegacy)) {
     const openWorldEvolution = parseOpenWorldEvolutionContent(pkg.openWorldEvolution)

@@ -52,6 +52,8 @@ describe('R-CF20260702-10 · task classification and resolution', () => {
     ['agent.orchestrator', 'agent-orchestrator'],
     ['agent.world-origin', 'agent-world-origin'],
     ['agent.character', 'agent-character'],
+    ['runtime.character.chat-narrative-action', 'agent-character'],
+    ['runtime.character.chat-narrative-review', 'agent-character'],
     ['agent.inspiration', 'agent-inspiration'],
     ['agent.outline', 'agent-outline'],
     ['agent.prose', 'agent-prose'],

@@ -1,7 +1,7 @@
 import { parseChatSourceReviewV1, type ChatSourceReviewV1 } from './source-projection';
 import { DEFAULT_CHAT_NARRATIVE_SETUP_V1, parseChatNarrativeSetupV1, type ChatNarrativeSetupV1 } from './narrative-setup';
 import {isChatPrivateCharacterKeyV1, parseChatPrivateCharactersV1, type ChatPrivateCharacterV1} from './private-character';
-import {parseChatVisualIntentV1, type ChatVisualIntentV1} from './visual-intent';
+import {DEFAULT_CHAT_VISUAL_INTENT_V2, parseChatVisualIntentV1, type ChatVisualIntent} from './visual-intent';
 import {parseChatExperienceInfoV1, type ChatExperienceInfoV1} from './experience-info';
 /** Product-owned S2 settings; these never mutate a source WorldRelease. */
 export interface ChatAuthoringSettingsV1 {
@@ -38,7 +38,7 @@ export interface ChatAuthoringSettingsV3 extends Omit<ChatAuthoringSettingsV2, '
     /** Explicit author-created cast; absent in historical settings. */
     privateCharacters?: ChatPrivateCharacterV1[];
     /** Explicit public presentation draft; absent means the historical text-only contract. */
-    visuals?: ChatVisualIntentV1;
+    visuals?: ChatVisualIntent;
     /** Author-entered publication statements; excluded from model contexts. */
     experienceInfo?: ChatExperienceInfoV1;
 }
@@ -79,7 +79,7 @@ function parseChatAuthoringSettingsV2(row: Record<string, unknown>): ChatAuthori
 }
 export const DEFAULT_CHAT_SETTINGS: ChatAuthoringSettingsV1 = { version: 1, playerRole: '', openingSituation: '', experience: '', mode: 'single', targetPlayMinutes: 30, maxTurns: 60, replyBudget: 120, maxMemoryEntries: 120, relationshipThreshold: 20, contentBoundaries: '不替玩家决定行动；不披露角色不知道的信息。', qualityProfile: 'prototype', characters: [] };
 export const DEFAULT_CHAT_SETTINGS_V2: ChatAuthoringSettingsV2 = {...DEFAULT_CHAT_SETTINGS, version: 2, sourceReview: null};
-export const DEFAULT_CHAT_SETTINGS_V3: ChatAuthoringSettingsV3 = {...DEFAULT_CHAT_SETTINGS_V2, version: 3, narrative: structuredClone(DEFAULT_CHAT_NARRATIVE_SETUP_V1)};
+export const DEFAULT_CHAT_SETTINGS_V3: ChatAuthoringSettingsV3 = {...DEFAULT_CHAT_SETTINGS_V2, version: 3, narrative: structuredClone(DEFAULT_CHAT_NARRATIVE_SETUP_V1), visuals: structuredClone(DEFAULT_CHAT_VISUAL_INTENT_V2)};
 export function parseChatAuthoringSettingsV1(value: unknown): ChatAuthoringSettingsV1 {
     if (!value || typeof value !== 'object' || Array.isArray(value))
         throw new Error('角色聊天方案必须是对象');

@@ -21,7 +21,7 @@
     "edits": 48
   },
   "baseline": {
-    "path": "tests/acceptance/narrative-world/baseline-20261025-mainline-integration-v1.json",
+    "path": "tests/acceptance/narrative-world/baseline-20261026-chat-visual-flow-v3.json",
     "policy": "Preserve this dated receipt. Changed corpus requires a new dataset version; changed implementation requires a reviewed new receipt.",
     "history": [
       {
@@ -446,6 +446,21 @@
         "path": "tests/acceptance/narrative-world/baseline-20261022-nw2d-v79.json",
         "workPackage": "NW-engineering-checkpoint",
         "note": "Preserved 2026-10-23 checkpoint before current-main integration; original measurements, source hashes and known failures unchanged."
+      },
+      {
+        "path": "tests/acceptance/narrative-world/baseline-20261025-mainline-integration-v1.json",
+        "workPackage": "NW-mainline-integration",
+        "note": "Preserved mainline integration receipt before the character-chat branch integration; no new model or human acceptance."
+      },
+      {
+        "path": "tests/acceptance/narrative-world/baseline-20261026-chat-visual-flow-v1.json",
+        "workPackage": "CHAT-VISUAL-FLOW",
+        "note": "Preserved initial contextual-media integration receipt before explicit system-configuration task and final production labels; deterministic outcomes are unchanged."
+      },
+      {
+        "path": "tests/acceptance/narrative-world/baseline-20261026-chat-visual-flow-v2.json",
+        "workPackage": "CHAT-VISUAL-FLOW",
+        "note": "Preserved earlier deterministic receipt before final image-card consumer integration. Final v3 is generated after freezing this manifest pointer."
       }
     ],
     "comparison": "NW-2E checkpoint of the unchanged legacy v3 120-query comparator. Typed v4 query, exact product plans, current impact diagnostics and scale failures have separate receipts; no model or human quality acceptance is inferred."

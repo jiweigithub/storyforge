@@ -1,3 +1,6 @@
+import {compileChatVisualDesignV1, createChatVisualContextV1} from '../../src/lib/character-interaction/visual-design'
+import {DEFAULT_CHAT_VISUAL_INTENT_V2} from '../../src/lib/character-interaction/visual-intent'
+import {chatVisualDesignFixture} from './chat-media-production-fixture'
 import type {ChatExperienceInfoV1} from '../../src/lib/character-interaction/experience-info'
 import {db} from '../../src/lib/db/schema'
 import {hashProductProductionValueV2} from '../../src/lib/product-production/hash'
@@ -12,7 +15,7 @@ import type {FrozenRuntimeMediaAssetV2} from '../../src/lib/types'
 
 /** Actual PNG bytes and strict release ownership; colored pixels are engineering
  * fixtures only, not artwork or evidence of visual production quality. */
-export async function seedChatMediaPlayerFixture(options: {secondOrdinaryScene?: boolean; experienceInfo?: ChatExperienceInfoV1} = {}) {
+export async function seedChatMediaPlayerFixture(options: {dynamic?: boolean; secondOrdinaryScene?: boolean; experienceInfo?: ChatExperienceInfoV1} = {}) {
   const f = await seedChatLibraryFixture(options), old = (await db.productReleases.get(f.releaseId))!
   const original = await verifyProductReleaseManifestV1(old.manifestJson), pkg = structuredClone(original.runtimePackage)
   const pngs = ['iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC', 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNgYPgPAAEDAQAIicLsAAAAAElFTkSuQmCC']
@@ -28,6 +31,10 @@ export async function seedChatMediaPlayerFixture(options: {secondOrdinaryScene?:
   pkg.interaction!.chatMedia = {schema: 'storyforge.chat-media', version: 1,
     participants: pkg.interaction!.profiles.map((p, i) => ({participantKey: p.participantKey, avatarAssetKey: assets[i].assetKey, portraitAssetKey: assets[i].assetKey})),
     scenes: [{sceneKey: 'inn', location: '驿站', backgroundAssetKey: 'inn.background'}]}
+  if (options.dynamic) {
+    const context = createChatVisualContextV1(pkg.interaction!, DEFAULT_CHAT_VISUAL_INTENT_V2)
+    pkg.interaction!.chatVisualDesign = await compileChatVisualDesignV1(chatVisualDesignFixture(context), context, true)
+  }
   const manifest = await createFixtureProductReleaseManifestV1({runtimePackage: pkg, productionKey: old.productionKey, releaseVersion: 2,
     parentRelease: {releaseUid: original.lineage.releaseUid, releaseHash: original.lineage.releaseHash}})
   const now = Date.now(), releaseId = await db.productReleases.add({...f.scope, productType: 'character-interaction', productionKey: old.productionKey,

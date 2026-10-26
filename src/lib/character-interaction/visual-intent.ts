@@ -9,6 +9,18 @@ export interface ChatVisualIntentV1 {
   characters: Array<{characterKey: string; description: string}>
   openingBackground: string
 }
+/** New productions derive their art from confirmed content. V1 remains exact
+ * for historical plans; switching modes creates a new authorized Brief. */
+export interface ChatVisualIntentV2 extends Omit<ChatVisualIntentV1, 'version'> {
+  version: 2
+  style: string
+  runtimeImages: boolean
+}
+export type ChatVisualIntent = ChatVisualIntentV1 | ChatVisualIntentV2
+export const DEFAULT_CHAT_VISUAL_INTENT_V2: ChatVisualIntentV2 = {
+  version: 2, characters: [], openingBackground: '',
+  style: '细腻的叙事插画，统一人物造型与场景光线；服装与时代、职业相符', runtimeImages: true,
+}
 
 function fail(message: string): never {throw new Error(`[chat-visual-intent] ${message}`)}
 function exact(value: unknown, keys: string[]): Record<string, unknown> {
@@ -16,7 +28,13 @@ function exact(value: unknown, keys: string[]): Record<string, unknown> {
     || Object.keys(value).sort().join(',') !== [...keys].sort().join(',')) fail('画面描述字段无效')
   return value as Record<string, unknown>
 }
-export function parseChatVisualIntentV1(value: unknown): ChatVisualIntentV1 {
+export function parseChatVisualIntentV1(value: unknown): ChatVisualIntent {
+  if (value && typeof value === 'object' && 'version' in value && value.version === 2) {
+    const row = exact(value, ['version', 'characters', 'openingBackground', 'style', 'runtimeImages'])
+    if (typeof row.style !== 'string' || row.style.length > 2000 || !row.style.trim() || typeof row.runtimeImages !== 'boolean') fail('画风或随剧情配图设置无效')
+    const base = parseChatVisualIntentV1({version: 1, characters: row.characters, openingBackground: row.openingBackground})
+    return {...base, version: 2, style: row.style, runtimeImages: row.runtimeImages}
+  }
   const row = exact(value, ['version', 'characters', 'openingBackground'])
   if (row.version !== 1 || !Array.isArray(row.characters) || row.characters.length > 8
     || typeof row.openingBackground !== 'string' || row.openingBackground.length > 4000) fail('画面描述版本或数量无效')
@@ -56,7 +74,9 @@ export function compileChatVisualIntentV1(value: unknown, content: FrozenInterac
 export function createChatVisualRequirementsV1(value: unknown, content: FrozenInteractionRuntimeV2, openingBeatKey: string) {
   if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(openingBeatKey)) fail('画面缺少选定开场的导航标识')
   compileChatVisualIntentV1(value, content)
-  return visualRequirementsForScene(parseChatVisualIntentV1(value), content.chatNarrative!.initialSituation.sceneKey, openingBeatKey)
+  const intent = parseChatVisualIntentV1(value)
+  if (intent.version !== 1) fail('世界情境配图必须先完成角色与场景设计')
+  return visualRequirementsForScene(intent, content.chatNarrative!.initialSituation.sceneKey, openingBeatKey)
 }
 
 function visualRequirementsForScene(intent: ChatVisualIntentV1, sceneKey: string, openingBeatKey: string) {
@@ -93,6 +113,10 @@ export function chatVisualMediaProfileV1(settings: ChatAuthoringSettings | undef
   const intent = parseChatVisualIntentV1(settings.visuals)
   const selected = new Set([...settings.characters.map(character => character.sourceKey), ...(settings.privateCharacters ?? []).map(character => character.characterKey)])
   if (intent.characters.some(character => !selected.has(character.characterKey))) fail('画面人物不属于当前选择，请重新选择或移除旧描述')
+  if (intent.version === 2) {
+    if (!selected.size) fail('请先确认参与角色')
+    return {imageCount: selected.size + 1, requiredMediaKinds: ['character-pose', 'background'] as ProductProductionMediaProfileV1['requiredMediaKinds']}
+  }
   const requiredMediaKinds: ProductProductionMediaProfileV1['requiredMediaKinds'] = []
   if (intent.characters.length) requiredMediaKinds.push('character-pose')
   if (intent.openingBackground.trim()) requiredMediaKinds.push('background')
@@ -103,10 +127,11 @@ export function chatVisualMediaProfileV1(settings: ChatAuthoringSettings | undef
 
 /** Recheck the exact public payload immediately before the media transport.
  * Scene/beat IDs are subsequently checked against the selected opening. */
-export function assertChatVisualRequirementsV1(value: unknown, intent: ChatVisualIntentV1) {
+export function assertChatVisualRequirementsV1(value: unknown, intent: ChatVisualIntent) {
+  if (intent.version === 2) return // Exact design/source validation is performed by the V2 build tasks.
   const row = value as {visual?: Array<{sceneTag?: unknown; beatKey?: unknown}>}
   const first = row?.visual?.[0]
   if (typeof first?.sceneTag !== 'string' || typeof first.beatKey !== 'string') fail('图片需求缺少开场标识')
-  const expected = visualRequirementsForScene(parseChatVisualIntentV1(intent), first.sceneTag, first.beatKey)
+  const expected = visualRequirementsForScene(intent, first.sceneTag, first.beatKey)
   if (canonicalProductProductionJsonV2(value) !== canonicalProductProductionJsonV2(expected)) fail('图片请求与作者公开画面描述不一致')
 }

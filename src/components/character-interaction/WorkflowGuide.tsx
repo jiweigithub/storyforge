@@ -21,7 +21,7 @@ export default function WorkflowGuide({page, settings, worldSelected, hasProduct
         : !worldSelected
           ? {page: 'source', label: '选择世界版本', detail: '选择已冻结的世界作为来源，随后配置本次聊天的角色。'}
           : castCount !== 1 || !settings.sourceReview
-            ? {page: 'cast', label: '确认角色与知情范围', detail: '选择或新建一名角色，确认谁知道哪些资料；也可以填写人物外观和场景画面。'}
+            ? {page: 'cast', label: '确认角色与知情范围', detail: '选择或新建一名角色，确认谁知道哪些资料；画面将依据这些角色与故事情境设计，可补充画风偏好。'}
             : {page: 'confirm', label: '确认方案并开始制作', detail: '可选择纯文字或带图片的制作。开始后选择开场、确认图片，再发布和游玩。'}
   return <section className="lf-paper space-y-2" aria-label="单角色体验指引">
     <h3>单角色故事 · 技术预览</h3>

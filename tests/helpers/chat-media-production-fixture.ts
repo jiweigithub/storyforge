@@ -1,3 +1,5 @@
+import {DEFAULT_CHAT_VISUAL_INTENT_V2} from '../../src/lib/character-interaction/visual-intent'
+import type {ChatVisualContextV1} from '../../src/lib/character-interaction/visual-design'
 import type {ChatExperienceInfoV1} from '../../src/lib/character-interaction/experience-info'
 import {previewChatCharacterCardV2} from '../../src/lib/character-interaction/character-card'
 import {chatCharacterCardFixture} from './chat-character-card-fixture'
@@ -10,11 +12,11 @@ import {runProductProductionUntilBlockedV1} from '../../src/lib/product-producti
 import {confirmChatSituationDecisionV1, readProductProductionDetailsV1} from '../../src/lib/product-production/service'
 import {seedChatNarrativeProductionFixture, chatSituationCandidatesFixture, chatOpeningDevelopmentReviewFixture, chatOpeningPerspectiveReviewFixture} from './chat-narrative-production-fixture'
 
-export async function seedIllustratedChatBriefFixture(privateCast?: 'only', experienceInfo?: ChatExperienceInfoV1) {
+export async function seedIllustratedChatBriefFixture(privateCast?: 'only', experienceInfo?: ChatExperienceInfoV1, contextual = false) {
   const cardOrigin = privateCast === 'only' ? (await previewChatCharacterCardV2({bytes: new TextEncoder().encode(JSON.stringify(chatCharacterCardFixture())).buffer, fileName: 'card.json'})).origin : undefined
   const f = await seedChatNarrativeProductionFixture({privateCast, cardOrigin, experienceInfo})
   const characterKey = f.source.participants[0].characterKey
-  const settings = {...f.settings, visuals: {version: 1 as const,
+  const settings = {...f.settings, visuals: contextual ? structuredClone(DEFAULT_CHAT_VISUAL_INTENT_V2) : {version: 1 as const,
     characters: [{characterKey, description: '银灰短发，蓝色围裙，手里没有任何物品。'}], openingBackground: '无人的木屋，明亮窗户，整洁木桌。'}}
   const confirmed = await saveChatDraftV1(f.scope, f.confirmed.revision, settings)
   const starting = await suggestProductStartingPoints({scope: f.scope, worldReleaseId: confirmed.worldReleaseId!})
@@ -25,8 +27,8 @@ export async function seedIllustratedChatBriefFixture(privateCast?: 'only', expe
 }
 
 /** Synthetic text and procedural images exercise production authority, not artistic quality. */
-export async function seedChatMediaConfirmationFixture(experienceInfo?: ChatExperienceInfoV1) {
-  const f = await seedIllustratedChatBriefFixture('only', experienceInfo), {scope, brief} = f
+export async function seedChatMediaConfirmationFixture(experienceInfo?: ChatExperienceInfoV1, contextual = false) {
+  const f = await seedIllustratedChatBriefFixture('only', experienceInfo, contextual), {scope, brief} = f
   const created = await executeProductProductionCommand({scope, command: {type: 'create-intent', commandId: 'pictures.create',
     productionKey: 'chat.pictures-fixture', productType: 'character-interaction', worldReleaseId: f.confirmed.worldReleaseId!, userText: '图片确认工程验证'}})
   if (!created.ok) throw new Error('fixture creation failed')
@@ -41,14 +43,15 @@ export async function seedChatMediaConfirmationFixture(experienceInfo?: ChatExpe
   const textRequests: string[] = []
   const runText: ProductionTextRunnerV1 = async request => {
     const situation = request.system.includes('初始情境编辑'), review = request.system.includes('开场的语义审查者')
-    if (!situation && !review) throw new Error('Unexpected fixture model call')
+    const design = request.system.includes('美术设计师')
+    if (!situation && !review && !design) throw new Error('Unexpected fixture model call')
     injectedCalls++
     textRequests.push(JSON.stringify(request))
     const production = (await db.productProductions.get(productionId))!
     const buildId = (await db.productBuilds.where('[productionId+buildNumber]').equals([productionId, production.currentBuildNumber!]).first())!.id!
     const source = JSON.parse((await db.productBuildArtifacts.where('buildId').equals(buildId).filter(row => row.artifactKey === 'design.game').last())!.payloadJson)
     const candidates = situation ? chatSituationCandidatesFixture(source) : JSON.parse((await db.productBuildArtifacts.filter(row => row.artifactKey === 'content.chat-candidates').last())!.payloadJson)
-    return {output: JSON.stringify(situation ? candidates : chatOpeningPerspectiveReviewFixture(source, candidates, chatOpeningDevelopmentReviewFixture(candidates, 'option-1'))), usage: {inputTokens: 100, outputTokens: 100},
+    return {output: JSON.stringify(design ? chatVisualDesignFixture(JSON.parse((await db.productBuildArtifacts.where('buildId').equals(buildId).filter(row => row.artifactKey === 'media.chat-context').last())!.payloadJson)) : situation ? candidates : chatOpeningPerspectiveReviewFixture(source, candidates, chatOpeningDevelopmentReviewFixture(candidates, 'option-1'))), usage: {inputTokens: 100, outputTokens: 100},
       bindingReceipt: {schema: 'storyforge.provider-binding-receipt', version: 1, requirementKey, adapterId: 'configured-text.v1', adapterVersion: 1,
         provider: 'fixture', model: 'fixture-model', endpointOrigin: 'https://fixture.invalid', executionLocation: 'browser-direct', credentialSource: 'existing-ai-config',
         credentialPresent: true, capabilityHash: bindingHash, boundAt: 1, receiptHash: 'b'.repeat(64)}}
@@ -65,6 +68,12 @@ export async function seedChatMediaConfirmationFixture(experienceInfo?: ChatExpe
     sourceHash: rows.find(row => row.artifactKey === 'design.game')!.contentHash, selectedOptionKey: 'option-2'})
   await run()
   details = await readProductProductionDetailsV1(scope, productionId)
-  if (JSON.parse(details.build!.failureJson!).taskKey !== 'media.chat-author-gate' || injectedCalls !== 2) throw new Error('Missing fixture image gate')
-  return {scope, productionId, buildId: details.build!.id!, injectedCalls, textRequests, world: JSON.stringify(await db.worldReleases.toArray())}
+  if (JSON.parse(details.build!.failureJson!).taskKey !== 'media.chat-author-gate' || injectedCalls !== (contextual ? 3 : 2)) throw new Error(`Missing fixture image gate: ${details.build!.failureJson}; calls=${injectedCalls}`)
+  return {run, scope, productionId, buildId: details.build!.id!, injectedCalls, textRequests, world: JSON.stringify(await db.worldReleases.toArray())}
+}
+
+export function chatVisualDesignFixture(context: ChatVisualContextV1) {
+  return {style: context.style, characters: context.characters.map(character => ({characterKey: character.characterKey,
+    appearance: '黑色短发，沉静眼神，清楚完整的面部轮廓', costume: '修钟铺工作围裙与长袖衬衣', evidenceKeys: context.facts.slice(0, 1).map(fact => fact.key)})),
+    scene: {depiction: `${context.scene.location}，与当前故事一致的阴雨光线，木质工作台`, evidenceKeys: context.facts.map(fact => fact.key)}}
 }
