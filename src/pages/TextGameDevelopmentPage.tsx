@@ -239,12 +239,12 @@ export default function TextGameDevelopmentPage({ openWorld = false }: { openWor
 
   if (!openWorld && mode === 'play') return adventureFrame(<>
     {error && <p role="alert">{error}</p>}
-    {decision.enterable && scope && project ? <ErrorBoundary key={`${scope.projectId}:${scope.workId}:${session ?? 'library'}`}><Suspense fallback={<p className="adventure-page-loading">正在打开故事书…</p>}>
+    {decision.enterable && scope && project ? <ErrorBoundary key={`${scope.projectId}:${scope.worldId}:${scope.workId}`}><Suspense fallback={<p className="adventure-page-loading">正在打开故事书…</p>}>
       <AdventureGamePlayer key={scope.workId} project={project} scope={scope}
         worldGroupId={project.enableMultiWorld ? activeWorldGroupId : null} initialSessionId={session}
         onOpenSession={openPlayer}
         onOpenLibrary={() => navigate(workspacePath('library', { session: null }))} />
-    </Suspense></ErrorBoundary> : <div className="adventure-page-empty"><span className="adventure-eyebrow">STORYFORGE / INTERACTIVE FICTION</span><h1>{page.label}</h1><p>每一个选择，都是故事的起点。选择一个工作区，打开其中的文字冒险作品。</p></div>}
+    </Suspense></ErrorBoundary> : <div className="adventure-page-empty"><span className="adventure-eyebrow">STORYFORGE / INTERACTIVE FICTION</span><p>每一个选择，都是故事的起点。选择一个工作区，打开其中的文字冒险作品。</p></div>}
   </>)
 
   const studio = <>
