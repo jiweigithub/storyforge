@@ -3,7 +3,7 @@
   "version": 1,
   "status": "in-progress",
   "scope": "AVG product development and S3 integration; story design deferred; no main merge/deployment",
-  "integrationBase": "63af1fba36e55d9a4205a4350416a46ffd361c3f",
+  "integrationBase": "69e2a928a3685ed7849d9a45d74395c6a6b38b18",
   "newModelOrMediaRequests": 0,
   "demo": {
     "releaseUid": "PR-avg-avg.assembly.e5c0a014-7586-4115-9b10-7c5df01627aa-v1-57c475fe2343726fa7809a8c",
@@ -151,8 +151,8 @@
       "newTestsAdded": 0
     },
     "baselineObservationsUnchanged": true,
-    "finalFullCI": "pending complete JSON test and coverage reports",
-    "serialIsolatedE2E": "pending",
+    "finalFullCI": "pending canonical hosted workflow on merged candidate; no new full local invocation",
+    "serialIsolatedE2E": "pending existing hosted core and AVG media workflows; no new matrix",
     "documentPreflightFailure": {
       "session": 8618,
       "exitCode": 1,
@@ -233,11 +233,124 @@
       "globalOrProductPerformanceBudgetsChanged": false,
       "runtimeProductLogicChanged": false,
       "status": "pending final CI"
+    },
+    "stoppedAttempt8e02244": {
+      "head": "8e02244bd7916494ea6908ed59907d2e0730281f",
+      "session": 57303,
+      "exitCode": 1,
+      "complete": false,
+      "knownFailure": "Existing open-world full Salt Ridge DAG case timed out at 600000ms; this deadline was not changed.",
+      "termination": "Explicit cancellation after a known failure and five actual integration conflicts with newer main 69e2a928. Not restarted for observation timeout.",
+      "environment": "Other worktrees were running CPU-heavy tasks and system swap was about 10GB; causality not established. Current attempt had no overlapping sleep entry at query time.",
+      "preserved": [
+        "original log",
+        "completed raw coverage",
+        "process sample",
+        "integration conflict preview"
+      ],
+      "countsNotCertified": true
+    },
+    "main69eIntegration": {
+      "base": "69e2a928a3685ed7849d9a45d74395c6a6b38b18",
+      "runtimeAVGLogicChanged": false,
+      "conflictFiles": 5,
+      "resolution": "Official generated documents; both frozen receipt histories retained; AVG fingerprint paths retained; new integration receipts from existing cases.",
+      "baselineRefresh": {
+        "files": 3,
+        "tests": 110,
+        "failed": 0,
+        "observations": [
+          {
+            "receipt": "baseline",
+            "observationsAndCorpusUnchanged": true,
+            "changedInputHashes": [
+              "tests/acceptance/narrative-world/manifest-v1.json",
+              "tests/regression/R-NW-1B-corpus.test.ts",
+              "tests/regression/R-NW-1A-ir-codec.test.ts"
+            ],
+            "currentHashesVerified": 292
+          },
+          {
+            "receipt": "ir-contract",
+            "observationsAndCorpusUnchanged": true,
+            "changedInputHashes": [
+              "tests/regression/R-NW-1A-ir-codec.test.ts"
+            ],
+            "currentHashesVerified": 17
+          },
+          {
+            "receipt": "domain-projection",
+            "observationsAndCorpusUnchanged": true,
+            "changedInputHashes": [
+              "tests/regression/R-NW-1B-corpus.test.ts"
+            ],
+            "currentHashesVerified": 27
+          }
+        ]
+      },
+      "precommitChecks": [
+        {
+          "command": "npm run check:architecture",
+          "exitCode": 0,
+          "seconds": 7.35
+        },
+        {
+          "command": "npm run check:required-tables",
+          "exitCode": 0,
+          "seconds": 0.14
+        },
+        {
+          "command": "npm run check:ai-manual",
+          "exitCode": 0,
+          "seconds": 0.5
+        },
+        {
+          "command": "npm run check:ai-entry-registry",
+          "exitCode": 0,
+          "seconds": 0.87
+        },
+        {
+          "command": "npm run check:docs",
+          "exitCode": 0,
+          "seconds": 0.55
+        },
+        {
+          "command": "npm run check:project-metrics",
+          "exitCode": 0,
+          "seconds": 0.46
+        },
+        {
+          "command": "npm run check:agent-freshness",
+          "exitCode": 0,
+          "seconds": 0.71
+        },
+        {
+          "command": "npm run lint",
+          "exitCode": 0,
+          "seconds": 32.93
+        },
+        {
+          "command": "npx tsc --noEmit",
+          "exitCode": 0,
+          "seconds": 40.89
+        },
+        {
+          "command": "npm run build",
+          "exitCode": 0,
+          "seconds": 80.07
+        },
+        {
+          "command": "npm run check:bundle-size",
+          "exitCode": 0,
+          "seconds": 0.51
+        }
+      ]
     }
   },
   "limitations": [
     "original failed/unknown provider requests and cost gaps retained",
     "no independent human hearing or commercial art acceptance",
     "final CI/E2E and commit/push remain open"
-  ]
+  ],
+  "previousIntegrationBase": "63af1fba36e55d9a4205a4350416a46ffd361c3f"
 }

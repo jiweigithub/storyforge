@@ -21,7 +21,7 @@
     "edits": 48
   },
   "baseline": {
-    "path": "tests/acceptance/narrative-world/baseline-20261026-avg-final-integration-v1.json",
+    "path": "tests/acceptance/narrative-world/baseline-20261027-avg-final-main69e-v1.json",
     "policy": "Preserve this dated receipt. Changed corpus requires a new dataset version; changed implementation requires a reviewed new receipt.",
     "history": [
       {
@@ -462,6 +462,16 @@
         "path": "tests/acceptance/narrative-world/baseline-20261026-avg-media-retention-v1.json",
         "workPackage": "AVG-media-retention",
         "note": "Preserved unchanged before final integration with origin/main 63af1fba3; the new receipt remeasures the merged input fingerprints without changing corpus, observations or findings."
+      },
+      {
+        "path": "tests/acceptance/narrative-world/baseline-20261026-avg-final-integration-v1.json",
+        "workPackage": "AVG-final-integration",
+        "note": "Preserved original AVG final integration input receipt before main 69e2a928."
+      },
+      {
+        "path": "tests/acceptance/narrative-world/baseline-20261026-pr134-integration-v1.json",
+        "workPackage": "main-PR134-integration",
+        "note": "Preserved mainline receipt before integration with AVG media branch."
       }
     ],
     "comparison": "NW-2E checkpoint of the unchanged legacy v3 120-query comparator. Typed v4 query, exact product plans, current impact diagnostics and scale failures have separate receipts; no model or human quality acceptance is inferred."
