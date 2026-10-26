@@ -401,6 +401,11 @@ test('Visual QA 阻塞时可直接上传同画幅高分辨率替换，旧 Build 
     return seeded
   }, solidPng(1280, 720, [20, 50, 80, 255]).toString('base64'))
   await openTextAdventurePage(page, seeded.scope, 'production')
+  // Navigation finishes before the selected Production and its review artifacts
+  // load. Establish those stages before asserting the media-specific QA state.
+  const studio = page.getByTestId('product-production-studio')
+  await expect(studio.getByRole('heading', { name: '媒资修订浏览器验收', exact: true, level: 1 })).toBeVisible()
+  await expect(page.getByTestId('text-adventure-author-workbench')).toBeVisible()
   const media = page.getByTestId('text-adventure-media-authoring')
   await expect(media).toContainText('Visual QA 退回 1 张图片')
   const first = media.locator('article').filter({ hasText: 'media.visual.001' })
