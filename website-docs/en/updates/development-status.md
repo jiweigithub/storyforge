@@ -1,5 +1,38 @@
 # Pending development and branch audit
 
+## October 26, 2026 · Complete review
+
+Reviewed remote main `51688aee` from the last successful maintenance baseline `c5a1cab7`. The inventory covers **194 local branches, including this maintenance branch, and 114 associated worktrees**, including detached checkouts. Heads of 133 branches are not ancestors of main. Counts are not feature counts. Full branches, paths, commits, differences, and deduplication evidence remain in the maintenance record. Older dated sections retain their historical snapshots; this section provides the current review.
+
+### Merged into main
+
+- [PR #195](https://github.com/yuanbw2025/storyforge/pull/195) merged as `87eec76a`: module-load recovery saves edits before reloading and keeps the page open when saving fails. See [troubleshooting](/en/guides/troubleshooting#retrying-a-failed-module-load).
+- [PR #197](https://github.com/yuanbw2025/storyforge/pull/197) merged as `7cfdf8d9`: narrative-world engineering, sources, querying, sealing, and impact checks are integrated. Enhanced entries remain explicit local-development previews. The original narrative-world chain is no longer wholly pending merge. Semantic accuracy, formal scale performance, reader completeness, and author revision/time acceptance remain incomplete. See the [world engine](/en/features/world-engine#local-experimental-narrative-world-preview).
+- [PR #201](https://github.com/yuanbw2025/storyforge/pull/201) merged as `dc0f1e3a`: invalid character-candidate edits show an error and block adoption; native historical failures are deduplicated by occurrence. This does not close underlying native crashes, unexpected interruptions, or memory issues.
+- The large-contract repair shipped in formal v4.0.4 through #185/#190, and bilingual release facts in #189/#191 are merged. The current formal release remains **v4.0.4**. See [compatibility](/en/updates/compatibility) for later main increments and database v12. Other traffic archives are not product features.
+
+- Before committing, main advanced to `51688aee`: [PR #134](https://github.com/yuanbw2025/storyforge/pull/134) is normally merged. Open-world three-track production, per-image review, child-build repair, and local experience records are no longer pending merge. The [guide](/en/features/interactive/open-world) is synchronized. Build18 remains an unpublished preview; completing its central route on the same save does not replace two endings, independent-model calibration, or human acceptance.
+
+### New or advancing work awaiting delivery
+
+Unpushed status uses all origin refs fetched this round. Uncommitted entries describe observed scope, not completed work. This maintenance does not commit, push, or merge product branches.
+
+| Branch / head / worktree | Observed scope | State and deduplication |
+| --- | --- | --- |
+| `feat/avg-media-integration-20261021` · `cd0865b6`; `avg-extension-contracts-20261015/storyforge` | Two-source image region editing, bounded local expression processing, composite adoption, and portrait playback | The integration head is pushed, but [draft PR #160](https://github.com/yuanbw2025/storyforge/pull/160) remains at `534b3812`; it does not establish review or integration of these increments. The worktree has 6 additional documentation, AVG style, and voice-regression changes. Older image/audio/foreground branches form related dependency or validation chains, with differences retained rather than counted as separate products. |
+| `feat/avg-audio-consumption-20261022`, `feat/avg-audio-derived-production-20261022` · `17c9081f`; `avg-base00a-20261014`, `avg-base00b-20261014` | Voice production/review, audio processing/consumption, partial-recovery controls, and regression material | The same-head worktrees retain 31 and 33 uncommitted entries. These are not completed new features. Older `avg-media-recovery-20261016` retains 100 entries; `avg-media-harness-20261016` has 2 style/regression changes. Some older local branches still have unpushed commits; patch, dependency, and file comparisons deduplicate their scope without submitting it. |
+| `fix/chat-narrative-flow-20261023` · `2bece4d0`; original character-chat branch `26fd6e29` | Single-character technical preview of opening-action attribution, evidence references, expression, and first-turn recovery | [Draft PR #172](https://github.com/yuanbw2025/storyforge/pull/172) advanced to `2bece4d0` and remains unmerged. Original chat and compatibility branches belong to the same successor chain. Real-model records retain budget stops, upstream failures, and domain rejection, without claiming multi-turn quality acceptance. The local narrative-flow head advanced to unpushed `6ce48b22`, concerning image binding and text-task routing. Its worktree has 5 additional uncommitted production-service/UI/media-regression changes; the original chat worktree has 3 plan/acceptance entries. |
+| `feat/ttrpg-entity-ai-20261016` · `b372c41d` | Open TTRPG author design, production, release/session creation, private play, and local narration preview, speed, and voice selection | Pushed to open [PR #196](https://github.com/yuanbw2025/storyforge/pull/196), unmerged, with a clean worktree. The old snapshot's 12 unpushed commits and 18 uncommitted entries no longer describe it. Later database/backup bridging belongs to this PR. More than 30 turns, independent human evaluation, and listening quality remain unverified. Local Qwen synthesis requires an Apple Silicon Mac with its runtime configured. |
+| `feat/project-governance-api-20261023` · `5f0ff1a5` | Development governance and local API reader contract documents | Two commits outside main are pushed but unmerged. These are engineering rules, not user product features; local API configuration remains private. |
+
+`fix/adventure-ui-integration-20261026` is at main ancestor `dc0f1e3a`. Its `adventure-branch-transcript/storyforge` worktree has 7 uncommitted text-adventure player, product-frame, navigation, loading, and regression files. This records observed scope without claiming completion.
+
+### Preservation and deduplication
+
+Excluding this documentation worktree, of 24 worktrees with status entries, **11 contain working-file changes**. The other 13 are old TTRPG validation copies: every deletion matches `.codex-retired-assets.json` and its HEAD blob. Retired static assets are not missing product code. No copy was taken over or cleaned.
+
+Historical backups, old UI, built-in works, merge-only commits, shared heads, and equivalent patches remain deduplicated. Narrative-world engineering and the large-contract repair already accepted by main are not requested again. Retained branches do not by themselves establish new features. This round runs only directly relevant documentation content, bilingual, link, and build checks, without product tests.
+
 ## October 23, 2026 · Large-contract repair formally delivered
 
 This section updates release status only, without re-auditing the other development branches below. [PR #185](https://github.com/yuanbw2025/storyforge/pull/185) merged as `e4f2496d`, and [release preparation PR #190](https://github.com/yuanbw2025/storyforge/pull/190) merged as `8e82486a`. The independent [release workflow](https://github.com/yuanbw2025/storyforge/actions/runs/39873499281) passed every job, and formal **v4.0.4** is public at fixed source `d90961a2`. The large run-contract repair is no longer awaiting release and is not included in v4.0.3. Exact publication time, upgrade and data boundaries live in [version compatibility](/en/updates/compatibility). The complete October 22 branch review below remains a dated snapshot; this release does not establish completion of other issues or products.

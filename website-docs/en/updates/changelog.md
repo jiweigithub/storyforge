@@ -1,5 +1,22 @@
 # Changelog
 
+
+## October 26, 2026 · Open-world production and repair integration
+
+The workspace checks progress and blockers across game content, product systems, and media. Open and explicitly review each image before passing publication quality checks. Partial repair creates a child build while preserving older releases and saves. Players can use More → Read local experience records to inspect and explicitly export local feedback. See the [open-world guide](/en/features/interactive/open-world#three-track-production-image-review-and-partial-repair). Source: [PR #134](https://github.com/yuanbw2025/storyforge/pull/134). General production still requires independent-model calibration and two human-played endings.
+
+## October 26, 2026 · Character-candidate editing and knowledge-base review
+
+Invalid or unsaved edits to supplementation or lifecycle candidates now show a reason and block adoption; correct the text to continue with the original candidate. Native error reporting avoids requeuing the same historical occurrence while retaining independent new failures. See [candidate editing](/en/features/longform/character-driven#when-an-edited-character-candidate-cannot-be-adopted) and [troubleshooting](/en/guides/troubleshooting). Source: [PR #201](https://github.com/yuanbw2025/storyforge/pull/201). [Development status](/en/updates/development-status) records the full local branch/worktree review and deduplication.
+
+## October 25, 2026 · Narrative-world engineering preview
+
+The local experimental preview adds narrative annotations, resumable compilation and sealing, original-evidence queries by time and character perspective, and change-impact checklists. Enhanced entries remain hidden by default, with coverage gaps and review items explicit. Semantic impact quality, scale performance, and human revision benefits still require acceptance. See [world-engine steps](/en/features/world-engine#local-experimental-narrative-world-preview). Source: [PR #197](https://github.com/yuanbw2025/storyforge/pull/197).
+
+## October 24, 2026 · Retrying failed module loads
+
+For module or CSS resource-load failures, Retry on the error page saves edits before reloading. If saving fails, the page remains open with a recovery message. See [recovery steps](/en/guides/troubleshooting#retrying-a-failed-module-load). Source: [PR #195](https://github.com/yuanbw2025/storyforge/pull/195).
+
 ## October 23, 2026 · Saving and restoring large run contracts
 
 With larger run inputs, valid run contracts can be saved and revised in full, then read after a reload or complete-backup restoration, without being rejected by a smaller event-record limit. Oversized records still fail explicitly. Context snapshots are never truncated; model-call budgets, candidate adoption, permissions and freshness checks remain unchanged. Preserve the original work and backup after a capacity error rather than deleting contract fields. Evidence: [PR #185](https://github.com/yuanbw2025/storyforge/pull/185). See [backup and recovery](/en/guides/backup-restore).

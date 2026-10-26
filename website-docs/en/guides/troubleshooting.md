@@ -16,6 +16,12 @@ Record your version, address, product, steps, and full error text first. The che
 | Old JSON rejected | Backup format and supported window | Preserve the original; read compatibility guidance |
 | UI differs from docs | Tagged release, live deployment, current main | Read version guidance and the changelog |
 
+## Retrying a failed module load
+
+If the error includes `Failed to fetch dynamically imported module`, `Importing a module script failed`, or a CSS preload failure, check the network and address, then choose Retry (重试) on the error page. The app saves pending edits before reloading. Running tasks may be interrupted: inspect the original run and candidates after returning instead of repeatedly generating.
+
+If it reports that edits could not be saved and the page was not reloaded, keep the page open, resolve the save error, and try again. Do not clear site data or assume a failed save has safely refreshed the app. Other rendering errors can still be retried from the error page.
+
 ## Do not start by clearing data
 
 Reloading, clearing cache, and clearing site data are different operations. Clearing site data may delete the local database. Check backups and the original environment first; do not delete manuscript storage to fix a UI issue.
@@ -48,5 +54,7 @@ Add a title, description, and reproduction steps, then inspect Additional inform
 The summary contains only the application build, operating-system/browser family, error types/code locations, and available launcher failure types/timestamps. It excludes error messages, manuscripts, Prompts, API keys, full URLs, disk paths, and database contents.
 
 The browser retains at most twenty errors from the last seven days, including across refreshes. The summary contains at most the latest five errors and three code locations each. Clear local error records removes only browser diagnostics, not works or model configuration. Complete diagnostic JSON remains a separate download in Data and backup and is not automatically uploaded.
+
+When error reporting is enabled, the same native failure is not requeued merely because the local summary rotates or the page refreshes. A new occurrence at a different time remains separate. Turning error reporting off or deleting the records clears the corresponding local deduplication history. This prevents duplicate reports; it does not establish that the native crash itself is fixed.
 
 The portable launcher keeps one recent failure and session state under `.storyforge/diagnostics/` in the user directory. If it cannot start, manually open the official form and optionally attach `last-failure.json`. Port conflicts, permission errors, and catchable process exceptions leave bounded type records. A prior session that did not end normally is marked only as an interruption requiring review. Forced termination, power loss, browser-native crashes, and failures before diagnostics load are not guaranteed to be captured; interruptions are not proof of program crashes. Diagnostics do not replace work backups.

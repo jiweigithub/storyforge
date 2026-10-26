@@ -1,7 +1,7 @@
 ---
 productId: upper.text-open-world
 status: preview
-lastVerified: 2026-10-14
+lastVerified: 2026-10-26
 ---
 # Text open world
 
@@ -57,9 +57,9 @@ New games and existing saves each bind to an immutable release. Existing saves a
 
 Runtime AI can assist with intent interpretation, character dialogue, and result expression, within gameplay state and permission boundaries. On service failure, inspect the error and recovery options instead of repeatedly resending an action whose result is unknown.
 
-## Productization branch preview (not merged or deployed)
+## Three-track production, image review, and partial repair
 
-The `feat/text-open-world-productization-20261013` branch adds the following changes. Availability depends on the version you run; this is not a new released version. See [Development status](/en/updates/development-status).
+The production workspace brings content, gameplay-system, and media dependencies together. Review images explicitly, then complete quality checks and publication. These workflows are merged through [PR #134](https://github.com/yuanbw2025/storyforge/pull/134).
 
 - The production workspace groups progress into **game content**, **product systems**, and **media**. Expand each group to inspect missing artifacts, dependencies, blocked tasks, usage, and the existing repair entry. These groups contribute to one game and retain the underlying execution lanes.
 - New builds freeze the three groups' input hashes during assembly. A repair creates a child build and reruns the affected dependencies; historical builds, releases, and saves stay pinned to their original versions. New-format records require an application version containing this update; older applications may reject them.

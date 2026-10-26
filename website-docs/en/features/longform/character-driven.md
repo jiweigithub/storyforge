@@ -24,6 +24,12 @@ Add characters, check information imported from their cards, and complete arcs a
 
 Adopting into the outline and setting the current reference are separate actions: the former changes selected outline content; the latter controls which plan later generation references. One does not automatically perform the other.
 
+## When an edited character candidate cannot be adopted
+
+For character-card supplementation or lifecycle changes, review the candidate, edit it, and explicitly adopt it. If required text is cleared, exceeds its limit, or cannot be saved, the candidate panel shows the reason and disables Adopt (采纳), preventing the last saved content from being mistaken for your latest edit.
+
+Correct and successfully save the text, then review and adopt it, or reject the candidate. Avoid regenerating over a result you have not checked. Stale-content warnings still require reviewing current character information; this protection does not change character state automatically.
+
 ## Relationship to existing prose
 
 Existing chapters establish written facts. If a new arc conflicts with them, decide the revision scope first, then use revision and impact checks for later plans and states.
