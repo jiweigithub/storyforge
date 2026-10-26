@@ -273,7 +273,8 @@ describe.sequential('AVG one adopted sound repair through the existing workbench
   it('repairs one adopted WAV locally and creates a separately adopted preview while retaining every other slot', async () => {
     if (!production) throw new Error('The original publication/proposal phase did not complete; no repair source exists')
     await production()
-  }, 60_000)
+    // Only the observed timed-out repair/preview phase gets a CI coverage budget.
+  }, process.env.CI ? 180_000 : 60_000)
   it('publishes the repaired preview as a distinct release while preserving the original release/save and original bytes', async () => {
     if (!publication) throw new Error('The independent repaired preview phase did not complete; no publication source exists')
     await publication()

@@ -292,7 +292,9 @@ describe('AVG processed sound through actual governed author commands', () => {
     expect(canonicalProductProductionJsonV2(await db.productBuilds.get(s.buildId))).toBe(canonicalProductProductionJsonV2(frozen))
     expect(new Uint8Array(await readMediaBlobObjectData({ scope: s.scope, blobObjectId: s.processed.blobObjectId! }))).toEqual(new Uint8Array(output))
     expect(posts(s)).toBe(1); expect(s.calls).toHaveLength(1)
-  }, 90_000)
+    // The full production/adoption/restore slice hit its hosted coverage deadline.
+    // No per-operation, model or product performance budget changes.
+  }, process.env.CI ? 180_000 : 90_000)
 
   it('requires the exact processed dependency even when zero gain preserves the original audio hash', async () => {
     const s = await startProcessedSound(0)

@@ -447,7 +447,9 @@ describe('AVG actual processed-voice producer with explicitly controlled incompl
     await db.mediaBlobObjects.put(blob); await deleteWork(scope.workId)
     expect(await db.productBuilds.get(childId)).toEqual(child)
     expect(s.fetcher).toHaveBeenCalledTimes(2)
-  }, 30_000)
+    // Hosted V8 coverage exhausted the old 30s whole cross-version repair/restore budget.
+    // Keep local feedback and all production/transport limits unchanged.
+  }, process.env.CI ? 120_000 : 30_000)
   it('repairs a stopped batch from explicitly retained raw audio with a changed gain and zero new provider requests', async () => {
     const s = await startProcessedVoice(), before = await readProductProductionDetailsV1(s.scope, s.productionId, ['avg'])
     const originalRows = await db.productBuildArtifacts.where('buildId').equals(s.buildId).toArray()

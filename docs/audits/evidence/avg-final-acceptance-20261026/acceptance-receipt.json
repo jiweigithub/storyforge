@@ -151,7 +151,7 @@
       "newTestsAdded": 0
     },
     "baselineObservationsUnchanged": true,
-    "finalFullCI": "Existing ba785/6c7 full-engineering jobs remain in progress; their unchanged application/unit source results are retained separately. No additional full local CI.",
+    "finalFullCI": "Retained ba785 full report completed with four deadline roots; corrected four-file V8 batch13 cases passed. Latest CI-only deadline candidate pending full hosted engineering/core-E2E and AVG terminal; no additional full local CI.",
     "serialIsolatedE2E": {
       "avgMediaStatus": "passed existing isolated remaining AVG recipe plus corrected original sound closed-read; no new cases or paid models",
       "wholeProjectHostedStatus": "pending existing full-engineering/core-E2E workflows",
@@ -702,7 +702,24 @@
         "bytes": 58241372,
         "sha256": "2b033f5b97176db679fd9222d263f4f0b25a8725c0f6417bc3b192c3ad7c4578"
       },
-      "fullCIVerify": "still running; preserved to terminal, no local full-CI restart",
+      "fullCIVerify": {
+        "jobId": 121811681957,
+        "conclusion": "failure",
+        "files": {
+          "passed": 1100,
+          "failed": 4,
+          "total": 1104
+        },
+        "tests": {
+          "passed": 7424,
+          "failed": 6,
+          "skipped": 3,
+          "total": 7433
+        },
+        "seconds": 6904.43,
+        "root": "Four whole-flow test deadlines (30/150/90/60s), plus two dependent local-repair publication/restore cases lacking prior successful phase. No assertion-mismatch root failure.",
+        "log": "ci-ba785-verify-job.log"
+      },
       "targetedExistingChain": {
         "stats": {
           "startTime": "2026-10-26T20:16:40.077Z",
@@ -817,6 +834,12 @@
             "conclusion": "success"
           }
         ]
+      },
+      "workflowSuperseded": {
+        "run": 40395188882,
+        "head": "6c7f8872ffa916558fed6b130e481aa117c2f2e2",
+        "reason": "Older source-equivalent workflow superseded after retained ba785 completed with four concrete sound-flow deadline failures; four scoped CI-only corrections are under covered verification. No cancellation merely for waiting.",
+        "at": 1793052043.073739
       }
     },
     "remainingExistingAvgIntegration": {
@@ -890,6 +913,149 @@
       "newPaidModelCalls": 0,
       "classification": "Existing controlled-provider browser integration; real workers/audio/browser lifecycle/export/read; no independent art/hearing acceptance",
       "at": 1793050546.087828
+    },
+    "soundCoveredDeadlineRepair": {
+      "stats": {
+        "success": true,
+        "numPassedTests": 13,
+        "numFailedTests": 0,
+        "numTotalTests": 13
+      },
+      "files": [
+        {
+          "file": "R-AVG-04B-audio-processing-harness.test.ts",
+          "status": "passed",
+          "tests": [
+            {
+              "title": "repairs one voice from a published release without another request and publishes a distinct portable release while preserving the old save",
+              "status": "passed",
+              "durationMs": 28757.574792
+            },
+            {
+              "title": "preserves a pending completed-version repair across full remapping with processing closed, without acquiring start permission",
+              "status": "passed",
+              "durationMs": 4506.092291999994
+            },
+            {
+              "title": "repairs one adopted frozen voice from an older producer, leaves the other line intact, and restores all generations without another speech request",
+              "status": "passed",
+              "durationMs": 28182.399666999998
+            },
+            {
+              "title": "repairs a stopped batch from explicitly retained raw audio with a changed gain and zero new provider requests",
+              "status": "passed",
+              "durationMs": 3309.0824999999895
+            },
+            {
+              "title": "requires independent derived review before real author adoption and exact-line configuration",
+              "status": "passed",
+              "durationMs": 7842.726833000008
+            },
+            {
+              "title": "seals the exact zero-request local result and stops before independent derived audition/adoption",
+              "status": "passed",
+              "durationMs": 1203.0735829999903
+            }
+          ]
+        },
+        {
+          "file": "R-AVG-04B-audio-v2-formal-flow.test.ts",
+          "status": "passed",
+          "tests": [
+            {
+              "title": "seals a distinct 24k limited BGM, independently adopts it beside original OGG, and restores frozen bytes with factories closed",
+              "status": "passed",
+              "durationMs": 118631.2585
+            }
+          ]
+        },
+        {
+          "file": "R-AVG-04B-processed-sound-flow.test.ts",
+          "status": "passed",
+          "tests": [
+            {
+              "title": "processes BGM once, independently adopts it beside original library SFX, freezes exact consumers and restores with capabilities closed",
+              "status": "passed",
+              "durationMs": 87239.951417
+            },
+            {
+              "title": "requires the exact processed dependency even when zero gain preserves the original audio hash",
+              "status": "passed",
+              "durationMs": 11458.233250000005
+            }
+          ]
+        },
+        {
+          "file": "R-AVG-04B-sound-local-repair-flow.test.ts",
+          "status": "passed",
+          "tests": [
+            {
+              "title": "publishes the original preview and saves a no-Key repair proposal without changing its release or save",
+              "status": "passed",
+              "durationMs": 17790.474791999997
+            },
+            {
+              "title": "repairs one adopted WAV locally and creates a separately adopted preview while retaining every other slot",
+              "status": "passed",
+              "durationMs": 57319.159333999996
+            },
+            {
+              "title": "publishes the repaired preview as a distinct release while preserving the original release/save and original bytes",
+              "status": "passed",
+              "durationMs": 11387.217166999995
+            },
+            {
+              "title": "restores the completed repair with capabilities closed, rejects damaged original bytes and deletes only the imported copy",
+              "status": "passed",
+              "durationMs": 21853.180334000004
+            }
+          ]
+        }
+      ],
+      "terminal": {
+        "exitCode": 1,
+        "seconds": 412.44
+      },
+      "classification": "All13 cases in the four actual failed files passed with V8/fork/one-worker CI settings. Exit1 is unchanged repository-wide coverage thresholds applied to a partial run; never a full coverage or complete CI pass.",
+      "coverageThresholdsChanged": false,
+      "applicationSourceChanged": false,
+      "realModelCalls": 0,
+      "onlyCIWholeCaseLimits": [
+        {
+          "file": "tests/regression/R-AVG-04B-audio-processing-harness.test.ts",
+          "localMs": 30000,
+          "oldCIMs": 30000,
+          "newCIMs": 120000
+        },
+        {
+          "file": "tests/regression/R-AVG-04B-audio-v2-formal-flow.test.ts",
+          "localMs": 150000,
+          "oldCIMs": 150000,
+          "newCIMs": 300000
+        },
+        {
+          "file": "tests/regression/R-AVG-04B-processed-sound-flow.test.ts",
+          "localMs": 90000,
+          "oldCIMs": 90000,
+          "newCIMs": 180000
+        },
+        {
+          "file": "tests/regression/R-AVG-04B-sound-local-repair-flow.test.ts",
+          "localMs": 60000,
+          "oldCIMs": 60000,
+          "newCIMs": 180000
+        }
+      ]
+    },
+    "hostedAttempt39faf": {
+      "head": "39faf6e82816ba7f732022c693e09060e82e199e",
+      "runId": 40406271170,
+      "verifyJobId": 121864716422,
+      "avgJobId": 121864715931,
+      "soundProduction": "passed",
+      "soundClosedReader": "passed corrected explicit-replay path; advanced to all AVG native paths",
+      "applicationSourceUnchangedFrom": "ba785f0d6be5cbe99b930c7e1dea5b8136fe88b5",
+      "status": "superseded after concrete retained full-CI deadline failures and corrected four-file covered batch13 passed; latest fixed candidate authoritative"
     }
   },
   "limitations": [

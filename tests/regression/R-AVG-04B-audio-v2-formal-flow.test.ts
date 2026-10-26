@@ -238,5 +238,7 @@ describe('AVG V2 local dynamics/resampling through actual sound commands and por
     expect(await sha256MediaData(await readMediaBlobObjectData({ scope: s.scope, blobObjectId: processed.blobObjectId! }))).toBe(processed.contentHash)
     expect(closedFetch).not.toHaveBeenCalled(); expect(musicPosts()).toHaveLength(1); expect(s.calls).toHaveLength(1)
     expect(await db.productReleases.count()).toBe(0)
-  }, 150_000)
+    // This includes real numeric resampling/verification plus full portable proof.
+    // Hosted V8 coverage exhausted the old whole-case limit; product limits remain.
+  }, process.env.CI ? 300_000 : 150_000)
 })
