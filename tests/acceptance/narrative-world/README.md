@@ -521,3 +521,5 @@ IR lexical 为 47 正确、2 部分正确、71 合理拒答；原文 lexical 为
 [新版完整材料](./reader-inputs-20261015-v6.json)保留 24 个确切封存快照、原 120 题和全部 720 条条件输入。四个明确获知事件使用显式局部坐标原点、一个沿用原文日序、七个仍未知，未补故事日期或公开私有真相。[协议 v3 预检](./raw/reader-fixed-20261015-v3/preflight.json)在开发和原留出侧均有实际差异，去时间/去知识/去证据为 12/5/96；并非新盲测或质量接受。
 
 [回执](./reader-profile-20261015-v1.json)与[发现材料](./reader-profile-findings-20261015-v1.md)保留 138 项检查、110 项 v26 基线回读、217 个输入摘要、包装计数修复与首批 8 次真实模型调用。正常 CI 包装内的 20 项 Node 反例不重复累计。继续批次在一次 `httpConnectionFailed` 后退出 1：累计 41 次派发、40 份成功、1 份失败、61 条成功条件观察，420 个未调用。失败没有正文或用量，没有自动重试；费用和底层 HTTP 状态保持未知。原模型材料和未派发的 v5 输入保持，[工程检查点 v19](./engineering-checkpoint-20261015-v19.json)仅结算局部工程与实际失败证据。
+
+PR208/mainline integration receipt: `baseline-20261027-pr208-integration-v3.json`; all deterministic observations match the preserved browser-helper-v2 and PR134 integration receipts. No model, performance or human acceptance upgrade.

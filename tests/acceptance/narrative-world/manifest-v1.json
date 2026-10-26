@@ -21,7 +21,7 @@
     "edits": 48
   },
   "baseline": {
-    "path": "tests/acceptance/narrative-world/baseline-20261026-browser-helper-v2.json",
+    "path": "tests/acceptance/narrative-world/baseline-20261027-pr208-integration-v3.json",
     "policy": "Preserve this dated receipt. Changed corpus requires a new dataset version; changed implementation requires a reviewed new receipt.",
     "history": [
       {
@@ -461,6 +461,11 @@
         "path": "tests/acceptance/narrative-world/baseline-20261026-pr134-integration-v1.json",
         "workPackage": "NW-integration",
         "note": "Preserved PR208/PR134 integration receipt before combining the mainline navigation and PR209 editor/browser fixes."
+      },
+      {
+        "path": "tests/acceptance/narrative-world/baseline-20261026-browser-helper-v2.json",
+        "workPackage": "NW-integration",
+        "note": "Preserved before PR208 mainline integration. Separately executed current-tree observations remain identical to both prior branch receipts; original hashes and gaps stay archived."
       }
     ],
     "comparison": "NW-2E checkpoint of the unchanged legacy v3 120-query comparator. Typed v4 query, exact product plans, current impact diagnostics and scale failures have separate receipts; no model or human quality acceptance is inferred."
