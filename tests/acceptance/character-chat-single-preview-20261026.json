@@ -133,6 +133,13 @@
           "result": "failed before tests",
           "reason": "ARCHITECTURE source-line metrics were two lines behind the final runtime integration fix",
           "repair": "Official gen:project-metrics; check:project-metrics passed; application source unchanged"
+        },
+        {
+          "head": "d9776fa6b31b38fa5883d079dc0a5714591b5604",
+          "workflowRun": 40265338810,
+          "result": "failed before coverage",
+          "reason": "Bridge test constructed the old error payload instead of the current native error envelope",
+          "repair": "Corrected fixture; full native bridge suite 23 passed; no runtime code change"
         }
       ]
     },
@@ -144,6 +151,87 @@
     "diffCheck": {
       "featureAgainstIntegratedMain": "passed",
       "untouchedMainEvidenceWithExistingWhitespace": 3
+    },
+    "codexBridgeComplete": {
+      "passed": 23,
+      "failed": 0
+    },
+    "skillFreshness": {
+      "reverifiedSkillIds": [
+        "text-adventure.dialogue-pass.v1",
+        "text-adventure.production-quality-review.v1"
+      ],
+      "registeredRegressionFiles": [
+        "R-TEXTADV2-production.test.tsx",
+        "R-TEXTADV3-agent-team.test.ts",
+        "R-TEXTADV3-production-artifacts.test.ts"
+      ],
+      "passed": 23,
+      "failed": 0,
+      "lastVerifiedAt": "2026-10-26",
+      "contractAndThresholdUnchanged": true,
+      "realModelAcceptance": false
+    },
+    "additionalPreflight": {
+      "passed": 12,
+      "freshnessInitiallyBlocked": 2,
+      "freshnessRepair": "Registered regressions rerun before changing only the corresponding verification dates",
+      "finalFreshnessPassed": true
+    },
+    "handoff": [
+      {
+        "name": "types",
+        "exitCode": 0,
+        "seconds": 69.55
+      },
+      {
+        "name": "lint",
+        "exitCode": 1,
+        "seconds": 2.04
+      },
+      {
+        "name": "build",
+        "exitCode": 0,
+        "seconds": 128.45
+      },
+      {
+        "name": "bundle",
+        "exitCode": 0,
+        "seconds": 0.75
+      },
+      {
+        "name": "metrics",
+        "exitCode": 0,
+        "seconds": 0.94
+      },
+      {
+        "name": "docs",
+        "exitCode": 0,
+        "seconds": 0.93
+      },
+      {
+        "name": "roadmap",
+        "exitCode": 0,
+        "seconds": 0.25
+      },
+      {
+        "name": "freshness",
+        "exitCode": 0,
+        "seconds": 1.23
+      }
+    ],
+    "handoffLintCorrection": {
+      "initialIssue": "The explicit lint command selected a .mjs test that repository ESLint deliberately ignores; zero source errors but one ignored-file warning.",
+      "checks": [
+        {
+          "name": "registry-lint",
+          "exitCode": 0
+        },
+        {
+          "name": "bridge-test-syntax",
+          "exitCode": 0
+        }
+      ]
     }
   },
   "nativeCodex": {
@@ -174,5 +262,10 @@
     "Not human or commercial acceptance",
     "Not deployed to production"
   ],
-  "applicationSourceDigest": "25870611aab77a9ce2c20f93a7566277d1c2cfa1edb647cc9571b3dffb78a36e"
+  "applicationSourceDigest": "25870611aab77a9ce2c20f93a7566277d1c2cfa1edb647cc9571b3dffb78a36e",
+  "handoffSourceDigest": "609939fb43abb3233e01fcaf23b51bb02ddfb80f71d77a52fd62719fad1e4345",
+  "handoffChangesFromInitialValidation": [
+    "Two unrelated text-adventure Skill verification dates updated only after their 23 registered regressions passed",
+    "One bridge test fixture uses the current native error envelope; complete 23-test bridge suite passed"
+  ]
 }
