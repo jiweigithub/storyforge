@@ -96,6 +96,7 @@ const activeDocs = [
   'docs/audits/SYSTEM-FICTION-Q01-BASELINE.md',
   'docs/audits/SYSTEM-FICTION-Q02-TECHNIQUE-CARDS.md',
   'docs/audits/TEXT-OPEN-WORLD-CAPABILITY-AUDIT-20260906.md',
+  'docs/audits/TEXT-OPEN-WORLD-PR134-STAGE-SUMMARY-20261026.md',
   'docs/audits/GAME-PRODUCT-LIFECYCLE-COMPLETENESS-REVIEW-20260927.md',
   'docs/ttrpg/licenses/SRD-5.2.1-CC-BY-4.0.md',
 ]

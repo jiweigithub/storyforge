@@ -80,6 +80,8 @@
 
 ### 2.3 机器事实与质量证据
 
+- `docs/audits/TEXT-OPEN-WORLD-PR134-STAGE-SUMMARY-20261026.md`：L4 开放世界 PR134 阶段交接；记录已合并能力、真实预览通关、待办和恢复入口，不改变产品契约或代替真人/Release验收。
+
 - `docs/AI-FUNCTIONS-MANUAL.generated.md`：代码生成，不手改。
 - `docs/AI-FUNCTIONS-MANUAL.semantic.md`：生成清单的人工语义注解。
 - `docs/CONSISTENCY-COVERAGE-MAP.md`：Canon 一致性反例状态。
