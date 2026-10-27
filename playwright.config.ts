@@ -5,13 +5,18 @@ const port = Number.isInteger(configuredPort) && configuredPort > 0 ? configured
 const frozenWorkspace = process.env.PLAYWRIGHT_FROZEN_WORKSPACE === '1'
 const productionPreview = process.env.PLAYWRIGHT_PRODUCTION_PREVIEW === '1'
 const useSystemChrome = process.env.PLAYWRIGHT_USE_SYSTEM_CHROME === '1'
+const nativeReceiptCI = !!process.env.CI && (
+  process.env.VITE_ENABLE_TTRPG_OPEN_PREVIEW === '1'
+  || process.env.PLAYWRIGHT_AVG_INTEGRATION === '1'
+)
 
 export default defineConfig({
   testDir: './tests/e2e',
   timeout: 60_000,
-  // Open-preview receipts replay real native IndexedDB history. Shared CI runners
-  // need time to finish the read after a saved mutation; retain all state assertions.
-  expect: { timeout: process.env.CI && process.env.VITE_ENABLE_TTRPG_OPEN_PREVIEW === '1' ? 20_000 : 5_000 },
+  // Native receipts replay IndexedDB history and source proofs after mutations.
+  // Give their shared CI runners one bounded completion budget, including AVG
+  // factory-closed restores, while preserving every state assertion and retry limit.
+  expect: { timeout: nativeReceiptCI ? 20_000 : 5_000 },
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,

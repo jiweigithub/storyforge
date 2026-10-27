@@ -46,6 +46,7 @@ jobs:
     permissions:
       contents: read
     env:
+      PLAYWRIGHT_AVG_INTEGRATION: '1'
       VITE_STORYFORGE_AVG_MEDIA_PRODUCTION: '1'
       VITE_STORYFORGE_AVG_VOICE_PRODUCTION: '1'
       VITE_STORYFORGE_AVG_VISUAL_PLANNING: '1'
