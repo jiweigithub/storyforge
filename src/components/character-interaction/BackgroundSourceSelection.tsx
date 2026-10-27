@@ -4,6 +4,7 @@ import type {ChatAuthoringSettings} from '../../lib/character-interaction/author
 import {loadChatBackgroundOptionsV1} from '../../lib/character-interaction/background-source'
 
 export const CHAT_BACKGROUND_LABELS: Record<string, string> = {
+  entity: '地点与设定', relation: '人物关系', event: '事件', assertion: '事实', disclosure: '揭示',
   location: '地点', 'codex-entry': '百科与组织', 'character-relation': '人物关系', 'story-core': '故事设定',
   'story-arc': '故事线', 'storyline-progress': '故事进展', worldview: '世界观', geography: '地理', history: '历史',
   'world-rules': '世界规则', 'power-system': '力量体系', 'cultivation-system': '修炼体系', 'historical-event': '历史事件',

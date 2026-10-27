@@ -6,6 +6,7 @@ import {upperProductAllowedAreasV1, upperProductAllowedContextKindsV1} from '../
 export function isChatBackgroundDescriptorV1(descriptor: ContextResourceDescriptorV1): boolean {
   const semantic = descriptor.worldSemantic
   return descriptor.sourceKey === 'worldRelease' && !!semantic
+    && descriptor.kind !== 'character'
     && !['character', 'codex-category', 'world', 'world-link'].includes(semantic.resourceKind)
     && semantic.area !== 'multi-world'
     && upperProductAllowedAreasV1('character-interaction').includes(semantic.area)
@@ -14,12 +15,14 @@ export function isChatBackgroundDescriptorV1(descriptor: ContextResourceDescript
 
 export async function loadChatBackgroundOptionsV1(scope: WorkspaceScope, worldReleaseId: number) {
   // Contract validation also runs outside the browser; open storage only for an actual catalog read.
-  const {openWorldSemanticResourceCatalogV1} = await import('../context-gateway/world-release-client')
-  const opened = await openWorldSemanticResourceCatalogV1({localReleaseRecordId: worldReleaseId,
-    expectedProjectId: scope.projectId, expectedWorldId: scope.worldId})
-  return opened.resources.filter(isChatBackgroundDescriptorV1).map(resource => ({
-    resourceKey: resource.resourceKey, label: resource.title, resourceKind: resource.worldSemantic!.resourceKind,
-  }))
+  const {openProductWorldResourceCatalogV2, closeProductWorldResourceCatalogV2} = await import('../context-gateway/world-release-client')
+  const opened = await openProductWorldResourceCatalogV2({localReleaseRecordId: worldReleaseId,
+    expectedProjectId: scope.projectId, expectedWorldId: scope.worldId, productType: 'character-interaction'})
+  try {
+    return opened.resources.filter(isChatBackgroundDescriptorV1).map(resource => ({
+      resourceKey: resource.resourceKey, label: resource.title, resourceKind: resource.worldSemantic!.resourceKind,
+    }))
+  } finally {await closeProductWorldResourceCatalogV2(opened)}
 }
 
 export function assertChatBackgroundSelectionV1(keys: readonly string[], descriptors: readonly ContextResourceDescriptorV1[]) {

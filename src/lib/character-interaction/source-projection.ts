@@ -170,8 +170,18 @@ export async function createChatSourceProjectionDraftV1(input: {
   backgroundResourceKeys?: readonly string[]
   resources: readonly WorldSemanticResourceSnapshotV1[]
 }): Promise<ChatSourceProjectionDraftV1> {
+  const readWitnesses = [...input.resources]
   // Snapshot inputs before async hashing. Cast selection is a canonical set in the WorldSourceSelection contract.
   input = structuredClone(input)
+  // v4 hashes bind the authorized materialization, not JSON(value). Verify the
+  // original Gateway read objects; a copied or changed resource has no witness.
+  if (input.resources.some(resource => resource.descriptor.worldSemantic.narrative)) {
+    const {assertVerifiedProductWorldResourceSnapshotV2} = await import('../context-gateway/world-release-client')
+    for (const [index, resource] of input.resources.entries()) if (resource.descriptor.worldSemantic.narrative) {
+      assertVerifiedProductWorldResourceSnapshotV2(readWitnesses[index])
+      if (canonicalStringify(resource) !== canonicalStringify(readWitnesses[index])) fail(`原文与资源证据不一致：${resource.descriptor.resourceKey}`)
+    }
+  }
   requireHash(input.worldReferenceHash, 'WorldReference')
   requireHash(input.worldReleaseHash, 'WorldRelease')
   const authored = parseChatPrivateCharactersV1(input.privateCharacters ?? [])
@@ -190,19 +200,35 @@ export async function createChatSourceProjectionDraftV1(input: {
   assertChatBackgroundSelectionV1(backgroundKeys, input.resources.map(source => source.descriptor))
   const project = async (resourceKey: string, character: boolean) => {
     const source = byKey.get(resourceKey)
+    const narrative = source?.descriptor.worldSemantic.narrative
     if (!source || source.descriptor.sourceKey !== 'worldRelease'
-      || character && source.descriptor.worldSemantic.resourceKind !== 'character'
+      || character && (narrative ? source.descriptor.kind !== 'character' || source.descriptor.worldSemantic.resourceKind !== 'entity'
+        : source.descriptor.worldSemantic.resourceKind !== 'character')
       || source.descriptor.scope.worldReleaseHash !== input.worldReleaseHash) {
       fail(`角色来源缺失、类型错误或世界版本不一致：${resourceKey}`)
     }
     requireHash(source.descriptor.contentHash, '资源')
-    const sourceHash = hashCanonicalValue(source.value)
-    if ((Dexie.currentTransaction ? await Dexie.waitFor(sourceHash) : await sourceHash) !== source.descriptor.contentHash) {
-      fail(`原文与资源证据不一致：${resourceKey}`)
+    if (!narrative) {
+      const sourceHash = hashCanonicalValue(source.value)
+      if ((Dexie.currentTransaction ? await Dexie.waitFor(sourceHash) : await sourceHash) !== source.descriptor.contentHash) {
+        fail(`原文与资源证据不一致：${resourceKey}`)
+      }
     }
     const fragments: ChatSourceFragmentV1[] = []
     for (const field of Object.keys(source.value).sort()) {
       if (field.startsWith('_')) continue
+      // Directory provenance is not a story assertion. Retain every semantic
+      // envelope field, with separately reviewable atom fields and exact paths.
+      if (narrative && field === 'authorSource') continue
+      if (narrative && field === 'atom') {
+        const atom = source.value.atom
+        if (!atom || typeof atom !== 'object' || Array.isArray(atom)) fail(`资源缺少完整语义原子：${resourceKey}`)
+        for (const key of Object.keys(atom).sort()) {
+          if (key === 'sourceIdentity') continue
+          fragments.push(...fragmentSourceField(resourceKey, `/atom/${escapePointer(key)}`, (atom as Record<string, unknown>)[key]))
+        }
+        continue
+      }
       fragments.push(...fragmentSourceField(resourceKey, `/${escapePointer(field)}`, source.value[field]))
     }
     if (!fragments.length) fail(`资源没有可投影的语义字段：${resourceKey}`)
@@ -220,8 +246,10 @@ export async function createChatSourceProjectionDraftV1(input: {
   const playerCharacter = input.playerCharacterKey ? await project(input.playerCharacterKey, true) : undefined
   const background = await Promise.all(backgroundKeys.map(async key => {
     const descriptor = byKey.get(key)!.descriptor
-    const relatedResourceKeys = descriptor.worldSemantic.resourceKind === 'character-relation'
-      ? [...new Set(descriptor.relations.filter(r => r.kind === 'depends-on').map(r => r.targetResourceKey))].sort() : []
+    const relatedResourceKeys = descriptor.worldSemantic.narrative?.relationEndpoints
+      ? [...descriptor.worldSemantic.narrative.relationEndpoints].sort()
+      : descriptor.worldSemantic.resourceKind === 'character-relation'
+        ? [...new Set(descriptor.relations.filter(r => r.kind === 'depends-on').map(r => r.targetResourceKey))].sort() : []
     return {...await project(key, false), resourceKind: descriptor.worldSemantic.resourceKind,
       ...(relatedResourceKeys.length ? {relatedResourceKeys} : {})}
   }))

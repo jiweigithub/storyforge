@@ -130,10 +130,10 @@ export async function loadChatSourceProjectionV1(scope: WorkspaceScope, revision
     const player = settings.version === 3 && settings.narrative.playerCharacterKey ? [settings.narrative.playerCharacterKey] : [];
     if (!row.worldReleaseId || keys.length + privateCharacters.length === 0 || (settings.mode === 'single' && keys.length + privateCharacters.length !== 1))
         throw new Error('请先选择冻结世界和参与角色，单角色模式须选择一人');
-    const source = await loadProductProductionConsultationSourceV2({scope, worldReleaseId: row.worldReleaseId});
+    const source = await loadProductProductionConsultationSourceV2({scope, worldReleaseId: row.worldReleaseId, productType: 'character-interaction'});
     const catalog = await loadProductProductionWorldSourceCatalogV2({scope, worldReleaseId: row.worldReleaseId,
-        chatPrivateCharacters: privateCharacters,
-        selection: {schema: 'storyforge.product-world-source-selection', version: 1, productType: 'character-interaction',
+        chatPrivateCharacters: privateCharacters, chatSourceReview: true,
+        selection: {schema: 'storyforge.product-world-source-selection', version: source.worldReference.version, productType: 'character-interaction',
             worldReferenceHash: source.worldReference.referenceHash, resourceKeys: [...keys, ...player, ...background].sort(), roleBindings: {characters: keys, ...(player.length ? {chatPlayer: player} : {}), ...(background.length ? {chatBackground: background} : {})}}});
     if (!catalog.chatSourceProjection) throw new Error('角色来源投影未就绪');
     return catalog.chatSourceProjection;

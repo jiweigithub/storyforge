@@ -463,7 +463,7 @@ function compileReviewedChatSource(input: Pick<ProductModuleCompilerInputV1, 'br
   return {content,
     roleProfiles: keys.map(key => {const profile = roleProfiles?.profiles.find(row => row.actorKey === key); return profile ? formatChatRoleProfileV1(profile) : ''}),
     names: keys.map((key, index) => {
-      const name = views[0].find(fragment => fragment.resourceKey === key && fragment.pointer === '/name')
+      const name = views[0].find(fragment => fragment.resourceKey === key && ['/name', '/atom/canonicalLabel'].includes(fragment.pointer))
       const value: unknown = name ? JSON.parse(name.valueJson) : null
       return typeof value === 'string' && value.trim() ? value : `角色 ${index + 1}`
     }),

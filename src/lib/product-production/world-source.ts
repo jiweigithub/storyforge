@@ -297,6 +297,28 @@ export async function loadProductProductionConsultationSourceV2(input: {
   } finally { await closeProductWorldResourceCatalogV2(opened) }
 }
 
+async function prepareChatSourceProjection(input: {
+  selection: ProductWorldSourceSelection
+  privateCharacters: readonly ChatPrivateCharacterV1[]
+  worldReferenceHash: string
+  worldReleaseHash: string
+  resources: WorldSemanticResourceSnapshotV1[]
+}) {
+  if (input.selection.productType !== 'character-interaction') return undefined
+  // Match the compiler's eight-participant limit; other selected resources
+  // remain in the catalog, without becoming extra AI viewpoints.
+  const characters = (input.selection.roleBindings.characters ?? input.selection.roleBindings.participants ?? []).slice(0, 8)
+  const players = input.selection.roleBindings.chatPlayer ?? []
+  if (players.length > 1 || players.some(key => characters.includes(key))) throw new Error('玩家人物必须是一个独立的冻结来源')
+  if (!characters.length && !input.privateCharacters.length) return undefined
+  return (await import('../character-interaction/source-projection')).createChatSourceProjectionDraftV1({
+    worldReferenceHash: input.worldReferenceHash, worldReleaseHash: input.worldReleaseHash,
+    characterResourceKeys: characters, privateCharacters: input.privateCharacters,
+    playerCharacterKey: players[0], backgroundResourceKeys: input.selection.roleBindings.chatBackground,
+    resources: input.resources,
+  })
+}
+
 export async function loadProductProductionWorldSourceCatalogV2(input: {
   scope: WorkspaceScope
   worldReleaseId: number
@@ -305,19 +327,24 @@ export async function loadProductProductionWorldSourceCatalogV2(input: {
    * the same consultation -> adapter -> selection boundary as production. */
   selection: ProductWorldSourceSelection
   sourcePlan?: ProductSourcePlan
+  /** Explicit author inspection/revalidation, never production authorization. */
+  chatSourceReview?: true
   /** Chat-owned authored content, never a WorldRelease resource. */
   chatPrivateCharacters?: readonly ChatPrivateCharacterV1[]
 }): Promise<ProductProductionWorldSourceCatalogV2> {
   input = structuredClone(input)
   const privateCharacters = parseChatPrivateCharactersV1(input.chatPrivateCharacters ?? [])
   if (privateCharacters.length && input.selection.productType !== 'character-interaction') throw new Error('体验新角色仅属于角色聊天产品')
+  if (input.chatSourceReview && (input.sourcePlan || input.selection.productType !== 'character-interaction')) throw new Error('作者资料检查不能替代正式生产来源计划')
   const scope = await resolveScope({ scope: input.scope })
-  if (input.sourcePlan?.worldReference.version === 2) {
+  if (input.sourcePlan && (input.sourcePlan.worldReference.version !== input.selection.version
+    || input.sourcePlan.productType !== input.selection.productType)) throw new Error('[product-production-world-source] 选择与来源计划的版本或产品不一致')
+  if (input.selection.version === 2) {
     const opened = await openProductWorldResourceCatalogV2({ localReleaseRecordId: input.worldReleaseId,
       expectedProjectId: scope.projectId, expectedWorldId: scope.worldId,
-      productType: input.sourcePlan.productType, sourcePlan: input.sourcePlan })
+      productType: input.selection.productType, sourcePlan: input.sourcePlan, authorReview: input.chatSourceReview })
     try {
-      if (input.selection.worldReferenceHash !== opened.description.worldReference.referenceHash) throw new Error('[product-production-world-source] selection 与叙事世界引用不一致')
+      if (opened.description.worldReference.version !== 2 || input.selection.worldReferenceHash !== opened.description.worldReference.referenceHash) throw new Error('[product-production-world-source] selection 与叙事世界引用不一致')
       const descriptors = resolveProductProductionWorldCompilationDescriptorsV2({ descriptors: opened.resources, selection: input.selection })
       const resources = await readProductWorldResourcesV2({ catalog: opened, descriptors })
       const byContextKind = (kind: string) => resources.filter(resource => resource.descriptor.kind === kind)
@@ -333,6 +360,9 @@ export async function loadProductProductionWorldSourceCatalogV2(input: {
           relationType: atom.relationType, label: resource.descriptor.title, description: resource.descriptor.shortSummary,
           isBidirectional: atom.direction === 'symmetric' }
       })
+      const chatSourceProjection = await prepareChatSourceProjection({selection: input.selection, privateCharacters,
+        worldReferenceHash: opened.description.worldReference.referenceHash,
+        worldReleaseHash: opened.description.identity.releaseHash, resources})
       return { schema: 'storyforge.product-production-world-source-catalog', version: 2,
         worldReference: opened.description.worldReference,
         world: { code: opened.description.identity.worldCode, name: opened.description.identity.worldName, workTitle: '' },
@@ -343,7 +373,8 @@ export async function loadProductProductionWorldSourceCatalogV2(input: {
         storySources: resources.filter(resource => ['event', 'assertion', 'disclosure'].includes(resource.descriptor.worldSemantic.resourceKind)).map(item),
         // v4 has no category-as-artifact assertion. Do not invent one from a name.
         artifacts: [], loreEntries: byContextKind('codex-entry').map(item),
-        storyArcs: byContextKind('story-arc').map(resource => ({ ...item(resource), type: 'thread' })), resources }
+        storyArcs: byContextKind('story-arc').map(resource => ({ ...item(resource), type: 'thread' })), resources,
+        ...(chatSourceProjection ? {chatSourceProjection} : {}) }
     } finally { await closeProductWorldResourceCatalogV2(opened) }
   }
   const opened = await openWorldSemanticResourceCatalogV1({
@@ -406,24 +437,9 @@ export async function loadProductProductionWorldSourceCatalogV2(input: {
     ...item(resource),
     type: text(resource.value.type),
   }))
-  // Match the existing interaction compiler's explicit eight-participant limit.
-  // Extra selected resources remain in `resources`; they are not silently lost.
-  const chatCharacterKeys = input.selection.productType === 'character-interaction'
-    ? (input.selection.roleBindings.characters ?? input.selection.roleBindings.participants ?? []).slice(0, 8)
-    : []
-  const chatPlayerKeys = input.selection.productType === 'character-interaction' ? input.selection.roleBindings.chatPlayer ?? [] : []
-  if (chatPlayerKeys.length > 1 || chatPlayerKeys.some(key => chatCharacterKeys.includes(key))) throw new Error('玩家人物必须是一个独立的冻结来源')
-  const chatSourceProjection = chatCharacterKeys.length || privateCharacters.length
-    ? await (await import('../character-interaction/source-projection')).createChatSourceProjectionDraftV1({
-      worldReferenceHash: opened.description.worldReference.referenceHash,
-      worldReleaseHash: opened.description.identity.releaseHash,
-      characterResourceKeys: chatCharacterKeys,
-      privateCharacters,
-      playerCharacterKey: chatPlayerKeys[0],
-      backgroundResourceKeys: input.selection.roleBindings.chatBackground,
-      resources,
-    })
-    : undefined
+  const chatSourceProjection = await prepareChatSourceProjection({selection: input.selection, privateCharacters,
+    worldReferenceHash: opened.description.worldReference.referenceHash,
+    worldReleaseHash: opened.description.identity.releaseHash, resources})
   return {
     schema: 'storyforge.product-production-world-source-catalog',
     version: 2,

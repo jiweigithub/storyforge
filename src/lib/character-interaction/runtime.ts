@@ -323,7 +323,7 @@ export function parseFrozenChatSourceV1(value: unknown, participantKeys: readonl
         || isChatPrivateCharacterKeyV1(source.resourceKey) || background.has(source.resourceKey) || characterKeys.includes(source.resourceKey) || source.resourceKey === playerSourceKey || !isSha256Hash(source.sourceHash)
         || typeof source.resourceKind !== 'string' || !/^[a-z][a-z-]{0,63}$/.test(source.resourceKind)
         || ['character', 'world', 'world-link', 'codex-category'].includes(source.resourceKind)) throw new Error('背景资料来源身份或证据无效')
-      if (Object.prototype.hasOwnProperty.call(source, 'relatedResourceKeys') && (source.resourceKind !== 'character-relation'
+      if (Object.prototype.hasOwnProperty.call(source, 'relatedResourceKeys') && (!['character-relation', 'relation'].includes(source.resourceKind)
         || !Array.isArray(source.relatedResourceKeys) || !source.relatedResourceKeys.length || source.relatedResourceKeys.length > 2
         || source.relatedResourceKeys.some(key => typeof key !== 'string' || !key || key.length > 500)
         || new Set(source.relatedResourceKeys).size !== source.relatedResourceKeys.length)) throw new Error('关系背景的便携来源端点无效')

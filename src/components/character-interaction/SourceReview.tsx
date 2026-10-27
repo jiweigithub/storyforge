@@ -13,14 +13,17 @@ import SourceUnits from './SourceUnits'
 const PURPOSES = {identity: '身份与价值观', motivation: '目标与顾虑', voice: '语言与举止', knowledge: '事实与经历'} as const
 const VISIBILITY = {unclassified: '待分类，暂不使用', public: '所有参与者知道', participants: '仅指定参与者知道', 'author-only': '仅作者掌握', discoverable: '暂时无人知道，允许调查发现'} as const
 const FIELD_LABELS: Record<string, string> = {
+  canonicalLabel: '姓名', aliases: '别名', entityType: '资料类型', modality: '事实状态',
+  authority: '确认依据', evidence: '来源证据', closure: '相关资料', supportingAtoms: '相关事实',
   voice: '说话方式', roleWeight: '人物地位', moralAxis: '道德立场', orderAxis: '秩序立场',
   ...Object.fromEntries((FIELD_BY_TARGET.get('characters') ?? []).filter(field => field.labels?.length).map(field => [field.field, field.labels![0]])),
 }
-const fieldName = (pointer: string) => pointer.slice(1).replace(/~1/g, '/').replace(/~0/g, '~')
-const BACKGROUND_FIELDS: Record<string, string> = {name: '名称', title: '标题', description: '说明', summary: '概述', content: '正文', label: '关系称谓', relationType: '关系类型', isBidirectional: '双向关系', stages: '发展阶段', globalNote: '总体规则', entries: '规则条目', customNodes: '自定义规则', mainPlot: '主线安排', subPlots: '支线安排', logline: '故事梗概', theme: '主题', centralConflict: '核心矛盾', plotPattern: '情节模式'}
+const fieldName = (pointer: string) => pointer.replace(/^\/atom\//, '/').slice(1).replace(/~1/g, '/').replace(/~0/g, '~')
+const BACKGROUND_FIELDS: Record<string, string> = {...FIELD_LABELS, canonicalLabel: '名称', name: '名称', title: '标题', description: '说明', summary: '概述', content: '正文', label: '关系称谓', relationType: '关系类型', isBidirectional: '双向关系', stages: '发展阶段', globalNote: '总体规则', entries: '规则条目', customNodes: '自定义规则', mainPlot: '主线安排', subPlots: '支线安排', logline: '故事梗概', theme: '主题', centralConflict: '核心矛盾', plotPattern: '情节模式'}
 const NESTED_FIELDS: Record<string, string> = {name: '名称', title: '标题', description: '说明', content: '正文', label: '名称', hints: '提示', historicalAnchors: '历史依据', fictionalAdaptations: '架空设定', priority: '冲突优先级'}
 function passageLabel(fragment: ChatSourceFragmentV1, fragments: ChatSourceFragmentV1[], background = false): string {
   const path = fragment.pointer.slice(1).split('/').map(key => key.replace(/~1/g, '/').replace(/~0/g, '~'))
+  if (path[0] === 'atom' && path.length > 1) path.shift()
   const labels = background ? BACKGROUND_FIELDS : FIELD_LABELS
   const label = path.map((key, index) => {
     const names = index === 0 ? labels : NESTED_FIELDS
@@ -32,7 +35,9 @@ function passageLabel(fragment: ChatSourceFragmentV1, fragments: ChatSourceFragm
 }
 function readableValue(pointer: string, valueJson: string): string {
   const value: unknown = JSON.parse(valueJson)
-  const enums: Record<string, Record<string, string>> = {moralAxis: MORAL_AXIS_LABELS, orderAxis: ORDER_AXIS_LABELS, roleWeight: ROLE_WEIGHT_LABELS}
+  const enums: Record<string, Record<string, string>> = {moralAxis: MORAL_AXIS_LABELS, orderAxis: ORDER_AXIS_LABELS, roleWeight: ROLE_WEIGHT_LABELS,
+    modality: {established: '已确立事实', belief: '人物信念', intent: '作者安排', hypothesis: '假设'},
+    entityType: {character: '人物', location: '地点', 'codex-entry': '百科条目', 'world-group': '世界分组'}}
   return typeof value === 'string' ? enums[fieldName(pointer)]?.[value] ?? value : JSON.stringify(value, null, 2)
 }
 

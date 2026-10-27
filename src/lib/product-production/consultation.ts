@@ -424,7 +424,7 @@ export async function draftProductProductionBriefV3(input: {
   })
   if (characterChat && characterChat.version !== 1) {
     if (!characterChat.sourceReview) throw new Error('请先检查并确认角色来源资料')
-    const catalog = await loadProductProductionWorldSourceCatalogV2({scope, worldReleaseId: input.worldReleaseId, selection,
+    const catalog = await loadProductProductionWorldSourceCatalogV2({scope, worldReleaseId: input.worldReleaseId, selection, chatSourceReview: true,
       chatPrivateCharacters: characterChat.version === 3 ? characterChat.privateCharacters : undefined})
     if (!catalog.chatSourceProjection) throw new Error('角色来源投影未就绪')
     readPreparedChatSourceProjectionViewV1({draft: catalog.chatSourceProjection, review: characterChat.sourceReview, viewerKey: 'player'})
