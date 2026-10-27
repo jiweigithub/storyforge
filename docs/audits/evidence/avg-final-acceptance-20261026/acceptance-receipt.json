@@ -3,7 +3,7 @@
   "version": 1,
   "status": "in-progress",
   "scope": "AVG product development and S3 integration; story design deferred; no main merge/deployment",
-  "integrationBase": "ddd673ebb417a95074ddfde0dc555e665bdd84d7",
+  "integrationBase": "f9deb5e3d81e32346c30ad632902d15270652960",
   "newModelOrMediaRequests": 0,
   "demo": {
     "releaseUid": "PR-avg-avg.assembly.e5c0a014-7586-4115-9b10-7c5df01627aa-v1-57c475fe2343726fa7809a8c",
@@ -151,7 +151,7 @@
       "newTestsAdded": 0
     },
     "baselineObservationsUnchanged": true,
-    "finalFullCI": "Exact1a282 canonical full CI passed:1104 files,7430 tests+3 skipped; original coverage gates and build passed. Whole verify job success includes3 proxy smokes and398 core browser passes+64 skips. Separate AVG job100 passed/3 failed; final corrected source CI/E2E still pending.",
+    "finalFullCI": "Exact1a282 canonical full CI passed:1104 files,7430 tests+3 skipped; original coverage gates and build passed. Whole verify job success includes3 proxy smokes and398 core browser passes+64 skips. Separate AVG job100 passed/3 failed; final corrected source CI/E2E still pending. Actual remote main advanced toF9 and caused a generated-metrics merge conflict before c989 workflows could start. Integrating only that real blocker; no frozen baseline input changes. Final merged-source CI/E2E pending.",
     "serialIsolatedE2E": {
       "avgMediaStatus": "passed existing isolated remaining AVG recipe plus corrected original sound closed-read; no new cases or paid models",
       "wholeProjectHostedStatus": "Exact1a282 full verify passed, including398 core browser cases+64 conditional skips and3 proxy cases. Hosted AVG100 passed/3 execution-limit failures; earlier local103+closure remains separate.",
@@ -1177,6 +1177,193 @@
         ]
       },
       "status": "General full CI/core browser and all4 clients passed. Only3 hosted AVG V5 execution-limit roots remain; freeze scoped CI-only correction, then collect corrected-source CI/E2E terminal."
+    },
+    "upstreamF9Integration": {
+      "headBeforeMerge": "c989d6b946a63e3576ecfc89c4eb86aa5fadb2e5",
+      "base": "f9deb5e3d81e32346c30ad632902d15270652960",
+      "reason": "Current PR is actually conflicting and no new workflows start; live Git ref advanced while API baseRefOid still showedDDD. Retained1a full verify completed success before this integration.",
+      "upstreamChangedFiles": 11,
+      "conflicts": [
+        "docs/ARCHITECTURE.md generated metrics block"
+      ],
+      "resolution": "Official gen:project-metrics rebuild; preserve all incoming provider lifecycle/output-accounting source and tests.",
+      "avgSourceChanged": false,
+      "inheritedUpstream": "Author model IDs remain saved; official retired models and supported sampling/output-limit/stream-usage contracts. Private/custom endpoints retain prior behavior.",
+      "frozenBaselineInputsChanged": 0,
+      "frozenBaselinesRegenerated": false,
+      "precommitChecks": [
+        {
+          "argv": [
+            "npm",
+            "run",
+            "check:architecture"
+          ],
+          "exitCode": 0,
+          "seconds": 7.34,
+          "log": "01.log"
+        },
+        {
+          "argv": [
+            "npm",
+            "run",
+            "check:required-tables"
+          ],
+          "exitCode": 0,
+          "seconds": 0.16,
+          "log": "02.log"
+        },
+        {
+          "argv": [
+            "npm",
+            "run",
+            "check:ai-manual"
+          ],
+          "exitCode": 0,
+          "seconds": 0.53,
+          "log": "03.log"
+        },
+        {
+          "argv": [
+            "npm",
+            "run",
+            "check:ai-entry-registry"
+          ],
+          "exitCode": 0,
+          "seconds": 0.88,
+          "log": "04.log"
+        },
+        {
+          "argv": [
+            "npm",
+            "run",
+            "check:docs"
+          ],
+          "exitCode": 0,
+          "seconds": 0.57,
+          "log": "05.log"
+        },
+        {
+          "argv": [
+            "npm",
+            "run",
+            "check:project-metrics"
+          ],
+          "exitCode": 0,
+          "seconds": 0.47,
+          "log": "06.log"
+        },
+        {
+          "argv": [
+            "npm",
+            "run",
+            "check:agent-freshness"
+          ],
+          "exitCode": 1,
+          "seconds": 0.73,
+          "log": "07.log"
+        },
+        {
+          "argv": [
+            "npm",
+            "run",
+            "check:agent-freshness"
+          ],
+          "exitCode": 0,
+          "seconds": 0.76,
+          "log": "08.log"
+        },
+        {
+          "argv": [
+            "npx",
+            "eslint",
+            "src/components/settings/AIConfigPanel.tsx",
+            "src/lib/agent/skill-registry.ts",
+            "src/lib/ai/client.ts",
+            "src/lib/ai/provider-model-lifecycle.ts",
+            "src/lib/types/ai.ts",
+            "tests/e2e/avg-visual-planning-workbench.spec.ts",
+            "tests/e2e/provider-model-lifecycle.spec.ts",
+            "tests/e2e/provider-output-accounting.spec.ts",
+            "tests/regression/R-ai-config-storage.test.ts",
+            "tests/regression/R-issue214-provider-lifecycle.test.ts",
+            "tests/regression/R-issue218-provider-output-accounting.test.ts"
+          ],
+          "exitCode": 0,
+          "seconds": 1.78,
+          "log": "09.log"
+        },
+        {
+          "argv": [
+            "npx",
+            "tsc",
+            "--noEmit"
+          ],
+          "exitCode": 0,
+          "seconds": 40.78,
+          "log": "10.log"
+        },
+        {
+          "argv": [
+            "npm",
+            "run",
+            "build"
+          ],
+          "exitCode": 0,
+          "seconds": 84.97,
+          "log": "11.log"
+        },
+        {
+          "argv": [
+            "npm",
+            "run",
+            "check:bundle-size"
+          ],
+          "exitCode": 0,
+          "seconds": 0.55,
+          "log": "12.log"
+        }
+      ],
+      "hostedRunsForC989": 0,
+      "status": "All required precommit engineering checks and provider49 passed; commit/push integrated candidate, then collect exact-source hosted CI/E2E.",
+      "providerRegression": {
+        "files": 3,
+        "passed": 49,
+        "failed": 0,
+        "seconds": 3.57
+      },
+      "freshnessRepair": {
+        "sourceHead": "1a28200fe169e7910a4fe6ef35440626a833013c",
+        "sourceRunId": 40410246773,
+        "sourceJobId": 121878833761,
+        "priorRegistrySha256": "c12a9ec09846c6f96144c93ddb6fe8e621ff198cfdcbf2b98dafa8341bd6665b",
+        "evidence": [
+          {
+            "skillId": "text-open-world.creator-artifact-edit.v1",
+            "lastVerifiedAt": "2026-10-26",
+            "regression": "tests/regression/R-OPEN-WORLD5-creator-artifact-edit-context-agent.test.ts",
+            "passed": 5,
+            "sourceSha256": "f47d2b4d65226f57b046d696f302ce4e8d43f5ef5c87bbb61b7d5a4e6a6c4fa4",
+            "evidence": "ci-1a282-verify-job.log exact successful per-file line; entire source registry was identical before metadata-only update"
+          },
+          {
+            "skillId": "text-adventure.scene-script.v1",
+            "lastVerifiedAt": "2026-10-27",
+            "regression": "tests/regression/R-TEXTADV3-agent-team.test.ts",
+            "passed": 4,
+            "sourceSha256": "7750145c86d0b9290828ed8a2c161a7b54a57e7349544a0a8229267366d17295",
+            "evidence": "ci-1a282-verify-job.log exact successful per-file line; entire source registry was identical before metadata-only update"
+          }
+        ],
+        "newTestRuns": 0,
+        "onlyChanges": "Two lastVerifiedAt literals reflect actual exact-source completed CI run dates; prompt/contracts/outputs unchanged",
+        "baselineInputsChanged": 0
+      },
+      "initialPreflightFailure": "Only agent freshness failed for2 stale literals; exact-source completed CI9 cases justify actual dates; rerun of that guard passed. Original failed log retained.",
+      "bundle": {
+        "largestAsyncKiB": 588.0,
+        "unchangedLimitKiB": 600,
+        "entryKiB": 6.8
+      }
     }
   },
   "limitations": [
@@ -1184,9 +1371,10 @@
     "no independent human hearing or commercial art acceptance",
     "final CI/E2E and commit/push remain open"
   ],
-  "previousIntegrationBase": "69e2a928a3685ed7849d9a45d74395c6a6b38b18",
+  "previousIntegrationBase": "ddd673ebb417a95074ddfde0dc555e665bdd84d7",
   "integrationBaseHistory": [
     "63af1fba36e55d9a4205a4350416a46ffd361c3f",
-    "69e2a928a3685ed7849d9a45d74395c6a6b38b18"
+    "69e2a928a3685ed7849d9a45d74395c6a6b38b18",
+    "ddd673ebb417a95074ddfde0dc555e665bdd84d7"
   ]
 }
