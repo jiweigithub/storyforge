@@ -10,7 +10,7 @@ import { CInput } from '../shared/CompositionInput'
 import { CTextarea } from '../shared/CompositionInput'
 import { useDialog } from '../shared/Dialog'
 import type { Project, StoryArc, StoryArcType } from '../../lib/types'
-import { parseStages, type StoryStage } from '../../lib/types/story-arc'
+import { inspectStages, type StoryStage } from '../../lib/types/story-arc'
 import { nanoid } from 'nanoid'
 import StorylineProgressPanel from './StorylineProgressPanel'
 import CreativeArtifactSummary from '../agent/CreativeArtifactSummary'
@@ -58,7 +58,9 @@ export default function StoryArcPanel({ project, worldGroupId, initialRecordTarg
   const activeIntentAlignment = activeArc?.id == null
     ? undefined
     : intentAlignmentByArcId[activeArc.id]
-  const activeStages = activeArc ? parseStages(activeArc.stages) : []
+  const activeStageInspection = activeArc ? inspectStages(activeArc.stages) : null
+  const activeStages = activeStageInspection?.valid ? activeStageInspection.stages : []
+  const hasInvalidStages = arcs.some(arc => !inspectStages(arc.stages).valid)
   const initialArcId = initialRecordTarget?.table === 'storyArcs'
     ? initialRecordTarget.recordId
     : null
@@ -230,6 +232,7 @@ export default function StoryArcPanel({ project, worldGroupId, initialRecordTarg
               copilot.loading
               || copilot.busy
               || copilot.pendingCandidates.length > 0
+              || hasInvalidStages
               || (project.enableMultiWorld === true && worldGroupId == null)
             }
             className="flex items-center gap-1 px-3 py-1.5 text-xs bg-accent text-white rounded-lg hover:bg-accent-hover disabled:opacity-50 transition-colors"
@@ -244,6 +247,7 @@ export default function StoryArcPanel({ project, worldGroupId, initialRecordTarg
               onClick={() => { void handleTransform(operation) }}
               disabled={
                 activeArc?.id == null
+                || !activeStageInspection?.valid
                 || copilot.loading
                 || copilot.busy
                 || copilot.pendingCandidates.length > 0
@@ -260,6 +264,12 @@ export default function StoryArcPanel({ project, worldGroupId, initialRecordTarg
       {copilot.error && (
         <p className="mb-4 rounded border border-error/30 bg-error/5 px-3 py-2 text-xs text-error">
           {copilot.error}
+        </p>
+      )}
+
+      {hasInvalidStages && (
+        <p className="mb-4 rounded border border-warning/40 bg-warning/5 px-3 py-2 text-xs text-text-secondary">
+          有故事线的阶段数据格式异常，原始数据已保留。请切换到对应故事线检查并修复后，再使用 AI 生成。
         </p>
       )}
 
@@ -309,6 +319,7 @@ export default function StoryArcPanel({ project, worldGroupId, initialRecordTarg
               const original = snapshot.arcs?.find(arc => (
                 arc.id === candidate.payload.storyArcMutationRequest?.targetArcId
               ))
+              const inspection = original ? inspectStages(original.stages) : null
               return (
                 <label className="grid gap-1 text-[11px] text-text-muted">
                   原版（冻结）
@@ -318,7 +329,10 @@ export default function StoryArcPanel({ project, worldGroupId, initialRecordTarg
                       name: original.name,
                       type: original.type,
                       description: original.description,
-                      stages: parseStages(original.stages),
+                      stages: inspection?.valid ? inspection.stages : {
+                        error: inspection?.error,
+                        originalJson: original.stages,
+                      },
                     }, null, 2) : '目标原版不可用，请拒绝并重新生成。'}
                     readOnly
                     className="min-h-72 w-full resize-y font-mono text-xs leading-5"
@@ -387,7 +401,14 @@ export default function StoryArcPanel({ project, worldGroupId, initialRecordTarg
       {/* 故事线编辑 */}
       {activeArc ? (
         <>
-          <StoryArcEditor
+          {activeStageInspection && !activeStageInspection.valid ? (
+            <StoryStageRecovery
+              key={activeArc.id}
+              arc={activeArc}
+              error={activeStageInspection.error}
+              onSave={(stages, original) => updateStages(activeArc.id!, stages, original)}
+            />
+          ) : <StoryArcEditor
             arc={activeArc}
             stages={activeStages}
             targeted={activeArc.id === initialArcId}
@@ -398,7 +419,7 @@ export default function StoryArcPanel({ project, worldGroupId, initialRecordTarg
             onSortEvents={sortKeyEvents}
             isGeneratingEvents={copilot.busy}
             isSortingEvents={copilot.busy}
-          />
+          />}
           <StorylineProgressPanel
             projectId={project.id!}
             arcs={arcs}
@@ -417,6 +438,68 @@ export default function StoryArcPanel({ project, worldGroupId, initialRecordTarg
         </div>
       )}
     </div>
+  )
+}
+
+/** Keep malformed author data visible and unchanged until an explicit, validated repair. */
+function StoryStageRecovery({ arc, error, onSave }: {
+  arc: StoryArc
+  error: string
+  onSave: (stages: StoryStage[], original: string) => Promise<void>
+}) {
+  const [editing, setEditing] = useState(false)
+  const [original, setOriginal] = useState(arc.stages)
+  const [draft, setDraft] = useState(arc.stages)
+  const [saveError, setSaveError] = useState('')
+  const [saving, setSaving] = useState(false)
+  const save = async () => {
+    const result = inspectStages(draft)
+    if (!result.valid) {
+      setSaveError(result.error)
+      return
+    }
+    setSaving(true)
+    setSaveError('')
+    try {
+      await onSave(result.stages, original)
+    } catch (cause) {
+      setSaveError(cause instanceof Error ? cause.message : '保存失败，修复尚未保存。')
+    } finally {
+      setSaving(false)
+    }
+  }
+  return (
+    <section className="rounded-xl border border-warning/40 bg-bg-surface p-4 space-y-3">
+      <h3 className="text-sm font-semibold text-text-primary">{arc.name}：阶段数据格式异常</h3>
+      <p role="alert" className="text-xs text-text-secondary">{error} 原始数据已保留，尚未修改。</p>
+      <p className="text-xs text-text-muted">
+        请先导出项目备份。可在下方检查原始阶段数据并修复格式；保留阶段 ID 和已有内容，没有关键事件时填写 []。
+        保存会沿用阶段更新流程，删除阶段会解除对应进度引用。
+      </p>
+      <button type="button" onClick={() => setEditing(!editing)} className="text-xs text-accent">
+        {editing ? '收起阶段数据' : '检查并修复阶段数据'}
+      </button>
+      {editing && <>
+        <CTextarea
+          aria-label="修复故事线阶段数据"
+          value={draft}
+          disabled={saving}
+          onChange={event => setDraft(event.target.value)}
+          className="w-full min-h-64 p-2 bg-bg-base border border-border rounded font-mono text-xs text-text-primary"
+        />
+        {saveError && <p role="alert" className="text-xs text-error">{saveError}</p>}
+        <div className="flex gap-3">
+          <button type="button" disabled={saving} onClick={() => { void save() }} className="text-xs text-accent disabled:opacity-40">
+            {saving ? '保存中…' : '确认保存阶段修复'}
+          </button>
+          <button type="button" disabled={saving} onClick={() => {
+            setOriginal(arc.stages)
+            setDraft(arc.stages)
+            setSaveError('')
+          }} className="text-xs text-text-muted">放弃编辑稿</button>
+        </div>
+      </>}
+    </section>
   )
 }
 

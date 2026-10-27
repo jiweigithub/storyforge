@@ -16,7 +16,7 @@ import { adopt } from '../registry/adopt'
 import { assembleContext } from '../registry/assemble-context'
 import type { AssembleContextResult } from '../registry/types'
 import type { AIConfig, ChatMessage, StoryArc, StoryArcType, StoryCore, WorkspaceScope } from '../types'
-import { parseStages, stringifyStages, type StoryStage } from '../types/story-arc'
+import { inspectStages, parseStages, stringifyStages, type StoryStage } from '../types/story-arc'
 import type { StorylineCrossing, StorylineProgress } from '../types/storyline-progress'
 import {
   readOwnedRows,
@@ -207,6 +207,9 @@ async function snapshotOf(
   progressRows: Array<StorylineProgress & { ragDocumentId?: string }>,
   crossingRows: Array<StorylineCrossing & { ragDocumentId?: string }>,
 ): Promise<StoryArcCopilotSnapshot> {
+  if (rows.some(row => !inspectStages(row.stages).valid)) {
+    throw new Error('故事线阶段数据格式异常，请先在故事线页面检查并修复，原始数据已保留。')
+  }
   const ordered = rows
     .map(row => ({
       id: row.id ?? null,
