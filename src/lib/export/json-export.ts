@@ -438,7 +438,9 @@ export interface ProjectExportData {
       _sourceProductReleaseExportId?: number | null
       _releasedProductReleaseExportId?: number | null
       _budgetLedgerPortableJson: string
-      _failurePortableJson: string
+      _failurePortableJson?: string
+      /** Legacy backups retain diagnostic text; unproven old Run IDs never authorize recovery. */
+      failureJson?: string
     }
   )[]
   productQualityGateReceipts: (

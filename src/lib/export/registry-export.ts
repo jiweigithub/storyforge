@@ -2,7 +2,6 @@ import { assertFrozenRuntimePackageSessionV1, parseProductRuntimeState } from '.
 import type { AnyProductBuildPreviewManifest } from '../types'
 import { avgExecutableModule } from '../avg/executable-module'
 import { verifyAvgBranchOriginV1 } from '../avg/branch-origin'
-import { assertTtrpgOpenContinuationParentV1 } from '../ttrpg/open-release-continuation-backup'
 import { isTtrpgRuntimeContentV2 } from '../ttrpg/content-version'
 /**
  * 注册表派生的项目导出引擎(AUDIT-1)
@@ -308,6 +307,20 @@ async function assertProductRuntimeExportIntegrityV1(
     if (hasParent !== hasParentSequence) {
       throw new Error('[deriveExport] ProductRuntimeSession 分支 lineage 配对无效')
     }
+    const upgradeReceipts = (eventsBySession.get(session.id) ?? []).filter(event => event.type === 'interaction.release.upgraded')
+    if (upgradeReceipts.length > 1) throw new Error('[deriveExport] 升级回执不能重复')
+    const upgradeReceipt = upgradeReceipts[0]
+    if (upgradeReceipt) {
+      const childManifest = releaseManifestsById.get(session.productReleaseId)
+      if (!childManifest) throw new Error('[deriveExport] 角色聊天升级副本缺少冻结版本')
+      if (childManifest.version !== 1 || childManifest.productType !== 'character-interaction') {
+        throw new Error('[deriveExport] 角色聊天升级副本的发布协议或产品类型不匹配')
+      }
+      const contract = await import('../character-interaction/release-upgrade-branch')
+      const {parseProductReleaseManifestV1} = await import('../product-production/runtime-package')
+
+      await contract.verifyChatReleaseUpgradeReceiptV1({childSession: session, childManifest: parseProductReleaseManifestV1(childManifest), receipt: upgradeReceipt})
+    }
     if (!hasParent) continue
     const parent = sessionsById.get(session.parentSessionId)
     const parentMaximumSequence = maximumRuntimeSequenceForExport(
@@ -324,7 +337,7 @@ async function assertProductRuntimeExportIntegrityV1(
     const sameSource = parent.runtimeSourceHash === session.runtimeSourceHash
       && parent.productReleaseId === session.productReleaseId
       && parent.productBuildId === session.productBuildId
-    if (sameSource) continue
+    if (sameSource && !upgradeReceipt) continue
     if (parent.productReleaseId == null || session.productReleaseId == null
       || parent.productBuildId != null || session.productBuildId != null) {
       throw new Error('[deriveExport] ProductRuntimeSession 分支 lineage 或序号无效')
@@ -338,6 +351,7 @@ async function assertProductRuntimeExportIntegrityV1(
       throw new Error('[deriveExport] ProductRuntimeSession 迁移Release缺失')
     }
     if (parent.kind === 'ttrpg' && JSON.parse(session.initialStateJson).ttrpg?.openRun?.releaseContinuation) {
+      const { assertTtrpgOpenContinuationParentV1 } = await import('../ttrpg/open-release-continuation-backup')
       const parentContent = parentManifest.runtimePackage.ttrpg, targetContent = childManifest.runtimePackage.ttrpg
       if (!parentContent || !targetContent || !isTtrpgRuntimeContentV2(parentContent) || !isTtrpgRuntimeContentV2(targetContent)
         || parent.runtimeSourceHash !== parentManifest.packageHash || session.runtimeSourceHash !== childManifest.packageHash) {
@@ -348,6 +362,18 @@ async function assertProductRuntimeExportIntegrityV1(
       continue
     }
     try {
+      if (session.kind === 'character-interaction') {
+        if (parentManifest.version !== 1 || childManifest.version !== 1
+          || parentManifest.productType !== 'character-interaction' || childManifest.productType !== 'character-interaction') {
+          throw new Error('[deriveExport] 角色聊天升级分支的发布协议或产品类型不匹配')
+        }
+        const contract = await import('../character-interaction/release-upgrade-branch')
+        const {parseProductReleaseManifestV1} = await import('../product-production/runtime-package')
+
+        await contract.verifyChatReleaseUpgradeBranchV1({parentSession: parent, childSession: session, parentManifest: parseProductReleaseManifestV1(parentManifest), childManifest: parseProductReleaseManifestV1(childManifest),
+          parentEvents: eventsBySession.get(parent.id) ?? [], childEvents: eventsBySession.get(session.id) ?? []})
+        continue
+      }
       migrationContract ??= await import('../open-world/player-save-migration-contract')
       const { parseProductReleaseManifestV1 } = await import('../product-production/runtime-package')
       const sourceStateHash = await migrationContract.replayTextOpenWorldMigrationSourceStateHashV1({

@@ -3,6 +3,7 @@ import { deriveAvgAssemblyRecoveryBaseV1 } from '../avg/assembly-recovery'
 import { AVG_VISUAL_TEXT_CAPABILITY_V4 } from '../avg/visual-planning-roles'
 import { isTtrpgCompatibleOpeningTextFreeProfileV1 } from '../ttrpg/open-compatible-opening-contract'
 import { db } from '../db/schema'
+import type {ChatMediaProductionDecisionV1} from '../character-interaction/media-selection'
 import { readAgentRunV1 } from '../agent/run/event-store'
 import { readAgentRunArtifactExactV1 } from '../memory/artifact-store'
 import type {
@@ -599,6 +600,8 @@ export function isTextAdventureMediaAnchorBlockerV1(details: ProductProductionDe
 export function canRetryProductProductionBlockerV1(details: ProductProductionDetailsV1): boolean {
   return (details.build?.status === 'recovery-required'
       && !isTextAdventureSourceDecisionBlockerV1(details)
+      && !isChatSituationDecisionBlockerV1(details)
+      && !isChatMediaDecisionBlockerV1(details)
       && !isTextAdventureMediaAnchorBlockerV1(details))
     || !!details.build && isRepairRetryableFailedProductBuildV1(details.build)
 }
@@ -631,6 +634,7 @@ export function canRepairTextAdventureRuntimeCopyV1(details: ProductProductionDe
 }
 
 const AUTHOR_REVIEW_ARTIFACT_KEYS = new Set([
+  'content.chat-candidates', 'content.chat-selection', 'quality.chat-openings',
   'production.supervision',
   'design.game',
   'content.source-sufficiency',
@@ -908,7 +912,7 @@ export function inspectProductProductionCapabilityReadinessV1(input: {
  * capability required by that frozen Brief is bound.
  */
 export function evaluateProductProductionAuthorizationReadinessV1(input: {
-  brief: Pick<ProductProductionBriefV3, 'capabilityRequirements' | 'avgRevision' | 'avgAssembly' | 'avgVisualPlanning' | 'avgSoundPlanning' | 'avgAudioProcessing'> & Partial<Pick<ProductProductionBriefV3, 'ttrpgOpen' | 'media'>>
+  brief: Pick<ProductProductionBriefV3, 'capabilityRequirements' | 'avgRevision' | 'avgAssembly' | 'avgVisualPlanning' | 'avgSoundPlanning' | 'avgAudioProcessing'> & Partial<Pick<ProductProductionBriefV3, 'qualityProfile' | 'intent' | 'ttrpgOpen' | 'media'>>
   readiness: ProductProductionCapabilityReadinessV1
 }): ProductProductionAuthorizationReadinessV1 {
   const blockerMessages: string[] = []
@@ -1633,6 +1637,44 @@ export async function retryProductProductionBlockerV1(input: {
   return effectiveDisposition
 }
 
+export function isChatSituationDecisionBlockerV1(details: ProductProductionDetailsV1): boolean {
+  return details.production.productType === 'character-interaction'
+    && details.build?.status === 'recovery-required'
+    && productProductionFailureTaskKey(details.build) === 'content.chat-author-gate'
+}
+
+export async function confirmChatSituationDecisionV1(input: {
+  scope: WorkspaceScope; details: ProductProductionDetailsV1
+  candidatesHash: string; sourceHash: string; selectedOptionKey: string
+}): Promise<void> {
+  if (!isChatSituationDecisionBlockerV1(input.details)) throw new Error('当前制作没有待选择的初始情境')
+  const receipt = await executeProductProductionCommand({scope: input.scope, productionId: input.details.production.id!, command: {
+    type: 'resolve-blocker', commandId: commandId('chat-situation-selection'),
+    expectedStateRevision: input.details.production.stateRevision, blockerKey: 'content.chat-author-gate',
+    resolution: {action: 'confirm-chat-situation', note: '作者已比较并选定初始情境，后续剧情由玩家与角色共同演绎。',
+      chatSituation: {candidatesHash: input.candidatesHash, sourceHash: input.sourceHash, selectedOptionKey: input.selectedOptionKey}},
+  }})
+  if (!receipt.ok) throw new Error(String(receipt.result.message ?? receipt.errorCode ?? '初始情境选择失败'))
+}
+
+export function isChatMediaDecisionBlockerV1(details: ProductProductionDetailsV1): boolean {
+  return details.production.productType === 'character-interaction'
+    && details.build?.status === 'recovery-required'
+    && productProductionFailureTaskKey(details.build) === 'media.chat-author-gate'
+}
+
+export async function confirmChatMediaDecisionV1(input: {
+  scope: WorkspaceScope; details: ProductProductionDetailsV1; decision: ChatMediaProductionDecisionV1
+}): Promise<void> {
+  if (!isChatMediaDecisionBlockerV1(input.details)) throw new Error('当前制作没有待确认的图片')
+  const receipt = await executeProductProductionCommand({scope: input.scope, productionId: input.details.production.id!, command: {
+    type: 'resolve-blocker', commandId: commandId('chat-media-selection'), expectedStateRevision: input.details.production.stateRevision,
+    blockerKey: 'media.chat-author-gate', resolution: {action: 'confirm-chat-media',
+      note: '作者已查看当前原图、来源与许可，确认用于对应角色和开场场景。', chatMedia: input.decision},
+  }})
+  if (!receipt.ok) throw new Error(String(receipt.result.message ?? receipt.errorCode ?? '图片确认失败'))
+}
+
 export async function resolveTextAdventureSourceDecisionV1(input: {
   scope: WorkspaceScope
   details: ProductProductionDetailsV1
@@ -1809,6 +1851,11 @@ export async function runAuthorizedProductProductionV1(input: {
     || creatorMediaPlan?.mode === 'provider-generate'
   for (const requirement of brief.capabilityRequirements) {
     if (!['image', 'music', 'sfx'].includes(requirement.mediaClass)) continue
+    // A chat preview is a real illustrated experience. Its quality profile
+    // changes acceptance gates, never permission to substitute placeholder art.
+    const requiresChatImageProvider = brief.intent.productType === 'character-interaction'
+      && requirement.mediaClass === 'image'
+    const useProviderForRequirement = useExternalMedia || requiresChatImageProvider
     if (requirement.mediaClass === 'image'
       && creatorMediaPlan?.mode === 'author-import'
       && creatorMediaPlan.capability.requirementKey === requirement.requirementKey) {
@@ -1837,15 +1884,15 @@ export async function runAuthorizedProductProductionV1(input: {
       const resolved = await resolveAuthoredImagePackCapabilityV1({ requirement, manifestUrl: authoredImagePackUrl })
       mediaCapabilities.set(requirement.requirementKey, resolved)
       capabilityBindings.push(resolved.binding)
-    } else if (requirement.mediaClass === 'image' && useExternalMedia && agnesImageReadiness.ready) {
+    } else if (requirement.mediaClass === 'image' && useProviderForRequirement && agnesImageReadiness.ready) {
       const resolved = await resolveConfiguredAgnesImageCapabilityV1({ projectId: scope.projectId, requirement })
       mediaCapabilities.set(requirement.requirementKey, resolved)
       capabilityBindings.push(resolved.binding)
-    } else if (useExternalMedia && relayUrl != null) {
+    } else if (useProviderForRequirement && relayUrl != null) {
       const resolved = await resolveTrustedRelayMediaCapabilityV1({ requirement, relayUrl })
       mediaCapabilities.set(requirement.requirementKey, resolved)
       capabilityBindings.push(resolved.binding)
-    } else if (brief.qualityProfile === 'commercial-candidate') {
+    } else if (requiresChatImageProvider || brief.qualityProfile === 'commercial-candidate') {
       throw new Error(`[product-production-service] capability-unbound: ${requirement.mediaClass === 'image'
         ? agnesImageReadiness.issue || '全局 Agnes 图片能力尚未就绪。'
         : '商业音乐与音效可信中继尚未绑定。'}`)

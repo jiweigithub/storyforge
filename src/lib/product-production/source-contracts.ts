@@ -25,6 +25,7 @@ import {
   CHARACTER_INTERACTION_WORLD_REQUIREMENT_ADAPTER_V2, AVG_WORLD_REQUIREMENT_ADAPTER_V2,
   type UpperProductWorldRequirementGoalV1,
 } from '../product/world-requirement-adapters'
+import { resolveWorldReferenceResourceScope } from '../world-engine/world-reference-v2'
 import { freezeExactProductSourcePlanV2, refreezeExactProductSourcePlanBriefV2 } from '../product/exact-source-contracts'
 import { hashProductProductionValueV2 } from './hash'
 import { resolveProductProductionWorldCompilationDescriptorsV2 } from './world-source'
@@ -120,7 +121,11 @@ export async function createProductProductionSourcePlanV1(input: {
     ]).filter(key => input.brief.source.selection.resourceKeys.includes(key))
     if (!initialResourceKeys.length) initialResourceKeys.push(input.brief.source.selection.resourceKeys[0]!)
     const reference = catalog.description.worldReference
+    const consultationContextManifests = productType === 'character-interaction'
+      ? (await (await import('../character-interaction/consultation-harness')).readChatConsultationProductionEvidenceV1(input.scope, input.brief)).map(row => row.pointer)
+      : []
     const common = {
+      consultationContextManifests,
       productInstanceKey: input.productionKey,
       adapter,
       goal,
@@ -148,10 +153,12 @@ export async function createProductProductionSourcePlanV1(input: {
 
 export function productProductionTaskUsesWorldGatewayV1(task: ProductProductionPlanTaskV3): boolean {
   const isDeterministicIntegration = task.executionMode === 'deterministic'
-    && (task.kind === 'runtime-package' || task.kind === 'avg-assembly-integrate' && task.taskKey === 'avg.assembly.integrate')
+    && (['runtime-package', 'chat-media-requirements', 'chat-media-review'].includes(task.kind)
+      || task.kind === 'avg-assembly-integrate' && task.taskKey === 'avg.assembly.integrate')
   const skill = getAgentSkillV1(task.skillId ?? 'product-production.integrate.v1')
   return skill.contextGateway?.providerSourceKeys.includes('worldRelease') === true
     && (task.executionMode === 'model' || task.skillId === 'product-production.integrate.v1'
+      || task.taskKey === 'content.design'
       || isDeterministicIntegration)
 }
 
@@ -180,6 +187,26 @@ export async function parseProductProductionSourcePlanV1(
     throw new Error('[product-production-source] Brief 内容与精确 SourcePlan 不一致')
   }
   return plan
+}
+
+/** The Brief is immutable evidence, including its historical local ID. Only
+ * SourcePlan carries the remappable locator used for execution after import. */
+export async function resolveProductProductionWorldScopeV1(input: {
+  scope: WorkspaceScope
+  sourcePlan: ProductSourcePlan
+  brief: ProductProductionBriefV3
+}) {
+  const plan = await validateProductSourcePlan(input.sourcePlan)
+  if (plan.productType !== input.brief.intent.productType
+    || plan.worldReference.releaseHash !== input.brief.source.worldContentHash) {
+    throw new Error('[product-production-source] SourcePlan 与冻结 Brief 来源不一致')
+  }
+  const scope = await resolveWorldReferenceResourceScope(plan.worldReference)
+  if (scope.projectId !== input.scope.projectId || scope.worldId !== input.scope.worldId) {
+    throw new Error('[product-production-source] WorldReference 超出当前世界作用域')
+  }
+  return {...scope, worldReleaseId: plan.worldReference.localReleaseRecordId,
+    worldReleaseHash: plan.worldReference.releaseHash}
 }
 
 /** Evolution creates a new Brief but cannot silently expand its frozen world
@@ -295,6 +322,7 @@ export async function executeProductProductionWorldGatewayV1(input: {
   signal?: AbortSignal
 }): Promise<ContextGatewayExecutionV1> {
   const skill = getAgentSkillV1(input.task.skillId ?? 'product-production.integrate.v1')
+  await resolveProductProductionWorldScopeV1(input)
   // Native AVG has its own final task kind. Exact plans still require the
   // integration slice; a caller's legacy false/default cannot downgrade it
   // to the smaller adaptation slice. Historical V1 AVG reads stay unchanged.

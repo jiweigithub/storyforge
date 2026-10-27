@@ -84,6 +84,19 @@ function manualChunkFor(moduleId: string): string | undefined {
 
   if (id.endsWith('/src/lib/ai/context-builder.ts')) return 'ai-context'
   if (id.endsWith('/src/lib/context-gateway/selector.ts')) return 'context-selector'
+  // Passive codecs and policy data have no dependency back into the shared
+  // store/adoption or runtime/backup cycles. Keep those leaves cacheable when
+  // AVG and character-chat production are present in the same application.
+  if (id.endsWith('/src/lib/world-engine/semantic-registry-v4.json')) return 'world-semantic-registry-v4'
+  if (id.endsWith('/src/lib/world-engine/narrative-index.ts')) return 'world-narrative-index'
+  if (/\/src\/lib\/world-engine\/(?:narrative-release-v4|release-codec)\.ts$/.test(id)) return 'world-release-codecs'
+  if (/\/src\/lib\/character-interaction\/(?:action-output-contract|action-choice-contract|narrative-action-prompt|inquiry-prompt|narrative-replanning|action-instructions|visual-design)\.ts$/.test(id)) {
+    return 'character-chat-passive-contracts'
+  }
+  if (/\/src\/lib\/(?:ai-town\/contracts|avg\/settings-v2|ttrpg\/authoring-settings|character-interaction\/opening-reference-prompt|product-production\/(?:task-evidence|browser-performance|media-quality-policy|first-interactive-resources))\.ts$/.test(id)) {
+    return 'product-production-evidence-policies'
+  }
+  if (/\/src\/lib\/ttrpg\/(?:production-compiler|scenario-authoring|continuity-state)\.ts$/.test(id)) return 'ttrpg-production-compilers'
   // The governed text-adventure production contracts are shared by the
   // scheduler, executor and player-facing package verifier. Keep their large
   // parsers/assemblers in one cacheable async chunk instead of folding them

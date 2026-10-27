@@ -10,11 +10,29 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
-  verify:
+  checks:
+    name: Full checks / ${{ matrix.id }}
     runs-on: ubuntu-latest
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: cli
+            script: ci
+          - id: browser
+            script: ci:e2e
+    env:
+      PLAYWRIGHT_FROZEN_WORKSPACE: "1"
     steps:
       - uses: actions/checkout@v7
+
+      - name: Record exact source
+        run: git rev-parse HEAD
 
       - name: Setup Node
         uses: actions/setup-node@v7
@@ -25,19 +43,35 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Run the canonical full CLI gate once. Do not add a second full-delivery
-      # workflow to repeat coverage/build for the same PR head.
-      - name: 完整工程检查（单次统一入口）
-        run: npm run ci
-
       - name: Install Playwright Chromium
+        if: matrix.id == 'browser'
         run: npx playwright install --with-deps chromium
 
+      # The browser runner has its own filesystem. Production-preview tests
+      # require a build here instead of relying on the CLI runner's dist/.
+      - name: 构建生产预览
+        if: matrix.id == 'browser'
+        run: npm run build
+
       - name: 生产版模型与嵌入代理设置
+        if: matrix.id == 'browser'
         run: PLAYWRIGHT_PRODUCTION_PREVIEW=1 npx playwright test tests/e2e/settings-proxy.spec.ts tests/e2e/codex-provider.spec.ts
 
-      - name: 核心用户路径浏览器冒烟
-        run: npm run ci:e2e
+      # Each complete command runs once, in an independent runner. The final
+      # verify job requires both results; neither subset can make the PR green.
+      - name: 完整交付检查
+        run: npm run ${{ matrix.script }}
+
+      - name: Preserve browser evidence
+        if: ${{ !cancelled() && matrix.id == 'browser' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-browser-${{ github.sha }}
+          path: |
+            test-results/
+            playwright-report/
+          if-no-files-found: ignore
+          retention-days: 14
 
   avg-media-experimental:
     name: AVG 媒资实验路径（隔离浏览器）
@@ -203,3 +237,18 @@ jobs:
           path: test-results/avg-media/
           if-no-files-found: warn
           retention-days: 7
+
+  verify:
+    if: ${{ always() }}
+    needs: [checks, avg-media-experimental]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every full check to succeed
+        env:
+          CHECKS_RESULT: ${{ needs.checks.result }}
+          AVG_RESULT: ${{ needs.avg-media-experimental.result }}
+          EXPECTED_AVG_RESULT: ${{ github.event_name == 'pull_request' && 'success' || 'skipped' }}
+        run: |
+          test "$CHECKS_RESULT" = success
+          test "$AVG_RESULT" = "$EXPECTED_AVG_RESULT"

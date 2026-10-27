@@ -1,4 +1,3 @@
-import { parseChatAuthoringSettingsV1 } from '../character-interaction/authoring-contract'
 import { parseAvgAssemblyBrief, AVG_ASSEMBLY_GATE_IDS_V1 } from '../avg/assembly-contract'
 import { assertAvgVisualProductionPolicyV2 } from '../avg/media-production-policy'
 import { parseAvgStoredAssemblyBriefV3 } from '../avg/voice-assembly-storage'
@@ -11,6 +10,11 @@ import { parseAvgSoundPlanningBrief } from '../avg/sound-production-brief'
 import { assertAvgSoundProductionPolicy } from '../avg/sound-production-policy'
 import { parseAvgAudioProductionProcessingPlan } from '../avg/audio-production-contract'
 import { assertAvgAudioProcessingBriefV1 } from '../avg/audio-production-brief'
+import {chatVisualMediaProfileV1} from '../character-interaction/visual-intent'
+import { parseChatAuthoringSettings } from '../character-interaction/authoring-contract'
+import {parseChatMediaProductionDecisionV1} from '../character-interaction/media-selection'
+import {parseChatRoleProfileSetV1} from '../character-interaction/role-profile'
+import {parseChatSourceUnitSetV1} from '../character-interaction/source-unit-authorization'
 import type {
   TextAdventureContentRevisionV1,
   TtrpgOpenContentRevisionV1,
@@ -285,6 +289,8 @@ export function parseProductProductionBriefV3(value: unknown): ProductProduction
     'productionBudget', 'qualityProfile', 'capabilityRequirements', 'externalDataPolicy',
     'fallbackPolicy', 'completionContract', 'unresolvedDecisionKeys',
     ...(Object.prototype.hasOwnProperty.call(row, 'characterChat') ? ['characterChat'] : []),
+    ...(Object.prototype.hasOwnProperty.call(row, 'characterChatProfiles') ? ['characterChatProfiles'] : []),
+    ...(Object.prototype.hasOwnProperty.call(row, 'characterChatSourceUnits') ? ['characterChatSourceUnits'] : []),
     ...(Object.prototype.hasOwnProperty.call(row, 'avg') ? ['avg'] : []),
     ...(Object.prototype.hasOwnProperty.call(row, 'avgRevision') ? ['avgRevision'] : []),
     ...(Object.prototype.hasOwnProperty.call(row, 'avgAssembly') ? ['avgAssembly'] : []),
@@ -316,6 +322,8 @@ export function parseProductProductionBriefV3(value: unknown): ProductProduction
   if (new Set(capabilityRequirements.map(item => item.requirementKey)).size !== capabilityRequirements.length) fail('capability requirementKey 重复')
 
   if (row.characterChat && productType !== 'character-interaction') fail('角色聊天设置不能用于其他产品')
+  if (row.characterChatProfiles !== undefined && (productType !== 'character-interaction' || !row.characterChat || parseChatAuthoringSettings(row.characterChat).version === 1)) fail('人物整理仅适用于带完整来源的角色聊天')
+  if (row.characterChatSourceUnits !== undefined && (productType !== 'character-interaction' || !row.characterChat || parseChatAuthoringSettings(row.characterChat).version !== 3)) fail('逐项事实仅适用于实验角色聊天方案')
   if (row.avg && productType !== 'avg') fail('AVG 设置只能用于 AVG')
   let avgRevision: ProductProductionBriefV3['avgRevision']
   if (row.avgRevision != null) {
@@ -332,8 +340,10 @@ export function parseProductProductionBriefV3(value: unknown): ProductProduction
     ...(Object.prototype.hasOwnProperty.call(row, 'avgVisualPlanning') ? { avgVisualPlanning: parseAvgVisualPlanningBrief(row.avgVisualPlanning) } : {}),
     ...(Object.prototype.hasOwnProperty.call(row, 'avgSoundPlanning') ? { avgSoundPlanning: parseAvgSoundPlanningBrief(row.avgSoundPlanning) } : {}),
     ...(Object.prototype.hasOwnProperty.call(row, 'avgAudioProcessing') ? { avgAudioProcessing: parseAvgAudioProductionProcessingPlan(row.avgAudioProcessing) } : {}),
-    ...(row.characterChat ? { characterChat: parseChatAuthoringSettingsV1(row.characterChat) } : {}),
     ...(row.avg ? { avg: parseAvgSettingsForLegacyProduction(row.avg) } : {}),
+    ...(row.characterChat ? { characterChat: parseChatAuthoringSettings(row.characterChat) } : {}),
+    ...(row.characterChatProfiles !== undefined ? {characterChatProfiles: parseChatRoleProfileSetV1(row.characterChatProfiles)} : {}),
+    ...(row.characterChatSourceUnits !== undefined ? {characterChatSourceUnits: parseChatSourceUnitSetV1(row.characterChatSourceUnits)} : {}),
     schema: 'storyforge.product-production-brief', version: 3,
     source: {
       worldReleaseId: positiveId(source.worldReleaseId, 'source.worldReleaseId'),
@@ -404,6 +414,17 @@ export function parseProductProductionBriefV3(value: unknown): ProductProduction
     || parsed.productionBudget.maximumOutputTokens !== 0 || parsed.productionBudget.maximumCostUsd !== 0
     || canonicalProductProductionJsonV2([...parsed.completionContract.requiredGateIds].sort()) !== canonicalProductProductionJsonV2([...AVG_ASSEMBLY_GATE_IDS_V1].sort()))) {
     fail('AVG 作者组装必须使用独立零 Provider 预算、准确技术门与 prototype/internal 质量边界')
+  }
+  if (productType === 'character-interaction' && (parsed.media.imageCount > 0 || parsed.media.visualLevel !== 'none')) {
+    const expected = chatVisualMediaProfileV1(parsed.characterChat, parsed.media.visualLevel)
+    const imageRequirements = parsed.capabilityRequirements.filter(item => item.mediaClass === 'image')
+    if (parsed.media.imageCount !== expected.imageCount
+      || canonicalProductProductionJsonV2([...parsed.media.requiredMediaKinds].sort()) !== canonicalProductProductionJsonV2([...expected.requiredMediaKinds].sort())
+      || parsed.media.audioLevel !== 'none' || parsed.media.musicTrackCount + parsed.media.sfxCount + parsed.media.voiceLineCount !== 0
+      || imageRequirements.length !== 1 || imageRequirements[0].requirementKey !== 'media.visual' || !imageRequirements[0].required
+      || canonicalProductProductionJsonV2(imageRequirements[0].allowedDataClasses) !== '["author-intent"]'
+      || !parsed.externalDataPolicy.allowedDataClasses.includes('author-intent')
+      || parsed.externalDataPolicy.forbiddenDataClasses.includes('author-intent')) fail('角色聊天图片必须对应明确的画面数量、类型与作者输入授权')
   }
   if (parsed.intent.protagonistRefs.some(ref => !parsed.source.startingPoint.protagonistRefs.includes(ref))) {
     fail('intent.protagonistRefs 必须来自 startingPoint 候选')
@@ -499,9 +520,12 @@ function parseResolution(value: unknown): ProductProductionBlockerResolutionV1 {
   const row = record(value, 'resolution')
   const hasOriginalSource = Object.prototype.hasOwnProperty.call(row, 'originalResponseSource')
   const hasUnknownReservation = Object.prototype.hasOwnProperty.call(row, 'unknownResultReservation')
+  if (row.action === 'confirm-chat-media' && hasUnknownReservation) fail('图片确认不能同时处置未知费用')
   exactKeys(row, [
     'action', 'note',
     ...(row.action === 'author-edit' ? ['authorDraftJson'] : []),
+    ...(row.action === 'confirm-chat-situation' ? ['chatSituation'] : []),
+    ...(row.action === 'confirm-chat-media' ? ['chatMedia'] : []),
     ...(hasUnknownReservation ? ['unknownResultReservation'] : []),
     ...(hasOriginalSource ? ['originalResponseSource'] : []),
   ], 'resolution')
@@ -530,10 +554,17 @@ function parseResolution(value: unknown): ProductProductionBlockerResolutionV1 {
   return {
     action: enumValue(row.action, [
       'retry', 'author-edit', 'fallback', 'waive-soft-gate', 'change-capability',
-      'accept-product-private-expansion', 'confirm-character-anchors', 'cancel',
+      'accept-product-private-expansion', 'confirm-character-anchors', 'confirm-chat-situation', 'confirm-chat-media', 'cancel',
     ], 'resolution.action'),
     note: text(row.note, 'resolution.note', 4000),
+    ...(row.action === 'confirm-chat-media' ? {chatMedia: parseChatMediaProductionDecisionV1(row.chatMedia)} : {}),
     ...(row.action === 'author-edit' ? { authorDraftJson: text(row.authorDraftJson, 'resolution.authorDraftJson', 120000) } : {}),
+    ...(row.action === 'confirm-chat-situation' ? {chatSituation: (() => {
+      const choice = record(row.chatSituation, 'resolution.chatSituation')
+      exactKeys(choice, ['candidatesHash', 'sourceHash', 'selectedOptionKey'], 'resolution.chatSituation')
+      if (!isSha256Hash(choice.candidatesHash) || !isSha256Hash(choice.sourceHash)) fail('情境选择需要精确候选与来源 hash')
+      return {candidatesHash: choice.candidatesHash, sourceHash: choice.sourceHash, selectedOptionKey: stableKey(choice.selectedOptionKey, 'selectedOptionKey')}
+    })()} : {}),
     ...(unknownResultReservation ? { unknownResultReservation } : {}),
     ...(originalResponseSource ? { originalResponseSource } : {}),
   }

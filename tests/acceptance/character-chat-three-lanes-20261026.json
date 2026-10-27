@@ -1,0 +1,173 @@
+{
+  "schema": "storyforge.character-chat-three-lane-evidence",
+  "version": 1,
+  "date": "2026-10-26",
+  "scope": "Single-character technical preview: content, system configuration and media join one Build; not narrative, art or commercial acceptance.",
+  "implementation": {
+    "baseCommit": "04f3a9e6d45abad92c4532d16ab11ae157d53133",
+    "sourceSha256": {
+      "src/components/character-interaction/CharacterInteractionPanel.tsx": "deb75314b3296dd8125a90a35b1a360cdf2032d997774881ed59868c1caf03fe",
+      "src/components/character-interaction/ChatMedia.tsx": "6602d23e77c53e4c7c4304bfb7607e3bf4da22a885e7f44ac6ec160b44ef9f07",
+      "src/components/character-interaction/MediaSelection.tsx": "e9a50cc5ccfd9a40880e15e39dc3e649a636a46f1f745abf01b11818a5bf517d",
+      "src/components/character-interaction/VisualIntent.tsx": "3281d8ece9e59d4d98c23543c93a8b326b19bd6296a9f8d9e95f69fa898b7210",
+      "src/components/character-interaction/WorkflowGuide.tsx": "10a22fc0fd60206eabbd747869c2830b5a8ae0ee5114ce6d4809e6c951f0a648",
+      "src/components/character-interaction/useChatMedia.ts": "786403d74b39fffe11d0c1b6efba944a96dfeb10a276c9284ce3d252c18bb092",
+      "src/components/product/ProductProductionStudio.tsx": "eb6cd09e46948be8863755630d1f7c1399d1f7a3f2b6acda45abaea341ab1ea7",
+      "src/lib/agent/skill-registry.ts": "4cec25d632ed1e97ec38994e59e9132fcdee280cc3deb714f7a56733c516782b",
+      "src/lib/ai/task-routing.ts": "0a91f72011377a28b9f5916b412f15d2c259f41f226223ca8140c7ec426ca97d",
+      "src/lib/character-interaction/authoring-contract.ts": "a9adc73576335ded32f4e36132b193fb32921bada2d1ebda39e9cdceb3509d14",
+      "src/lib/character-interaction/runtime-run-recovery.ts": "bed3a2c74a68a0bff33c3bf51629ec02fbd91a853f85c883b6af3281c7d46311",
+      "src/lib/character-interaction/runtime-visual-context.ts": "4a339863257050633ee21510f19d6745e9ceb512f42e16fce9c18b9f942d8921",
+      "src/lib/character-interaction/runtime-visuals.ts": "0f310bd46b0f684bedaec1ce89440a84bca073cf4a7a0d7bb9fbdcd05b62ccb5",
+      "src/lib/character-interaction/visual-design.ts": "57f3fda3b0d61582d4b9bdc096bf2db25c1f6864c1138c7a9586e51e999f0801",
+      "src/lib/character-interaction/visual-intent.ts": "02dd1cb94a944422220ab851f7249b6b542d5d5e4bf19ee7b6d0da6dd8b54258",
+      "src/lib/product-production/chat-media-tasks.ts": "d0dc325a21e669e321b48f417a436a13ce9a95ebd373ff88de48f35f8f8c473b",
+      "src/lib/product-production/plan.ts": "ab7ab0838cf7e6284d4294684169d5187621d159e6ad841a53099bf120a539f6",
+      "src/lib/product-production/production-executor.ts": "f6440831f005600bc95cb33295151c471db2fc853d93a6a271bc454805617da3",
+      "src/lib/product-production/runtime-package.ts": "9923c906f6725fc5d0d48e05ae91d24679f0e9abe0e9c0e76b3ba5b61361e5ae",
+      "src/lib/registry/context-sources.ts": "2f16e94dcd89b04439b87eb51a30a7b57c3349593e072406ce4fa07ade45e04a",
+      "src/lib/types/product-release.ts": "78ad4a781a550a1a3258281fed8ac8cc9e53324399ebbd7ae591c75bf3698972"
+    }
+  },
+  "nativeProduction": {
+    "textProvider": "codex",
+    "textModel": "gpt-6.1-sol",
+    "completedTextCalls": 3,
+    "stages": [
+      "opening candidates",
+      "independent opening review",
+      "contextual visual design"
+    ],
+    "systemArtifact": "system.chat-config",
+    "systemPresentation": {
+      "characterPresentation": "image-card",
+      "alphaRequired": false,
+      "preserveProviderPixels": true
+    },
+    "imageProvider": "agnes",
+    "imageModel": "agnes-image-2.1-flash",
+    "imageResponses200": 2,
+    "providerPixelsMatchFrozenAssets": true,
+    "authorConfirmation": "UI automation; not independent human art approval",
+    "publishedToLocalLibrary": true,
+    "providerImages": [
+      {
+        "file": "provider-image-1-0.bin",
+        "sha256": "71dbe8f5f477556daa514b7ce78c0560240c201179ae645641051fa329768629",
+        "bytes": 870672
+      },
+      {
+        "file": "provider-image-2-0.bin",
+        "sha256": "7173fdfbd01241ca343adcdf73eb0994cb0d1d5322bfc9aad1c14cf1541fd78b",
+        "bytes": 1293129
+      }
+    ]
+  },
+  "runtime": {
+    "storyEvidence": "A real Codex turn submitted the actor opening the clock door and inspecting the paper tag; private observation results stayed private.",
+    "completedCodexCallsInThatTurn": 5,
+    "images": [
+      {
+        "kind": "background",
+        "contentHash": "985687833e67d28d9de7cad1d2fd74583196e3c4735068b743ad7b8c56df4026",
+        "bytes": 1482300,
+        "width": 1248,
+        "height": 832,
+        "owner": "runtime",
+        "source": "agnes.image-2.1-flash.v1"
+      },
+      {
+        "kind": "character-expression",
+        "contentHash": "776bf3463eec521782fc046b8af3402c49c7445b9ce4cb0d709e5242361492be",
+        "bytes": 1015610,
+        "width": 864,
+        "height": 1152,
+        "owner": "runtime",
+        "source": "agnes.image-2.1-flash.v1"
+      },
+      {
+        "kind": "cg",
+        "contentHash": "fcd5806866f78920e90ea075a90297a288914856990ff52cd579cf4b85174da4",
+        "bytes": 1324257,
+        "width": 1248,
+        "height": 832,
+        "owner": "runtime",
+        "source": "agnes.image-2.1-flash.v1"
+      }
+    ],
+    "storyRewrittenForImageTest": false,
+    "originalFailureSessionsPreserved": true,
+    "explicitBranchAndImageRequests": true,
+    "originalBackgroundOutcome": "An interrupted request remained unknown and was not resent; a separate branch has its own generated background.",
+    "knownFailedExpression": "Preserved; an explicit new request was tested. Final image-card consumption preserves the original PNG and does not perform stage matting.",
+    "restoration": "Latest three media kinds available after import; refresh did not invoke text or image providers. Imported media jobs are not offered for dialogue adoption.",
+    "voice": "Device speech adapter and consent/stop controls tested with a device fixture; not human microphone or voice-quality acceptance."
+  },
+  "validation": {
+    "targetedRegression": {
+      "files": 21,
+      "passed": 221
+    },
+    "narrativeWorldBaseline": {
+      "passed": 25,
+      "receipt": "tests/acceptance/narrative-world/baseline-20261026-chat-visual-flow-v3.json",
+      "outcomesUnchanged": true
+    },
+    "browser": {
+      "allCharacterSuiteEarlier": {
+        "passed": 203,
+        "failed": 3,
+        "failureReason": "Legacy source fixtures included the new visual draft; corrected fixtures passed the later seven-case run."
+      },
+      "finalImageCardJourney": {
+        "passed": 3,
+        "coverage": [
+          "390px",
+          "1440px",
+          "original PNG hashes",
+          "known failure explicit retry",
+          "voice adapter",
+          "provider failure without SVG",
+          "refresh",
+          "isolated export/import"
+        ]
+      }
+    },
+    "gates": "Architecture, table registry, AI manual, TypeScript, lint, build, docs and roadmap passed before commit; complete final CI is tracked separately."
+  },
+  "retainedFailures": [
+    {
+      "provider": "codex",
+      "stage": "later runtime call",
+      "result": "responseTooManyFailedAttempts HTTP 429",
+      "classification": "Provider failure; no automatic resend; not a claim about account balance."
+    },
+    {
+      "provider": "agnes-2.5-flash",
+      "result": "Repeated active goal status rejected by narrative contract."
+    },
+    {
+      "provider": "agnes-3.0-flash",
+      "result": "A first turn passed; subsequent expression had nonliteral consequence evidence; a separate choice cited an unavailable fact."
+    },
+    {
+      "scope": "image postprocessing",
+      "result": "Forced stage matting could damage role pixels. Final chat image-card path preserves originals; exploratory matting changes were discarded without changing other products."
+    },
+    {
+      "scope": "test harness",
+      "result": "Original backup-type and screenshot-selector errors retained. Final restoration and production runs passed."
+    },
+    {
+      "scope": "intermediate full CI",
+      "result": "Run overlapped ongoing edits and failed; it is not final-head evidence. Final source remains frozen for the next complete CI run."
+    }
+  ],
+  "limits": [
+    "Single successful production and a committed runtime action are not continuous conversation stability.",
+    "Appearance is anchored by text; the current adapter does not condition on a reference image.",
+    "Pixel preservation does not prove perfect pose, face, text suppression or art quality.",
+    "Human review, M1 matrix, long-term relations, competitor comparison and commercial release remain open.",
+    "Draft PR only; not merged or deployed."
+  ]
+}

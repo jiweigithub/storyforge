@@ -83,6 +83,7 @@ function createResolver(input: {
           continue
         }
         try {
+          ensureActive()
           const cached = urls.get(assetKey)
           if (cached) {
             result.urls[assetKey] = cached

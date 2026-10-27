@@ -1,0 +1,119 @@
+{
+  "schema": "storyforge.character-chat-opening-perspectives",
+  "version": 1,
+  "date": "2026-10-24",
+  "status": "local-engineering-passed-real-model-recheck-pending",
+  "sourceBaseHead": "1fb78633fbc8833ed530de640d8a41f514d60ec6",
+  "sourceFiles": 3477,
+  "sourceManifestSha256": "d41c242ad3b784892614ba0269cd61c316c8db34ec53ec0d12ba51cdf754568b",
+  "productionVersion": "chat-situation-production-v15",
+  "reviewVersion": "chat-opening-review-v15",
+  "changes": [
+    "Generate each possibility from its declared character, with an explicit initiator and dialogue target.",
+    "Review every direction before constructing agency/development proofs; reject contradictory ownership and passing verdicts without rewriting model output.",
+    "Retain the original canonical v3 review, source manifest, single-call review budget, author adoption and historical prompt contracts.",
+    "Share only repeated source-reference schema identities; full source and candidate contents remain unchanged."
+  ],
+  "validation": {
+    "targeted": {
+      "files": 9,
+      "passed": 125,
+      "failed": 0
+    },
+    "browser": {
+      "passed": 32,
+      "failed": 0,
+      "skipped": 0,
+      "flaky": 0,
+      "retries": 0,
+      "isolated": true
+    },
+    "fullRole": {
+      "files": 192,
+      "passed": 2402,
+      "failed": 0,
+      "exitCode": 0
+    },
+    "typecheck": "passed",
+    "changedFileLint": "passed",
+    "build": "passed",
+    "bundleSize": "passed",
+    "governance": [
+      {
+        "script": "check:architecture",
+        "exitCode": 0
+      },
+      {
+        "script": "check:required-tables",
+        "exitCode": 0
+      },
+      {
+        "script": "check:ai-manual",
+        "exitCode": 0
+      },
+      {
+        "script": "check:ai-entry-registry",
+        "exitCode": 0
+      },
+      {
+        "script": "check:agent-context",
+        "exitCode": 0
+      },
+      {
+        "script": "check:agent-freshness",
+        "exitCode": 0
+      },
+      {
+        "script": "check:project-metrics",
+        "exitCode": 0
+      },
+      {
+        "script": "check:docs",
+        "exitCode": 0
+      },
+      {
+        "script": "check:roadmap",
+        "exitCode": 0
+      }
+    ],
+    "zeroCall": {
+      "at": "2026-10-24T07:10:28.229Z",
+      "oldSchemaMatchesRetainedV384": true,
+      "oldPromptMatchesRetainedV384": true,
+      "newSchemaHash": "8458821bfa79c87c4956faeceb4a76659c89e3e0e0a6d341798616e3ac2d7375",
+      "newPromptHash": "cfbe5f68cf3f46a53eb280f6a2b706207dfb2bfe72c2fd1ba28707ad08a821d8",
+      "estimatedInput": 16498,
+      "limit": 30000,
+      "posts": 0,
+      "productWrites": 0
+    }
+  },
+  "retainedFailures": [
+    {
+      "stage": "initial targeted",
+      "passed": 63,
+      "failed": 2,
+      "reason": "Full review inputs exceeded the original 30000 reservation (30661 and 30653)."
+    },
+    {
+      "stage": "shared source reference definitions",
+      "passed": 18,
+      "failed": 2,
+      "reason": "Still exceeded original input reservation (30552 and 30548)."
+    },
+    {
+      "stage": "compact prompt",
+      "passed": 63,
+      "failed": 2,
+      "reason": "Legacy injected runner identified reviews by a literal prompt signature and returned a media fixture after wording changed; signature and current policy assertion corrected, then 125 tests passed."
+    }
+  ],
+  "formalM1Credit": false,
+  "modelCallsInEngineering": 0,
+  "humanRating": null,
+  "limitations": [
+    "Action ownership remains a model semantic judgment; deterministic checks enforce completeness and consistency only.",
+    "V386 still demonstrates Agnes semantic errors. The current v15 production prompt and reviewer need real-model verification.",
+    "Remote complete delivery for 8e8986cc remains in progress and is not validation of the new v15 application delta."
+  ]
+}
