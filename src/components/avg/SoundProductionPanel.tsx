@@ -57,8 +57,8 @@ export default function SoundProductionPanel({ scope, view, disabled, canAdopt, 
       onPending={setPlanPending} onAction={onAction} onReload={onReload}/>}
     {templates.map(t => { const raw = accepted(`avg.sound.raw.${t.requirementKey}`); return <article key={t.requirementKey} className="avg-assembly-candidate" aria-label={`声音用途 ${t.requirementKey}`}>
       <h5>{t.purpose}</h5><p>{t.channel} · {t.cue.phase} · 音量 {t.cue.volume} · {t.cue.loop ? '循环' : '一次'}；触发台词 {t.cue.beatKey}</p>
-      {raw ? <><button className="lf-action" disabled={planPending || reviewPending} onClick={() => setExpanded(expanded === t.requirementKey ? '' : t.requirementKey)}>{processingRequired(t.requirementKey) || accepted(`avg.sound.processed.${t.requirementKey}`) ? '查看并审听加工声音' : '查看并审听原声音'}</button>
-        {expanded === t.requirementKey && <SoundCandidate scope={scope} productionId={productionId} raw={raw}
+      {raw ? <><button className="lf-action" disabled={generating || planPending || reviewPending} onClick={() => setExpanded(expanded === t.requirementKey ? '' : t.requirementKey)}>{processingRequired(t.requirementKey) || accepted(`avg.sound.processed.${t.requirementKey}`) ? '查看并审听加工声音' : '查看并审听原声音'}</button>
+        {!generating && expanded === t.requirementKey && <SoundCandidate scope={scope} productionId={productionId} raw={raw}
           processed={accepted(`avg.sound.processed.${t.requirementKey}`)} processingRequired={processingRequired(t.requirementKey)}
           review={accepted(`avg.review.audio.${t.requirementKey}`)} pendingReview={pending(`avg.review.audio.${t.requirementKey}`)}
           choice={accepted(`avg.sound.choice.${t.requirementKey}`)} pendingChoice={pending(`avg.sound.choice.${t.requirementKey}`)}
