@@ -1,0 +1,125 @@
+{
+  "schema": "storyforge.character-chat-real-image-evidence",
+  "version": 1,
+  "date": "2026-10-26",
+  "scope": "Experimental single-character production, release, original images and restoration; not commercial or narrative-quality acceptance",
+  "nativeProduction": {
+    "textProvider": "codex",
+    "textModel": "gpt-6.1-sol",
+    "completedTextCalls": 2,
+    "imageProvider": "agnes",
+    "imageModel": "agnes-image-2.1-flash",
+    "imageRequests": 2,
+    "http200Responses": 2,
+    "automaticModelRetries": 0,
+    "svgSubstitutions": 0,
+    "confirmation": "Exercised through the author UI by automation, not independent human art approval"
+  },
+  "pictures": [
+    {
+      "file": "role.png",
+      "mimeType": "image/png",
+      "width": 864,
+      "height": 1152,
+      "byteSize": 709043,
+      "contentHash": "0d7a4c9c538a39073475b03aac92641e003acdfb11337aa7741176c4730678d4",
+      "source": "agnes.image-2.1-flash.v1"
+    },
+    {
+      "file": "opening-background.png",
+      "mimeType": "image/png",
+      "width": 1248,
+      "height": 832,
+      "byteSize": 1284340,
+      "contentHash": "90ff37723864409418113a6e4cd8a365ca4375becab6cd618bd707873fd2a9d4",
+      "source": "agnes.image-2.1-flash.v1"
+    }
+  ],
+  "bundleHash": "909a1e71a9242c179d9a61569382123228128a54ba6fd551bd91ad2c51c78216",
+  "releaseHash": "222a5a84561b786f73f729571d3c1b0ce2b3075d27529eff59a9243dc51c5b8f",
+  "restoration": {
+    "backupRestored": true,
+    "experiencePackageInstalledInIndependentBrowser": true,
+    "packageReexportUnchanged": true,
+    "imageHashesUnchanged": true,
+    "imagesDecodedAfterReload": true,
+    "newModelCalls": 0,
+    "worldReleasesCreatedByInstallation": 0
+  },
+  "limitations": [
+    "Images use explicit public visual descriptions; visual interpretation still needs author review.",
+    "Only participant avatar/portrait and exact opening background slots are bound.",
+    "Runtime scene/expression/plot-image generation is not implemented.",
+    "This receipt does not certify multi-turn story quality or commercial readiness."
+  ],
+  "failureHistory": [
+    "First restoration collector passed raw text instead of parsed backup JSON; no generation request.",
+    "Second collector did not select a package version before export; no generation request.",
+    "Third restoration exposed the old picture popover intercepting the send button; fixed by a bounded inline gallery.",
+    "First gallery layout regression required retaining the compact header control and resetting gallery visibility on session change.",
+    "Capture-only checks initially treated the disabled empty composer as busy; final capture checks textbox readiness. No generation was repeated."
+  ],
+  "validation": {
+    "mediaTransportRegression": 9,
+    "productionAndPreflightRegression": 21,
+    "initialBrowserChecks": 5,
+    "nativeProductionChecks": 1,
+    "restorationCheck": "passed; zero new model calls",
+    "finalBrowserChecks": {
+      "passed": 8,
+      "unexpected": 0,
+      "widths": [
+        390,
+        1440
+      ]
+    },
+    "fullCI": "running; not a completed gate",
+    "mediaPlayerRegression": 4,
+    "nativeImageRestorationAfterFinalUIChange": {
+      "passed": 1,
+      "newModelCalls": 0
+    },
+    "requiredChecks": [
+      {
+        "name": "architecture",
+        "code": 0
+      },
+      {
+        "name": "tables",
+        "code": 0
+      },
+      {
+        "name": "ai-manual",
+        "code": 0
+      },
+      {
+        "name": "types",
+        "code": 0
+      },
+      {
+        "name": "lint",
+        "code": 0
+      },
+      {
+        "name": "build",
+        "code": 0
+      },
+      {
+        "name": "docs",
+        "code": 0
+      },
+      {
+        "name": "roadmap",
+        "code": 0
+      }
+    ]
+  },
+  "implementationSha256": {
+    "src/lib/product-production/media-transport.ts": "b63a8abc83d2c3b1989e4f4bd9febee71fcffbc0471361dfc4619e79ecfce154",
+    "src/lib/product-production/service.ts": "cd6a6c87271d0bbda3a934b0784c1adece1cb4e8ce8d7637236b636dbf883412",
+    "src/components/product/ProductProductionStudio.tsx": "9d2c010e7c0be009682c8850efac0749d18c17dfb3c157cb7997d11b82982225",
+    "src/components/character-interaction/CharacterInteractionPanel.tsx": "38ef00cd7a63d74234d44103493b135304886b79562d1282baf0a9740d071478",
+    "src/components/character-interaction/ChatMedia.tsx": "98544a11a2394590d0e9a29379a78f42a56352874a3b415e36e959f9761991c8",
+    "src/components/character-interaction/chat.css": "42ba064c8a2104cf0d93263a2cb35c360f7a72c84bcd727f1feac3257d81e7f2"
+  }
+}

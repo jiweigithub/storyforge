@@ -83,7 +83,7 @@ validate/simulate/explain 的动态实现为 Phase 2 后续研究；不在本轮
 | E-TTRPG-01 | IN_PROGRESS | 跑团标准纵切面 | WorldRelease→会谈/Brief→内容/规则/媒资→build/release→AI KP 运行/恢复 |
 | E-TTRPG-OPEN-01 | QUEUED | 跑团 open 标准格式，现行 [施工方案](./TTRPG-DEVELOPMENT-PLAN.md) 2.1.0 | 先核对 P1 文档合入，再从 P2a 版本/旧包兼容开工；正常作者生产→自由行动/队友→世界自驱→四门→分支/故障恢复联合验收，不以 fixture 代替 |
 | E-TTRPG-OPEN-02 | QUEUED | 跑团长局与记忆/恢复证据 | 前置 OPEN-01 首期有效；30+ worldTurn 真实模型与真人证据、质量/费用基线和补丁审阅，schema 以实际开工时的增量版本为准 |
-| E-CHAT-01 | QUEUED | 单/多角色聊天完整产品 | 可见性、导演、长期记忆、关系、生产与不可变 release |
+| E-CHAT-01 | QUEUED | [角色与故事持续创作计划](./CHARACTER-CHAT-DEVELOPMENT-PLAN.md) | 既有单角色技术预览单独保留验收边界；新计划 CS-00—CS-14 暂停，所有步骤待执行，先验证基线与角色主动推进，再扩展持续创作和多角色世界 |
 | E-TOWN-01 | NEXT | 后日谈 AI 小镇纵切面完善 | 已接通冻结来源生产、发布、时间/地点/日程/关系/轻经营/离线演化和玩家界面；继续完成真实长期内容、媒资与商业验收 |
 | E-TEXTADV-01 | QUEUED | 文字冒险 | 选择/判定/资源/任务/结局和可玩发布 |
 | E-AVG-01 | QUEUED | AVG | 脚本/演出/立绘/背景/声音/UI 绑定与分支存档 |

@@ -1,0 +1,310 @@
+{
+  "schema": "storyforge.character-chat-bounded-closeout",
+  "version": 1,
+  "date": "2026-10-26",
+  "testedHead": "5cfd01d59e72ddaa351988293d55239cb62c14e2",
+  "implementationCommit": "863188263a586b6bbb34f44547d55a36c6189ffa",
+  "sourceTrees": {
+    "src": "2f7ae6ca9186dd83b94141e9d5fc3742405c85ee",
+    "tests/e2e": "afe005cdeecabb7d1dd0e442bad0a5cd523a1e74",
+    "tests/regression": "ab65fbb011002277b95ac734178e49225bcb6b97"
+  },
+  "taskStatus": "closed-with-known-failures",
+  "productQualityAcceptance": "not-passed",
+  "humanAcceptance": "cancelled-by-user-not-pending",
+  "scope": {
+    "product": "character-interaction",
+    "lifecycle": "产品研发；隔离作品中的 S3 制作、发布、运行与恢复验收",
+    "owner": "产品拥有制作和发布媒资，存档拥有运行图；冻结世界只读",
+    "codeChangesThisRound": false,
+    "automaticContinuation": false,
+    "mergeOrDeployment": false
+  },
+  "protocol": {
+    "sha256": "6a1b16e6d1383792847c4ff55820c104e3ca43f3035303808743fbf2af7797e8",
+    "plannedEpisodes": 6,
+    "scenarios": 3,
+    "runtimeProviders": 2,
+    "maximumPlayerInputsPerEpisode": 20,
+    "maximumEpisodeMinutes": 20,
+    "formal120EpisodeM1": "excluded",
+    "noAutomaticRetryAfterProviderOrDomainFailure": true,
+    "humanArtVoicePlaytest": "cancelled"
+  },
+  "engineering": {
+    "existingFullCI": "passed-at-unchanged-implementation",
+    "existingFullCIEvidence": "tests/acceptance/character-chat-three-lanes-delivery-20261026.json",
+    "testFilesPassed": 1087,
+    "testsPassed": 7637,
+    "testsSkipped": 3,
+    "newRelevantBrowserTests": {
+      "passed": 9,
+      "failed": 0,
+      "retries": 0,
+      "files": [
+        "character-chat-single-experience.spec.ts",
+        "character-chat-voice.spec.ts",
+        "character-chat-media.spec.ts"
+      ],
+      "voiceBoundary": "device adapter fixtures and UI controls; no microphone/hearing or human voice-quality claim",
+      "logSha256": "a58787078c48eb783d9e6119100d2c6d3e7bc839e7bf00fd07d668fa288485d8"
+    },
+    "wholeRepositoryE2E": "not-claimed"
+  },
+  "production": [
+    {
+      "scenario": "parcel",
+      "status": "failed-before-publication",
+      "codexCalls": 3,
+      "codexCompleted": 3,
+      "agnesImageRequests": 2,
+      "agnesImageHttp200": 2,
+      "failure": "media.chat-review task-context-budget-exceeded; mandatory artifact input was not fully included; review itself made no model call",
+      "receiptSha256": "39410a70d5c24a820d17367c5870f2608e9e94e97e71492bcf537000a7e49416"
+    },
+    {
+      "scenario": "reading",
+      "status": "failed-before-publication",
+      "codexCalls": 2,
+      "codexCompleted": 1,
+      "codexFailed": 1,
+      "failure": "opening review: responseTooManyFailedAttempts, HTTP 429; no automatic resend",
+      "receiptSha256": "1affd6461199a43e1f1bb4776411ff1b96bc7b5349729160f0f33e6e38ff7e4d"
+    }
+  ],
+  "runtime": {
+    "planned": 6,
+    "started": 2,
+    "failed": 2,
+    "blockedByProduction": 4,
+    "passedCompleteEpisodes": 0,
+    "episodes": [
+      {
+        "scenario": "clock",
+        "provider": "codex",
+        "model": "gpt-6.1-sol",
+        "status": "failed",
+        "textRequests": 6,
+        "characterOpeningsCommitted": 1,
+        "playerInputsSubmitted": 1,
+        "playerResponsesCompleted": 0,
+        "elapsedMs": 140944,
+        "failureCode": "responseTooManyFailedAttempts/HTTP-429",
+        "failureStage": "first-player-response",
+        "restoration": {
+          "refreshAdditionalRequests": 0,
+          "importAdditionalRequests": 0,
+          "semanticStatePreserved": true
+        },
+        "receiptSha256": "9ee2c925da74f3cb1b50be74c15ac5bae33ff1c08bc5b6ecaaca7a487099c65f"
+      },
+      {
+        "scenario": "clock",
+        "provider": "agnes",
+        "model": "agnes-3.0-flash",
+        "status": "failed",
+        "textRequests": 5,
+        "characterOpeningsCommitted": 1,
+        "playerInputsSubmitted": 1,
+        "playerResponsesCompleted": 0,
+        "elapsedMs": 71616,
+        "failureCode": "chat-action-missing-current-fact-evidence",
+        "failureStage": "first-player-response",
+        "restoration": {
+          "refreshAdditionalRequests": 0,
+          "importAdditionalRequests": 0,
+          "semanticStatePreserved": true
+        },
+        "receiptSha256": "86814618b7658a05a5a8c907a56122004060d81cbc06ac206172fd09a6297745"
+      },
+      {
+        "scenario": "parcel",
+        "provider": "codex",
+        "status": "blocked-before-runtime",
+        "cause": "media.chat-review:task-context-budget-exceeded",
+        "runtimeTextRequests": 0
+      },
+      {
+        "scenario": "parcel",
+        "provider": "agnes",
+        "status": "blocked-before-runtime",
+        "cause": "media.chat-review:task-context-budget-exceeded",
+        "runtimeTextRequests": 0
+      },
+      {
+        "scenario": "reading",
+        "provider": "codex",
+        "status": "blocked-before-runtime",
+        "cause": "content.chat-opening-review:responseTooManyFailedAttempts/HTTP-429",
+        "runtimeTextRequests": 0
+      },
+      {
+        "scenario": "reading",
+        "provider": "agnes",
+        "status": "blocked-before-runtime",
+        "cause": "content.chat-opening-review:responseTooManyFailedAttempts/HTTP-429",
+        "runtimeTextRequests": 0
+      }
+    ],
+    "conclusion": "两个模型都提交了角色开场，并接收第一条玩家消息；第一次玩家回应未完成。没有连续多轮稳定性通过结论。"
+  },
+  "images": {
+    "model": "agnes-image-2.1-flash",
+    "controlledCases": 12,
+    "expressionCases": 8,
+    "illustrationCases": 4,
+    "actualImageRequests": 20,
+    "http200": 20,
+    "availableAssets": 20,
+    "originalPixelsPreserved": true,
+    "worldAndReleaseHashesPreserved": true,
+    "sourceBoundary": "受控、明确标记的动作输入与测试审查夹具；图片经过正式 runtime 图像生成与持久化管线，不能当作真实剧情质量证据。",
+    "integrityReceiptSha256": "5e41e108daa9099c36933c33233553bacc91970eb921b148204079146605754f",
+    "visualInspection": {
+      "method": "assistant visual inspection of original PNG contact sheets; not human or consumer acceptance",
+      "referenceAssetSha256": "71dbe8f5f477556daa514b7ce78c0560240c201179ae645641051fa329768629",
+      "expressionCases": 8,
+      "illustrationCases": 4,
+      "humanAcceptance": "cancelled-by-user",
+      "identity": {
+        "status": "partial-not-strict-pass",
+        "observations": [
+          "单人、深色盘发、浅色衬衫、灰绿色围裙、深色长裤和深色鞋的宏观设定保持。",
+          "脸型、年龄感、画风与围裙口袋/肩带细节跨图漂移。",
+          "担忧、疲惫和不悦的表情不够清楚，部分图仍显得平静或带笑。",
+          "确认图和变体均出现卷袖，与文字设计的袖口收拢不完全一致。"
+        ],
+        "extraActorsObserved": false,
+        "referenceImageConditioning": false
+      },
+      "illustrations": [
+        {
+          "case": "clock-hole",
+          "verdict": "uncertain",
+          "observation": "人物在旧钟前俯身检查，但指定上弦孔的位置和正在查看该孔未清楚呈现。"
+        },
+        {
+          "case": "key-on-table",
+          "verdict": "fail",
+          "observation": "钥匙仍被手拿着，未明确表现已经放在桌面；人物脸部被构图裁切，无法比对身份。"
+        },
+        {
+          "case": "bookshelf",
+          "verdict": "broad-action-match",
+          "observation": "人物站在借阅架旁接触书籍，基本符合查看书脊的动作；未由此判定严格人物或场景一致性。"
+        },
+        {
+          "case": "clock-door",
+          "verdict": "fail",
+          "observation": "输入明确为闭合的下部检查门，图中却把门打开，改变了已提交的场景状态。"
+        }
+      ],
+      "strictCharacterConsistency": "not-passed",
+      "strictStoryImageCorrespondence": "not-passed",
+      "contactSheets": {
+        "expressions": "902c4cabac973ad1ed94a00bfcaa441534ed85e4765b19ac6523c142915220c9",
+        "actions": "04d2e6212e80cd3bdf65fb4c71ba3473137566070939e5b9491c879688b2e218"
+      }
+    },
+    "imageRestoration": [
+      {
+        "width": 390,
+        "status": "media-restored-with-viewport-failure",
+        "initialComposerInViewport": false,
+        "composerReachableAfterScroll": true,
+        "runtimeImages": 3,
+        "originalHashes": [
+          "c23db3c651469cb449244441761eb063e2318c8a6a18352b1dff2cc4e2e0f339",
+          "dcb96aaf052f217996dbee45bfe1a16febc85d6cfefd15a4a41910adc2344490",
+          "e29eee493edcf4149a3b5f0cc4e454d420d040d69616751128d8a394de9a7e50"
+        ],
+        "requestsOnImportAndRefresh": 0,
+        "allImagesDecoded": true,
+        "composeVisibleAfterScroll": true
+      },
+      {
+        "width": 1440,
+        "status": "media-restored-with-viewport-failure",
+        "initialComposerInViewport": false,
+        "composerReachableAfterScroll": true,
+        "runtimeImages": 3,
+        "originalHashes": [
+          "c23db3c651469cb449244441761eb063e2318c8a6a18352b1dff2cc4e2e0f339",
+          "dcb96aaf052f217996dbee45bfe1a16febc85d6cfefd15a4a41910adc2344490",
+          "e29eee493edcf4149a3b5f0cc4e454d420d040d69616751128d8a394de9a7e50"
+        ],
+        "requestsOnImportAndRefresh": 0,
+        "allImagesDecoded": true,
+        "composeVisibleAfterScroll": true
+      }
+    ],
+    "viewportConclusion": "两种宽度在无模型配置、导入存档并展开画廊时，首屏发送按钮可见性检查失败；滚动后可达。媒资导入/刷新与字节核验独立通过，零新增模型或图片请求。"
+  },
+  "documentationChecks": {
+    "scope": "documentation and acceptance receipts only; product source and tests unchanged",
+    "commands": [
+      {
+        "command": "npm run check:docs",
+        "exitCode": 0
+      },
+      {
+        "command": "npm run check:roadmap",
+        "exitCode": 0
+      },
+      {
+        "command": "npm run check:project-metrics",
+        "exitCode": 0
+      },
+      {
+        "command": "git diff --check",
+        "exitCode": 0
+      }
+    ]
+  },
+  "harnessCorrections": {
+    "excludedInitialRuntimeAttempts": 2,
+    "reason": "初始页面尚未加载完成时错误选择了会话内才有的控件；零模型请求，保留原结果后纠正等待。",
+    "excludedInitialRestoreAttempts": 2,
+    "restoreReason": "无模型配置时应查找仅保存消息按钮，原采集器误用发送并生成。纠正后仍有真实首屏可见性失败，未改判通过。",
+    "diagnosticRepeat": "将首屏可见性保留为软失败，独立完成刷新/原图/滚动可达性核验；无外部请求。"
+  },
+  "unresolvedFindings": [
+    {
+      "id": "CLOSE-01",
+      "finding": "连续真实聊天未通过",
+      "evidence": "Codex 第一条玩家回应处 HTTP 429；Agnes 第一条玩家回应处缺少当前事实依据，校验拒绝。"
+    },
+    {
+      "id": "CLOSE-02",
+      "finding": "新情境制作仍有前置失败",
+      "evidence": "寄存室图片审查依赖上下文不完整；书店开场审查收到 Codex 429。"
+    },
+    {
+      "id": "CLOSE-03",
+      "finding": "严格人物一致性与表情控制未通过",
+      "evidence": "宏观发型与衣着基本保持；脸型、年龄感、围裙细节和画风漂移，部分表情不清楚。当前没有参考图条件输入。"
+    },
+    {
+      "id": "CLOSE-04",
+      "finding": "图文状态一致性未通过",
+      "evidence": "要求闭合的检查门却画成打开；放下钥匙却仍手持，且脸部被裁切。"
+    },
+    {
+      "id": "CLOSE-05",
+      "finding": "真实图片恢复后的画廊存在首屏布局问题",
+      "evidence": "390px 和 1440px 无模型配置的导入存档展开画廊后，发送按钮在首屏外；滚动后可达，恢复数据和图像原字节保持。"
+    }
+  ],
+  "disposition": {
+    "humanWorkRemaining": 0,
+    "plannedAutomatedSlotsAccountedFor": 6,
+    "newDevelopmentRequiredToCloseThisTask": false,
+    "qualityFailuresWaivedAsPass": false,
+    "completeProductOrCommercialReady": false,
+    "formalM1Passed": false,
+    "sillyTavernComparison": "not-performed",
+    "delivery": "retain draft PR 172; do not merge or deploy on this evidence",
+    "privateEvidenceSet": "character-chat-20261014/closeout-20261026",
+    "privateEvidenceManifestSha256": "01096ad8e64c25e09b6b02a4f3a51f73fe5f2e8cc13640e5229a91f0bed94432"
+  }
+}

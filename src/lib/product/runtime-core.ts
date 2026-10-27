@@ -20,6 +20,8 @@ import {
   assertFrozenProductRuntimeStateV1,
   cloneProductRuntimeBranchExtensionsV1,
   parseProductOwnedRuntimeStateV1,
+  prepareProductRuntimeBranchIntentV1,
+  type ProductRuntimeBranchIntentV1,
   prepareProductRuntimeStateForBranchV1,
   consumeProductRuntimeBranchPreparationV1,
   createProductOwnedRuntimeBranchV1,
@@ -2261,6 +2263,7 @@ export interface BranchProductRuntimeSessionInputV1 {
   throughSequence: number;
   title: string;
   seed?: string;
+  intent?: ProductRuntimeBranchIntentV1;
 }
 
 async function branchProductRuntimeSessionInternal(
@@ -2287,6 +2290,10 @@ async function branchProductRuntimeSessionInternal(
     events,
     input.throughSequence,
   );
+  if (input.intent) {
+    const after = replayProductRuntimeEvents(parseProductRuntimeState(parent.initialStateJson), events, input.throughSequence + 1);
+    await prepareProductRuntimeBranchIntentV1(parent, cutpoint, after, input.intent);
+  }
   const state = await prepareProductRuntimeStateForBranchV1({ parent, state: cutpoint, events, throughSequence: input.throughSequence });
   state.lastSequence = 0;
   const childInput: CreateProductRuntimeSessionInput = {

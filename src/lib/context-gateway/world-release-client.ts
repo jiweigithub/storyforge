@@ -1,4 +1,6 @@
 import { lookupContextResourceMetadataV1 } from './resource-metadata'
+import { canonicalStringify } from '../agent/run/hash'
+import { sha256Text } from '../ai/chapter-memory/text-normalization'
 import type {
   ContextResourceDescriptorV1,
   FrozenResourceScopeV1,
@@ -16,7 +18,7 @@ import {
 import type { ProductSourcePlan, WorldReferenceV1 } from '../types/world-product-contracts'
 import type { WorldQueryAccessV1, WorldReferenceV2 } from '../types/world-query'
 import { createWorldReference, resolveWorldReferenceResourceScope } from '../world-engine/world-reference-v2'
-import { openProductPreparationWorldQueryV1, openProductPlanWorldQueryV1, bindWorldQueryResourcesV1,
+import { openProductPreparationWorldQueryV1, openProductPlanWorldQueryV1, openAuthorWorldQueryAccessV1, bindWorldQueryResourcesV1,
   describeWorldQueryAccessV1, closeWorldQueryAccessV1 } from './world-query-client'
 
 const MAX_RESOURCE_READ_TOKENS = 100_000
@@ -25,8 +27,19 @@ export interface WorldSemanticResourceSnapshotV1 {
   descriptor: ContextResourceDescriptorV1 & {
     worldSemantic: NonNullable<ContextResourceDescriptorV1['worldSemantic']>
   }
-  /** Canonical semantic row returned by the provider, never a table envelope. */
+  /** Full registered read: a v3 semantic row or a v4 authorized atom envelope. */
   value: Record<string, unknown>
+}
+
+// A v4 descriptor identifies an authorized materialization, not the hash of
+// JSON(value). Keep the actual full-read witness in memory; serialized/cloned
+// data cannot stand in for a registered read, and later mutation invalidates it.
+const verifiedProductReads = new WeakMap<WorldSemanticResourceSnapshotV1, string>()
+
+export function assertVerifiedProductWorldResourceSnapshotV2(resource: WorldSemanticResourceSnapshotV1): void {
+  if (verifiedProductReads.get(resource) !== canonicalStringify(resource)) {
+    throw new Error('[world-release-client] 世界资源缺少完整读取证据或读取后已变化')
+  }
 }
 
 export interface WorldSemanticResourceCatalogV1 extends OpenWorldReleaseV1 {
@@ -50,11 +63,16 @@ export interface WorldProductResourceCatalogV2 {
 }
 
 /** Same registered provider, explicit version and product dispatch. S2 gets
- * only a preparation catalog; formal reads require the frozen exact plan. */
+ * only a preparation catalog. Explicit chat review uses an author grant;
+ * formal reads still require the frozen exact plan and cannot reuse it. */
 export async function openProductWorldResourceCatalogV2(input: {
   localReleaseRecordId: number; expectedProjectId: number; expectedWorldId?: number
   productType: string; sourcePlan?: ProductSourcePlan
+  authorReview?: true
 }): Promise<WorldProductResourceCatalogV2> {
+  if (input.authorReview && (input.sourcePlan || input.productType !== 'character-interaction')) {
+    throw new Error('[world-release-client] 作者资料检查仅用于聊天确认，不能替代正式来源计划')
+  }
   const reference = input.sourcePlan?.worldReference ?? await createWorldReference(input.localReleaseRecordId)
   if (reference.localReleaseRecordId !== input.localReleaseRecordId) throw new Error('[world-release-client] 计划 locator 不一致')
   if (reference.version === 1) return openWorldSemanticResourceCatalogV1(input)
@@ -64,8 +82,11 @@ export async function openProductWorldResourceCatalogV2(input: {
     || (input.expectedWorldId !== undefined && scope.worldId !== input.expectedWorldId)) throw new Error('[world-release-client] 世界来源越过产品 owner')
   const access = input.sourcePlan?.version === 2
     ? await openProductPlanWorldQueryV1({ scope: { ...scope, worldId: scope.worldId }, sourcePlan: input.sourcePlan })
-    : await openProductPreparationWorldQueryV1({ scope: { ...scope, worldId: scope.worldId },
-      localReleaseRecordId: reference.localReleaseRecordId, productType: input.productType })
+    : input.authorReview
+      ? await openAuthorWorldQueryAccessV1({scope: {...scope, worldId: scope.worldId}, localReleaseRecordId: reference.localReleaseRecordId,
+        view: 'canon', perspective: {kind: 'author'}, knowledgeThrough: null, disclosedThrough: null})
+      : await openProductPreparationWorldQueryV1({ scope: { ...scope, worldId: scope.worldId },
+        localReleaseRecordId: reference.localReleaseRecordId, productType: input.productType })
   try {
     const provider = await bindWorldQueryResourcesV1(access), resources: ContextResourceDescriptorV1[] = []
     let cursor: string | undefined
@@ -90,14 +111,20 @@ export async function closeProductWorldResourceCatalogV2(catalog: WorldProductRe
 export async function readProductWorldResourcesV2(input: {
   catalog: WorldProductResourceCatalogV2; descriptors: ContextResourceDescriptorV1[]
 }): Promise<WorldSemanticResourceSnapshotV1[]> {
-  if (!input.catalog.worldQueryAccess) return readWorldSemanticResourcesV1({ scope: input.catalog.scope, descriptors: input.descriptors })
-  const provider = await bindWorldQueryResourcesV1(input.catalog.worldQueryAccess)
+  const access = input.catalog.worldQueryAccess
+  if (!access) return readWorldSemanticResourcesV1({ scope: input.catalog.scope, descriptors: input.descriptors })
+  const scope = structuredClone(input.catalog.scope), descriptors = structuredClone(input.descriptors)
+  const provider = await bindWorldQueryResourcesV1(access)
   const resources: WorldSemanticResourceSnapshotV1[] = []
-  for (const descriptor of input.descriptors) {
+  for (const descriptor of descriptors) {
     if (!hasWorldSemantic(descriptor)) throw new Error('[world-release-client] 不是世界语义资源')
-    const read = await provider.read({ scope: input.catalog.scope, resourceKey: descriptor.resourceKey, depth: 'full', maxTokens: MAX_RESOURCE_READ_TOKENS })
+    const read = await provider.read({ scope, resourceKey: descriptor.resourceKey, depth: 'full', maxTokens: MAX_RESOURCE_READ_TOKENS })
     if (read.descriptor.contentHash !== descriptor.contentHash) throw new Error('[world-release-client] 读取内容身份已变化')
-    resources.push({ descriptor: structuredClone(descriptor), value: parseSemanticValue(read.content, descriptor.resourceKey) })
+    if (canonicalStringify(read.descriptor) !== canonicalStringify(descriptor)) throw new Error('[world-release-client] 读取元数据已变化')
+    if (await sha256Text(read.content) !== read.contentHash) throw new Error('[world-release-client] 完整读取内容与证据不一致')
+    const resource = { descriptor: structuredClone(descriptor), value: parseSemanticValue(read.content, descriptor.resourceKey) }
+    verifiedProductReads.set(resource, canonicalStringify(resource))
+    resources.push(resource)
   }
   return resources
 }

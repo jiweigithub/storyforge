@@ -477,7 +477,7 @@ const PROJECT_TABLE_REGISTRATIONS: ProjectTableRegistration[] = [
       { field: 'productionId', remapVia: 'productProductions', exportAs: '_productionExportId' },
     ],
     exportRefRemap: [{field:'conversationJson',remapVia:'agentRuns',kind:'object-array-id',exportAs:'_conversationRunExportIds',itemField:'runId',storage:'json-string'}],
-    note: '角色聊天 S2 独立可恢复草稿；正式执行复用 Production/Build。',
+    note: '角色聊天 S2 独立可恢复草稿；可选 roleProfilesJson/sourceUnitsJson 只含产品解读、逐项权限和便携来源/分类/独立复核证据，无本地 ID；完整随 Work 导入导出、删除。正式执行复用 Production/Build。',
   },
 
   { table: db.motionDramaProductions, name: 'motionDramaProductions', owner: 'project', exportable: true, exportIdField: true,
@@ -1361,7 +1361,7 @@ const PROJECT_TABLE_REGISTRATIONS: ProjectTableRegistration[] = [
       canonSnapshotJson: '{"version":1,"sources":[]}',
       initialStateJson: '{"version":1,"clock":0,"entities":{},"memories":[],"narratives":[],"ttrpg":null,"lastSequence":0}',
     },
-    note: 'PRODUCT-RUNTIME-1 产品实例；必须绑定恰好一个已验证 ProductRelease 或 ProductBuild，冻结来源且不反写世界引擎' },
+    note: 'PRODUCT-RUNTIME-1 产品实例；必须绑定恰好一个已验证 ProductRelease 或 ProductBuild，冻结来源且不反写世界引擎；聊天未发送草稿随实例备份与删除，不进入事件事实或模型读取，新分支不复制' },
 
   { table: db.productRuntimeEvents, name: 'productRuntimeEvents', owner: 'project',
     domainOwner: { allowed: ['instance'], defaultOwner: 'instance', locator: { kind: 'parent', owner: 'instance', table: 'productRuntimeSessions', field: 'sessionId' } },
@@ -1949,8 +1949,8 @@ const PROJECT_TABLE_REGISTRATIONS: ProjectTableRegistration[] = [
         onUnmapped: "require-if-present",
       },
       {
-        // Recovery authorization compares the failed Run/attempt with the
-        // ledger. Preserve that identity across a portable backup too.
+        // Failure recovery and paused request accounting point to the same
+        // durable Runs as the budget ledger. Keep their IDs portable too.
         field: "failureJson",
         remapVia: "agentRuns",
         kind: "json-id-paths",

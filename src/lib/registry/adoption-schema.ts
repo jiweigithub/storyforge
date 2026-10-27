@@ -8,6 +8,7 @@ import type { AdoptionExtensionSpec, CollectionAdoptionSpec } from './types'
 import { PROJECT_TABLES, REGISTRY_BY_NAME } from './project-tables'
 
 const ADOPTION_SCHEMAS_RAW: CollectionAdoptionSpec[] = [
+  {target: 'chatAuthoringDrafts', identity: 'id', recordOnly: true, duplicatePolicy: 'error', required: [], autoStamps: ['updatedAt'], ownerFrom: 'work'},
   { target: 'ttrpgAuthoringDrafts', identity: 'id', recordOnly: true, duplicatePolicy: 'error', required: ['settingsJson'],
     autoStamps: [], ownerFrom: 'work', writePolicy: 'ttrpg-open-authoring-design-v1' },
   // Existing singleton records also support exact author edits by ID. Creation
@@ -478,6 +479,13 @@ const ADOPTION_SCHEMAS_RAW: CollectionAdoptionSpec[] = [
 ]
 
 const ADOPTION_EXTENSION_REGISTRATIONS: readonly AdoptionExtensionSpec[] = [
+  {
+    id: 'chat-authoring-draft-lifecycle', target: 'chatAuthoringDrafts',
+    entrypoints: ['src/lib/character-interaction/draft-service.ts', 'src/lib/character-interaction/role-profile-store.ts', 'src/lib/character-interaction/consultation-store.ts', 'src/lib/character-interaction/source-unit-store.ts'],
+    policyRegistry: 'PROJECT_TABLES + WorkspaceScope + draft revision CAS + FIELD_REGISTRY roleProfilesJson/settingsJson/sourceUnitsJson + immutable identity/source/permission guard',
+    reason: 'S2作者方案创建、资料权限确认、会谈和revision属于普通领域生命周期。draft-service仅保留整理字段，不生成或改写；role-profile-store、consultation-store和source-unit-store的正文须经adopt()，直接更新仅限同事务revision。事实整理须绑定完整原文、逐项权限复核和作者确认，不得借此改写来源分类或世界。',
+    reviewAfter: '2027-10-01',
+  },
   { id: 'ttrpg-authoring-draft-lifecycle', target: 'ttrpgAuthoringDrafts', entrypoints: ['src/lib/ttrpg/authoring-service.ts'],
     policyRegistry: 'parseTtrpgSettings + revision CAS + PROJECT_TABLES + ttrpg-open-authoring-design-v1 adopt writePolicy',
     reason: '原人工配置、出口选择和制作指针生命周期继续由领域服务处理；模型设计必须经原始回答/来源证明、作者确认和adopt事务委托同一保存服务。', reviewAfter: '2027-04-19' },

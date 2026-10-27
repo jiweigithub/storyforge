@@ -39,6 +39,12 @@ for (const product of ['chat', 'avg'] as const) {
       await actor.getByLabel('参与本次聊天').check()
       await page.getByRole('button', { name: '保存方案', exact: true }).click()
       await expect(page.getByRole('status')).toContainText('方案已保存')
+      await page.getByRole('button', {name: '读取并检查完整资料', exact: true}).click()
+      await page.getByLabel('守渡人 姓名 用途', {exact: true}).selectOption('identity')
+      await page.getByLabel('守渡人 姓名 可见范围', {exact: true}).selectOption('public')
+      await page.getByRole('button', {name: '确认可见范围并用于新制作', exact: true}).click()
+      await expect(page.getByText('已保存资料确认。更换角色或世界后需要重新检查。', {exact: true})).toBeVisible()
+      expect(fixtureCalls).toHaveLength(0)
     }
     await contentNav.getByRole('button', { name: '确认制作方案', exact: true }).click()
     await page.getByRole('button', { name: product === 'avg' ? '启用并继续确认' : '启用自动制作', exact: true }).click()

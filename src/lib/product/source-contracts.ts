@@ -575,6 +575,43 @@ function addDecision(input: {
   input.map.set(input.descriptor.resourceKey, existing)
 }
 
+/** An imported Run retains the exact historical manifest, including its old
+ * local scope fingerprint. Re-prove its portable release/resource identity;
+ * never rewrite that manifest or accept an arbitrary fingerprint mismatch. */
+async function importedWorldManifestMatchesV1(input: {
+  restored: Awaited<ReturnType<typeof readContextGatewayManifestV3ForAttemptV1>>
+  sourceScope: FrozenResourceScopeV1
+}): Promise<boolean> {
+  const {manifest, snapshot} = input.restored
+  const receipt = snapshot.projection.terminalReceiptHash
+  if (snapshot.projection.state !== 'completed' || !receipt) return false
+  const importedAt = snapshot.events.findIndex(event => event.type === 'verification.staled'
+    && event.payload.reason === 'project-import-scope-rebound'
+    && event.payload.previousReceiptHash === receipt)
+  const assembledAt = snapshot.events.findIndex(event => event.type === 'context.assembled'
+    && event.payload.manifestHash === manifest.manifestHash)
+  if (importedAt < 0 || assembledAt < 0 || assembledAt >= importedAt) return false
+  const decisions = traceDecisions(manifest)
+  if (!decisions.length || decisions.some(decision => decision.sourceKey !== 'worldRelease')) return false
+  const historicalLocators = new Set<number | string>()
+  for (const decision of decisions) {
+    const descriptor = await descriptorForTrace({scope: input.sourceScope, resourceKey: decision.resourceKey})
+    if (decision.revision !== descriptor.contentRevision
+      || decision.contentHash !== descriptor.contentHash
+      || decision.policyRevision !== descriptor.policyRevision
+      || decision.policyHash !== descriptor.policyHash
+      || decision.sourceRefs.length !== descriptor.sourceRefs.length) return false
+    for (let index = 0; index < decision.sourceRefs.length; index += 1) {
+      const {recordId, ...historical} = decision.sourceRefs[index]!
+      const {recordId: _local, ...current} = descriptor.sourceRefs[index]!
+      if (historical.table !== 'worldReleases' || !Number.isSafeInteger(recordId) || Number(recordId) < 1
+        || await hashCanonicalValue(historical) !== await hashCanonicalValue(current)) return false
+      historicalLocators.add(recordId)
+    }
+  }
+  return historicalLocators.size === 1
+}
+
 export async function aggregateProductSourceManifestFromExactRunsV1(input: {
   scope: WorkspaceScope; sourcePlan: ProductSourcePlanV1; runContextManifests: LocalContextManifestAttemptV1[]; createdAt?: number
 }): Promise<ProductSourceManifestV1> {
@@ -621,6 +658,7 @@ export async function aggregateProductSourceManifestFromExactRuns(input: {
       attempt: pointer.attempt,
     })
     const manifest = restored.manifest
+    const reboundScope = manifest.gateway.scopeFingerprint !== gatewaySession.scopeFingerprint
     const scopeRebound = manifest.gateway.scopeFingerprint !== gatewaySession.scopeFingerprint
       && plan.productType === 'ttrpg' && plan.version === 1
       && await (await import('./world-context-portability')).verifyImportedWorldContextBindingV1({
@@ -629,7 +667,9 @@ export async function aggregateProductSourceManifestFromExactRuns(input: {
       })
     if (manifest.manifestHash !== pointer.manifestHash
       || manifest.gateway.policyHash !== plan.gatewayPolicyHash
-      || (!permittedFingerprints.has(manifest.gateway.scopeFingerprint) && !scopeRebound)) {
+      || (!permittedFingerprints.has(manifest.gateway.scopeFingerprint)
+        && !(plan.productType === 'ttrpg' && plan.version === 1
+          ? scopeRebound : await importedWorldManifestMatchesV1({restored, sourceScope})))) {
       fail('run-manifest-binding', `Run ${pointerKey} 未绑定 SourcePlan 的 release/policy`)
     }
     const decisions = traceDecisions(manifest).filter(decision => decision.sourceKey === 'worldRelease')
@@ -660,7 +700,9 @@ export async function aggregateProductSourceManifestFromExactRuns(input: {
         status: 'matched',
         depth: decision.depth,
         contentHash: decision.contentHash,
-        sourceRefsHash: plan.version === 2 ? await portableWorldSourceRefsHashV2(decision.sourceRefs) : await hashCanonicalValue(decision.sourceRefs),
+        // Preserve historical manifests; normalize only verified imported refs.
+        sourceRefsHash: plan.version === 2 ? await portableWorldSourceRefsHashV2(decision.sourceRefs)
+          : await hashCanonicalValue(reboundScope ? descriptor.sourceRefs : decision.sourceRefs),
         manifestHash: manifest.manifestHash,
         reasonCode: decision.reason,
       })

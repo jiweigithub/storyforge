@@ -9,9 +9,9 @@ const useSystemChrome = process.env.PLAYWRIGHT_USE_SYSTEM_CHROME === '1'
 export default defineConfig({
   testDir: './tests/e2e',
   timeout: 60_000,
-  // Open-preview receipts replay real native IndexedDB history. Shared CI runners
-  // need time to finish the read after a saved mutation; retain all state assertions.
-  expect: { timeout: process.env.CI && process.env.VITE_ENABLE_TTRPG_OPEN_PREVIEW === '1' ? 20_000 : 5_000 },
+  // Shared CI runners need time to load lazy pages and restore saved IndexedDB
+  // state after navigation or refresh; retain all visibility and state assertions.
+  expect: { timeout: process.env.CI ? 20_000 : 5_000 },
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,

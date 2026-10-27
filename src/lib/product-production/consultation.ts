@@ -1,5 +1,11 @@
+import {chatVisualMediaProfileV1} from '../character-interaction/visual-intent'
+import { parseChatAuthoringSettings, type ChatAuthoringSettings } from '../character-interaction/authoring-contract'
+import { readPreparedChatSourceProjectionViewV1 } from '../character-interaction/source-projection'
+import {readChatRoleProfilesV1} from '../character-interaction/role-profile-store'
+import {readChatSourceUnitSetV1} from '../character-interaction/source-unit-store'
+import {validateChatSourceUnitSetForProjectionV1} from '../character-interaction/source-unit-authorization'
+import {validateChatRoleProfilesForSourceV1} from '../character-interaction/role-profile'
 import { parseProductWorldSourceSelection } from './runtime-package'
-import { parseChatAuthoringSettingsV1, type ChatAuthoringSettingsV1 } from '../character-interaction/authoring-contract'
 import { parseAvgAuthoringSettingsV1, type AvgAuthoringSettingsV1 } from '../avg/authoring-contract'
 import type {
   ProductionProductKindV1,
@@ -20,6 +26,7 @@ import { parseProductProductionBriefV3 } from './contracts'
 import { freezeAiTownWorldSourceSelectionV1, loadAiTownWorldSourceCatalogV1 } from '../ai-town/world-source'
 import {
   loadProductProductionConsultationSourceV2,
+  loadProductProductionWorldSourceCatalogV2,
   type ProductProductionConsultationSourceV2,
 } from './world-source'
 import {
@@ -158,7 +165,12 @@ function mediaProfile(input: {
   aiTown?: Pick<AiTownBriefSettingsV1,
     'residentTarget' | 'majorLocationTarget' | 'portraits' | 'expressions' | 'locationCards' | 'ambientAudio'>
   qualityProfile: ProductProductionBriefV3['qualityProfile']
+  characterChat?: ChatAuthoringSettings
 }): ProductProductionMediaProfileV1 {
+  if (input.productType === 'character-interaction') {
+    const visual = chatVisualMediaProfileV1(input.characterChat, input.visualLevel)
+    return {...visual, visualLevel: visual.imageCount ? 'key-scenes' : 'none', audioLevel: 'none', musicTrackCount: 0, sfxCount: 0, voiceLineCount: 0}
+  }
   // Each presentation product owns its own count/profile while sharing the
   // content-addressed media transport and release integrity primitives.
   const presentationEnabled = ['avg', 'ttrpg', 'ai-town', 'text-adventure', 'text-open-world'].includes(input.productType)
@@ -330,7 +342,7 @@ export interface ProductProductionBriefDraftInputV3 {
   confirmTtrpgDefaultMappings?: boolean
   ttrpg?: TtrpgProductionBriefDraftInputV2
   aiTown?: AiTownBriefSettingsV1
-  characterChat?: ChatAuthoringSettingsV1
+  characterChat?: ChatAuthoringSettings
   avg?: AvgAuthoringSettingsV1
   textAdventure?: TextAdventureProductionBriefDraftV1
   sourceSelection?: ProductProductionSourceSelectionV1
@@ -364,7 +376,9 @@ async function draftProductProductionBriefValueV3(
   }
   const selectedScale = input.scale ?? selected.scale
   const qualityProfile = input.qualityProfile ?? 'prototype'
-  const characterChat = input.characterChat ? parseChatAuthoringSettingsV1(input.characterChat) : undefined
+  const characterChat = input.characterChat ? parseChatAuthoringSettings(input.characterChat) : undefined
+  const characterChatProfiles = characterChat && characterChat.version !== 1 ? await readChatRoleProfilesV1(scope) : undefined
+  const characterChatSourceUnits = characterChat?.version === 3 ? await readChatSourceUnitSetV1(scope) : undefined
   if(characterChat && input.productType !== 'character-interaction') throw new Error('角色聊天方案不能用于其他产品')
   const avg = input.avg ? parseAvgAuthoringSettingsV1(input.avg) : undefined
   if (avg && input.productType !== 'avg') throw new Error('AVG 方案不能用于其他产品')
@@ -375,11 +389,13 @@ async function draftProductProductionBriefValueV3(
   })
   if (characterChat) {
     const keys = characterChat.characters.map(c => c.sourceKey)
-    if (!keys.length || (characterChat.mode === 'single' && keys.length !== 1)) {
+    const castCount = keys.length + (characterChat.version === 3 ? characterChat.privateCharacters?.length ?? 0 : 0)
+    if (!castCount || (characterChat.mode === 'single' && castCount !== 1)) {
       throw new Error('请在角色与场景中选择参与者；单角色模式需要恰好一名角色。')
     }
     const available = new Set(source.selectionOptions.characters.map(c => c.resourceKey))
     if (keys.some(key => !available.has(key))) throw new Error('角色设置包含当前世界版本中不存在的人物，请重新选择。')
+    if (characterChat.version === 3 && characterChat.narrative.playerCharacterKey && !available.has(characterChat.narrative.playerCharacterKey)) throw new Error('玩家人物不属于当前冻结世界，请重新选择。')
     selectedCatalog.characterResourceKeys = keys
   }
   if (input.productType === 'ai-town') {
@@ -398,7 +414,8 @@ async function draftProductProductionBriefValueV3(
   }
   const media = mediaProfile({
     productType: input.productType,
-    visualLevel: input.visualLevel ?? 'key-scenes',
+    visualLevel: input.visualLevel ?? (input.productType === 'character-interaction' ? 'none' : 'key-scenes'),
+    characterChat: characterChat ?? undefined,
     audioLevel: input.audioLevel ?? 'none',
     aiTown: input.productType === 'ai-town' ? {
       residentTarget: selectedCatalog.characterResourceKeys.length,
@@ -411,13 +428,26 @@ async function draftProductProductionBriefValueV3(
     qualityProfile,
   })
   const roleBindings = compileUpperProductWorldRoleBindingsV1(input.productType, selectedCatalog)
+  const backgroundKeys = characterChat && characterChat.version !== 1 ? characterChat.backgroundResourceKeys ?? [] : []
+  if (backgroundKeys.length) roleBindings.chatBackground = [...backgroundKeys]
+  const playerKeys = characterChat?.version === 3 && characterChat.narrative.playerCharacterKey ? [characterChat.narrative.playerCharacterKey] : []
+  if (playerKeys.length) roleBindings.chatPlayer = playerKeys
   const selection = parseProductWorldSourceSelection({
     schema: 'storyforge.product-world-source-selection', version: source.worldReference.version,
     productType: input.productType,
     worldReferenceHash: source.worldReference.referenceHash,
-    resourceKeys: [...new Set(Object.values(selectedCatalog).flat())].sort(),
+    resourceKeys: [...new Set([...Object.values(selectedCatalog).flat(), ...backgroundKeys, ...playerKeys])].sort(),
     roleBindings,
   })
+  if (characterChat && characterChat.version !== 1) {
+    if (!characterChat.sourceReview) throw new Error('请先检查并确认角色来源资料')
+    const catalog = await loadProductProductionWorldSourceCatalogV2({scope, worldReleaseId: input.worldReleaseId, selection, chatSourceReview: true,
+      chatPrivateCharacters: characterChat.version === 3 ? characterChat.privateCharacters : undefined})
+    if (!catalog.chatSourceProjection) throw new Error('角色来源投影未就绪')
+    readPreparedChatSourceProjectionViewV1({draft: catalog.chatSourceProjection, review: characterChat.sourceReview, viewerKey: 'player'})
+    if (characterChatProfiles) validateChatRoleProfilesForSourceV1(characterChatProfiles, catalog.chatSourceProjection, characterChat.sourceReview)
+    if (characterChatSourceUnits) validateChatSourceUnitSetForProjectionV1(characterChatSourceUnits, catalog.chatSourceProjection, characterChat.sourceReview)
+  }
   const ttrpg = input.productType === 'ttrpg' && !openMode ? await compileTtrpgProductionBriefV2({
     scope, selection, worldContentHash: source.release.contentHash,
     title: input.ttrpg?.campaign?.title ?? selected.title,
@@ -468,7 +498,8 @@ async function draftProductProductionBriefValueV3(
     ],
   })]
   if (media.imageCount > 0) requirements.push(await capabilityRequirement({
-    requirementKey: 'media.visual', mediaClass: 'image', required: qualityProfile === 'commercial-candidate',
+    requirementKey: 'media.visual', mediaClass: 'image', required: qualityProfile === 'commercial-candidate' || input.productType === 'character-interaction',
+    ...(input.productType === 'character-interaction' ? {allowedDataClasses: ['author-intent']} : {}),
   }))
   if (media.musicTrackCount > 0) requirements.push(await capabilityRequirement({
     requirementKey: 'media.music', mediaClass: 'music', required: qualityProfile === 'commercial-candidate',
@@ -590,6 +621,8 @@ async function draftProductProductionBriefValueV3(
     schema: 'storyforge.product-production-brief', version: 3,
     ...(avg ? { avg } : {}),
     ...(characterChat ? { characterChat } : {}),
+    ...(characterChatProfiles ? {characterChatProfiles} : {}),
+    ...(characterChatSourceUnits ? {characterChatSourceUnits} : {}),
     source: {
       worldReleaseId: input.worldReleaseId, worldContentHash: source.release.contentHash, selection,
       startingPoint: {
@@ -619,7 +652,7 @@ async function draftProductProductionBriefValueV3(
     qualityProfile,
     capabilityRequirements: requirements,
     externalDataPolicy: {
-      allowedDataClasses: ['world-selection'], forbiddenDataClasses: ['api-key', 'private-note'],
+      allowedDataClasses: ['world-selection', ...(input.productType === 'character-interaction' && media.imageCount > 0 ? ['author-intent'] : [])], forbiddenDataClasses: ['api-key', 'private-note'],
       allowReferenceImages: false, allowVoiceScripts: false,
     },
     fallbackPolicy: {

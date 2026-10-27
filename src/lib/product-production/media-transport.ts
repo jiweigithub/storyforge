@@ -1,5 +1,4 @@
 import { useAIConfigStore } from '../../stores/ai-config'
-import { resolveRequestConfig } from '../ai/client'
 import { getAIConfigRequiredMessage, isAIConfigReady } from '../ai/config-readiness'
 import type { AIConfig, ProviderCapabilityRequirementV1 } from '../types'
 import { hashProductProductionValueV2 } from './hash'
@@ -243,10 +242,10 @@ function endpointOrigin(baseUrl: string): string {
   try { return new URL(baseUrl).origin } catch { return 'custom-endpoint' }
 }
 
-function configuredAgnesConfig(projectId: number, config?: AIConfig): AIConfig {
-  return config ?? resolveRequestConfig(useAIConfigStore.getState().config, {
-    category: 'product-production', projectId,
-  }).config
+function configuredAgnesConfig(config?: AIConfig): AIConfig {
+  // Text task routes do not select an image provider. Keep the existing global
+  // Agnes connection even when, for example, creation is routed to Codex.
+  return config ?? useAIConfigStore.getState().config
 }
 
 function agnesImageEndpoint(baseUrl: string): URL {
@@ -268,7 +267,7 @@ export function inspectConfiguredAgnesImageCapabilityV1(input: {
   projectId: number
   config?: AIConfig
 }): ConfiguredAgnesImageReadinessV1 {
-  const config = configuredAgnesConfig(input.projectId, input.config)
+  const config = configuredAgnesConfig(input.config)
   const credentialPresent = isAIConfigReady(config)
   let issue: string | null = null
   if (config.provider !== 'agnes') issue = '全局 AI 提供商当前不是 Agnes，无法复用同一配置生成图片。'
@@ -385,7 +384,7 @@ export async function resolveConfiguredAgnesImageCapabilityV1(input: {
   now?: number
 }): Promise<ResolvedProductMediaCapabilityV1> {
   if (input.requirement.mediaClass !== 'image') fail('Agnes 图片 capability 只能绑定 image requirement')
-  const config = configuredAgnesConfig(input.projectId, input.config)
+  const config = configuredAgnesConfig(input.config)
   const readiness = inspectConfiguredAgnesImageCapabilityV1({ projectId: input.projectId, config })
   if (!readiness.ready) fail(readiness.issue || 'Agnes 图片能力未就绪')
   const adapterId = 'agnes.image-2.1-flash.v1' as const
