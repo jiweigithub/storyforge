@@ -1,6 +1,7 @@
 import { canonicalProductProductionJsonV2 } from './hash'
 import { deriveAvgAssemblyRecoveryBaseV1 } from '../avg/assembly-recovery'
 import { AVG_VISUAL_TEXT_CAPABILITY_V4 } from '../avg/visual-planning-roles'
+import { isTtrpgCompatibleOpeningTextFreeProfileV1 } from '../ttrpg/open-compatible-opening-contract'
 import { db } from '../db/schema'
 import { readAgentRunV1 } from '../agent/run/event-store'
 import { readAgentRunArtifactExactV1 } from '../memory/artifact-store'
@@ -88,6 +89,7 @@ import { detectProductImageDimensionsV1, detectProductMediaMimeTypeV1 } from './
 import { useAIConfigStore } from '../../stores/ai-config'
 import {
   assertProductProductionBudgetLedgerV1,
+  productProductionFailureNeedsProviderAccountingV1,
   prepareLegacyPausedProductBuildV1,
   projectProductProductionSchedulerV1,
   recoverImportedProductProductionProofsV1 as recoverImportedProductProductionProofsCoreV1,
@@ -906,7 +908,7 @@ export function inspectProductProductionCapabilityReadinessV1(input: {
  * capability required by that frozen Brief is bound.
  */
 export function evaluateProductProductionAuthorizationReadinessV1(input: {
-  brief: Pick<ProductProductionBriefV3, 'capabilityRequirements' | 'avgRevision' | 'avgAssembly' | 'avgVisualPlanning' | 'avgSoundPlanning' | 'avgAudioProcessing'>
+  brief: Pick<ProductProductionBriefV3, 'capabilityRequirements' | 'avgRevision' | 'avgAssembly' | 'avgVisualPlanning' | 'avgSoundPlanning' | 'avgAudioProcessing'> & Partial<Pick<ProductProductionBriefV3, 'ttrpgOpen' | 'media'>>
   readiness: ProductProductionCapabilityReadinessV1
 }): ProductProductionAuthorizationReadinessV1 {
   const blockerMessages: string[] = []
@@ -917,7 +919,9 @@ export function evaluateProductProductionAuthorizationReadinessV1(input: {
   const visualTextNotRequired = !!input.brief.avgVisualPlanning && input.brief.capabilityRequirements.some(requirement => (
     requirement.requirementKey === AVG_VISUAL_TEXT_CAPABILITY_V4 && requirement.mediaClass === 'text' && !requirement.required
   ))
-  if (!input.brief.avgRevision && !input.brief.avgAssembly && input.brief.avgSoundPlanning?.version !== 2 && !visualTextNotRequired && !input.readiness.text.ready) {
+  const authoredWithoutText = isTtrpgCompatibleOpeningTextFreeProfileV1(input.brief)
+    && !input.brief.capabilityRequirements.some(r => r.required && r.mediaClass === 'text')
+  if (!input.brief.avgRevision && !input.brief.avgAssembly && input.brief.avgSoundPlanning?.version !== 2 && !visualTextNotRequired && !authoredWithoutText && !input.readiness.text.ready) {
     blockerMessages.push(input.readiness.text.issue || '设置中的文本生成能力尚未就绪。')
   }
   const requiredMediaRequirementKeys = input.brief.capabilityRequirements
@@ -1089,6 +1093,17 @@ export async function readProductProductionDetailsV1(
     }
     buildHistory.push(row)
   }
+  const storedOpenTtrpgBrief = (() => {
+    if (!brief || brief.briefKind === 'text-open-world-creator-v1') return false
+    try {
+      const value = JSON.parse(brief.briefJson) as Record<string, unknown>
+      return value.schema === 'storyforge.ttrpg-production-brief'
+        && value.version === 3
+        && value.runFormat === 'open'
+    } catch {
+      return false
+    }
+  })()
   const executionBrief = brief?.briefKind === 'text-open-world-creator-v1'
     ? brief.status === 'authorized' && build
       ? (await readTextOpenWorldCreatorDerivedBuildAuthorityV1({
@@ -1096,7 +1111,7 @@ export async function readProductProductionDetailsV1(
           buildId: build.id!,
         })).contracts.executionBrief
       : null
-    : brief ? parseProductProductionBriefV3(brief.briefJson) : null
+    : storedOpenTtrpgBrief ? null : brief ? parseProductProductionBriefV3(brief.briefJson) : null
   return {
     production,
     brief: brief ?? null,
@@ -1514,6 +1529,7 @@ export async function retryProductProductionBlockerV1(input: {
   afterCapabilityChange?: boolean
   repairNote?: string
   authorDraftJson?: string
+  originalResponseSource?: import('../types').ProductProductionBlockerResolutionV1['originalResponseSource']
   unknownResultDisposition?: 'confirmed-not-charged' | 'charge-reservation-upper-bound'
 }): Promise<
   | 'provider-actual-charge'
@@ -1528,6 +1544,8 @@ export async function retryProductProductionBlockerV1(input: {
   const blockerKey = taskKey ?? 'build-recovery'
   const repairNote = input.repairNote?.trim() || undefined
   const authorDraftJson = input.authorDraftJson?.trim() || undefined
+  if (input.originalResponseSource && (!authorDraftJson || input.details.production.productType !== 'ttrpg'
+    || input.afterCapabilityChange || input.unknownResultDisposition)) throw new Error('[product-production-service] 原回答来源只用于已核对的明确作者修订，不能混用其他费用或能力处置')
   if (repairNote || authorDraftJson) {
     if (!taskKey) throw new Error('[product-production-service] 当前 blocker 不支持作者引导修复')
     const policy = inspectProductProductionBuildRecoveryPolicyV1({
@@ -1555,9 +1573,8 @@ export async function retryProductProductionBlockerV1(input: {
       failure = parsed as Record<string, unknown>
     }
   } catch { /* command boundary will reject corrupt failure evidence */ }
-  const providerReservationFailure = failure.code === 'unknown-result'
-    || failure.code === 'provider-response-uncheckpointed'
-  if (providerReservationFailure) {
+  const providerReservationFailure = productProductionFailureNeedsProviderAccountingV1(input.details.build)
+  if (providerReservationFailure && !input.originalResponseSource) {
     if (!input.unknownResultDisposition) {
       throw new Error(failure.code === 'provider-response-uncheckpointed'
         ? '[product-production-service] 已收到供应商响应证据；请按冻结预留上限封账后重试'
@@ -1595,6 +1612,7 @@ export async function retryProductProductionBlockerV1(input: {
       resolution: {
         action: authorDraftJson ? 'author-edit' : input.afterCapabilityChange ? 'change-capability' : 'retry',
         ...(authorDraftJson ? { authorDraftJson } : {}),
+        ...(input.originalResponseSource ? { originalResponseSource: input.originalResponseSource } : {}),
         ...(unknownResultReservation ? { unknownResultReservation } : {}),
         note: repairNote || (input.afterCapabilityChange ? '作者已调整全局能力配置并要求重试' : '作者从制作工作台要求重试'),
       },
@@ -1757,9 +1775,10 @@ export async function runAuthorizedProductProductionV1(input: {
     if (input.onProgress) await input.onProgress(projection)
     return projection
   }
+  const authoredWithoutText = isTtrpgCompatibleOpeningTextFreeProfileV1(brief) && !brief.capabilityRequirements.some(r => r.required && r.mediaClass === 'text')
   const textRequirements = brief.capabilityRequirements.filter(requirement => requirement.mediaClass === 'text')
   if (textRequirements.length !== 1) throw new Error('[product-production-service] 正式制作需要唯一文本 capability requirement')
-  const textCapability = await resolveConfiguredTextCapabilityV1({
+  const textCapability = authoredWithoutText ? null : await resolveConfiguredTextCapabilityV1({
     projectId: scope.projectId, category: 'product-production', requirementKey: textRequirements[0].requirementKey,
     ...(creatorContracts ? {
       expectedProviderIdentity: {
@@ -1773,13 +1792,13 @@ export async function runAuthorizedProductProductionV1(input: {
       },
     } : {}),
   })
-  const capabilityBindings: ProductProductionCapabilityBindingV1[] = [{
+  const capabilityBindings: ProductProductionCapabilityBindingV1[] = textCapability ? [{
     requirementKey: textRequirements[0].requirementKey,
     adapterId: textCapability.receipt.adapterId,
     bindingHash: textCapability.receipt.capabilityHash,
     provider: textCapability.receipt.provider,
     model: textCapability.receipt.model,
-  }]
+  }] : []
   const mediaCapabilities = new Map<string, ResolvedProductMediaCapabilityV1>()
   const relayUrl = configuredMediaRelayUrlV1()
   const authoredImagePackUrl = configuredAuthoredImagePackUrlV1()
@@ -1843,10 +1862,11 @@ export async function runAuthorizedProductProductionV1(input: {
   const executor = brief.intent.productType === 'text-open-world'
     ? createTextOpenWorldProductionExecutorV1({
       production: details.production, brief, mediaCapabilities,
-      textCapabilityReceipt: textCapability.receipt,
+      textCapabilityReceipt: textCapability!.receipt,
     })
     : createConfiguredProductProductionExecutorV1({
       production: details.production, brief, mediaCapabilities,
+      ...(authoredWithoutText ? { runText: async () => { throw new Error('[product-production-service] 作者确认的兼容开局不允许文本模型调用，请保留当前制作证据') } } : {}),
       sourcePlan: await parseProductProductionSourcePlanV1(details.brief),
     })
   const projection = await runProductProductionUntilBlockedV1({

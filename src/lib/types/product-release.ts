@@ -286,6 +286,7 @@ export interface ProductRuntimePackageV2 {
 }
 
 export type AnyProductRuntimePackage = ProductRuntimePackageV1 | ProductRuntimePackageV2
+  | import('../ttrpg/content-version').ProductRuntimePackageWithTtrpgV2
 
 export interface ProductReleaseManifestV2 extends Omit<ProductReleaseManifestV1,
   'version' | 'productType' | 'runtimePackage' | 'sourceContracts' | 'lineage'> {
@@ -301,6 +302,7 @@ export interface ProductReleaseManifestV2 extends Omit<ProductReleaseManifestV1,
 }
 
 export type AnyProductReleaseManifest = ProductReleaseManifestV1 | ProductReleaseManifestV2
+  | import('../ttrpg/content-version').ProductReleaseManifestWithTtrpgV2
 
 export interface ProductReleaseMarketplaceProvenanceV1 {
   source: 'marketplace' | 'community-bundle'

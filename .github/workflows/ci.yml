@@ -25,9 +25,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # package.json is the single verification entrypoint; new governance
-      # gates must reach local and hosted CI together.
-      - name: 完整工程闸门（npm run ci）
+      # Run the canonical full CLI gate once. Do not add a second full-delivery
+      # workflow to repeat coverage/build for the same PR head.
+      - name: 完整工程检查（单次统一入口）
         run: npm run ci
 
       - name: Install Playwright Chromium

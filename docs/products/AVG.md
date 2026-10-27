@@ -1,9 +1,9 @@
 # AVG/Galgame 正式产品契约
 
-> L2 · 版本：1.8.1 · 生效：2026-10-25 · 对应总纲 §6、§7、§9、§10.1、E-AVG-01。
-> 状态：正式目标设计与施工入口；原生系统、表现、合法媒资导入绑定与作者组装框架已分支工程验收，冻结源码 cf8415e9 的完整 CI/全仓浏览器均成功。专业故事生产后置，完整产品仍为 `partial`；分支结果不代表已合并上线。
+> L2 · 版本：1.9.0 · 生效：2026-10-27 · 对应总纲 §6、§7、§9、§10.1、E-AVG-01。
+> 状态：原生系统、表现与媒资生产框架已实现；本轮收拢主干共享协议、schema v13 与备份 v17 接缝。当前整合验收及主干归属以 [PR #219](https://github.com/yuanbw2025/storyforge/pull/219) 为准。专业剧情继续后置，完整产品仍为 `partial`，工程检查不代签真人听感或商业艺术质量。
 > 上位规则：[总纲](../PROJECT-MASTER-CHARTER.md)、[上层产品共同契约](UPPER-PRODUCTS.md)、[数据治理](../DATA-GOVERNANCE.md)、[Harness 标准](../HARNESS-QUALITY-STANDARD.md)。
-> 系统框架验收基线：`e8ce0a0d` 为冻结代码 `cf8415e9` 的祖先，完整结果固定归该源码；汇总审查 [PR #157](https://github.com/yuanbw2025/storyforge/pull/157)。后续媒资审查见 [PR #160](https://github.com/yuanbw2025/storyforge/pull/160)，不继承旧头全量通过；逐包提交、验证与未完成项以开发计划及工作包卡为准，研究依据保留在 L4。
+> 历史验收：714297（基线 f9deb5e3d）的独立分支工程检查已经通过；原框架 PR #157 与媒资 PR #160 保留阶段范围，均不替代后续准确整合提交的验收。
 
 本文是 AVG 整体产品的唯一施工入口。子规格见[方案目录](avg-production/README.md)，实施顺序见[开发计划](../roadmap/AVG-IMPLEMENTATION-PLAN.md)，逐包范围与验收见[工作包卡](../roadmap/AVG-WORK-PACKAGE-CARDS.md)。本契约覆盖完整目标域；每批施工只承诺已选范围，不能把功能目录当作全部已细化/实现。首场景和短切片是验证集合，不限制产品题材、体量或长期系统范围。
 

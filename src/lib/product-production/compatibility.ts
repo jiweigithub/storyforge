@@ -24,7 +24,15 @@ function stableValues(pkg: AnyProductRuntimePackage): Map<string, string> {
     capabilities: pkg.definition.enabledCapabilities, rulesetVersion: pkg.definition.rulesetVersion,
     entryNodeKey: pkg.narrative.entryNodeKey,
     narrativeModuleKind: pkg.narrative.moduleKind,
+    ...(pkg.ttrpg?.campaign.version === 2 ? { ttrpgProtocol: 2, runFormat: 'open' } : {}),
   })
+  if (pkg.ttrpg?.campaign.version === 2) {
+    // Conservative until an explicit open-save migration contract is available.
+    // No rule, owner, knowledge, pressure or source change may be mislabeled as cosmetic.
+    add('ttrpg-open', 'rule-pack', pkg.ttrpg.rulePack)
+    add('ttrpg-open', 'campaign', pkg.ttrpg.campaign)
+    add('ttrpg-open', 'source', pkg.sourceWorld)
+  }
   for (const [key, value] of Object.entries(pkg.definition.initialVariables)) {
     add('runtime.initial-variable', key, value)
   }

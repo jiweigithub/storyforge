@@ -21,7 +21,7 @@
     "edits": 48
   },
   "baseline": {
-    "path": "tests/acceptance/narrative-world/baseline-20261027-avg-final-ddd-v1.json",
+    "path": "tests/acceptance/narrative-world/baseline-20261027-avg-main-integration-v1.json",
     "policy": "Preserve this dated receipt. Changed corpus requires a new dataset version; changed implementation requires a reviewed new receipt.",
     "history": [
       {
@@ -449,8 +449,33 @@
       },
       {
         "path": "tests/acceptance/narrative-world/baseline-20261025-mainline-integration-v1.json",
-        "workPackage": "NW-mainline-integration",
-        "note": "Frozen mainline receipt preserved unchanged before the AVG exact-source and runtime integration."
+        "workPackage": "NW-engineering-checkpoint",
+        "note": "Preserved before the 2026-10-26 current-main receipt refresh. Original measurements, input hashes and known gaps remain unchanged. / Preserved unchanged before authorized TTRPG schema-v13/shared-lifecycle integration; new receipt must retain identical observed outcomes and frozen corpus."
+      },
+      {
+        "path": "tests/acceptance/narrative-world/baseline-20261026-mainline-integration-v1.json",
+        "workPackage": "NW-engineering-checkpoint",
+        "note": "Preserved before the 2026-10-26 browser-helper race correction. Original observations and input fingerprints remain unchanged."
+      },
+      {
+        "path": "tests/acceptance/narrative-world/baseline-20261026-pr134-integration-v1.json",
+        "workPackage": "NW-integration",
+        "note": "Preserved PR208/PR134 integration receipt before combining the mainline navigation and PR209 editor/browser fixes."
+      },
+      {
+        "path": "tests/acceptance/narrative-world/baseline-20261026-browser-helper-v2.json",
+        "workPackage": "NW-integration",
+        "note": "Preserved before PR208 mainline integration. Separately executed current-tree observations remain identical to both prior branch receipts; original hashes and gaps stay archived."
+      },
+      {
+        "path": "tests/acceptance/narrative-world/baseline-20261026-ttrpg-integration-v1.json",
+        "workPackage": "TTRPG-v13-integration",
+        "note": "Preserved byte-for-byte before the final combined PR209/TTRPG integration; original observations, hashes and known gaps remain available."
+      },
+      {
+        "path": "tests/acceptance/narrative-world/baseline-20261027-pr208-integration-v3.json",
+        "workPackage": "NW-PR209-mainline-integration",
+        "note": "Preserved byte-for-byte before the final combined PR209/TTRPG integration; original observations, hashes and known gaps remain available."
       },
       {
         "path": "tests/acceptance/narrative-world/baseline-20261025-avg-source-integration-v1.json",
@@ -469,29 +494,14 @@
         "note": "Preserved original AVG final integration input receipt before main 69e2a928."
       },
       {
-        "path": "tests/acceptance/narrative-world/baseline-20261026-pr134-integration-v1.json",
-        "workPackage": "main-PR134-integration",
-        "note": "Preserved mainline receipt before integration with AVG media branch."
-      },
-      {
-        "path": "tests/acceptance/narrative-world/baseline-20261026-mainline-integration-v1.json",
-        "workPackage": "NW-engineering-checkpoint",
-        "note": "Preserved before the 2026-10-26 browser-helper race correction. Original observations and input fingerprints remain unchanged."
-      },
-      {
-        "path": "tests/acceptance/narrative-world/baseline-20261026-browser-helper-v2.json",
-        "workPackage": "NW-integration",
-        "note": "Preserved before PR208 mainline integration. Separately executed current-tree observations remain identical to both prior branch receipts; original hashes and gaps stay archived."
-      },
-      {
         "path": "tests/acceptance/narrative-world/baseline-20261027-avg-final-main69e-v1.json",
         "workPackage": "AVG-final-main69e",
         "note": "Preserved before latest main ddd673ebb integration."
       },
       {
-        "path": "tests/acceptance/narrative-world/baseline-20261027-pr208-integration-v3.json",
-        "workPackage": "main-PR208-integration",
-        "note": "Preserved upstream receipt before AVG integration."
+        "path": "tests/acceptance/narrative-world/baseline-20261027-pr209-ttrpg-integration-v1.json",
+        "workPackage": "NW-pr209-ttrpg-integration",
+        "note": "Preserved before AVG/main shared-protocol integration; original measurements and known gaps remain unchanged."
       }
     ],
     "comparison": "NW-2E checkpoint of the unchanged legacy v3 120-query comparator. Typed v4 query, exact product plans, current impact diagnostics and scale failures have separate receipts; no model or human quality acceptance is inferred."
@@ -548,7 +558,6 @@
     "src/lib/agent/world-query-tool-schema.ts",
     "src/lib/ai/chapter-memory/canonical-chapter-sequence.ts",
     "src/lib/ai/chapter-memory/text-normalization.ts",
-    "src/lib/avg/branch-origin.ts",
     "src/lib/consistency/impact-analysis.ts",
     "src/lib/consistency/world-impact.ts",
     "src/lib/context-gateway/attempt-evidence.ts",
@@ -585,8 +594,6 @@
     "src/lib/product-production/world-source.ts",
     "src/lib/product/exact-source-contracts.ts",
     "src/lib/product/runtime-core.ts",
-    "src/lib/product/runtime-product-adapters.ts",
-    "src/lib/product/runtime-source-branch.ts",
     "src/lib/product/runtime-source-manifest.ts",
     "src/lib/product/source-contracts.ts",
     "src/lib/product/world-requirement-adapters.ts",
@@ -752,21 +759,15 @@
     "tests/regression/R-NW-2D-recovery.test.ts",
     "tests/regression/R-NW-2E-author-quality-contract.test.ts",
     "tests/regression/R-NW-2E-author-quality-inputs.test.ts",
-    "tests/regression/R-NW-2E-byte-sink.test.ts",
     "tests/regression/R-NW-2E-canonical-root.test.ts",
     "tests/regression/R-NW-2E-deferred-projection.test.ts",
     "tests/regression/R-NW-2E-domain-allocations.test.ts",
-    "tests/regression/R-NW-2E-frozen-reference-binding.test.ts",
     "tests/regression/R-NW-2E-frozen-shapes.test.ts",
-    "tests/regression/R-NW-2E-fused-freeze-hash.test.ts",
     "tests/regression/R-NW-2E-grounded-knowledge.test.ts",
     "tests/regression/R-NW-2E-hash-backend.test.ts",
-    "tests/regression/R-NW-2E-identity-syntax.test.ts",
     "tests/regression/R-NW-2E-json-memory.test.ts",
     "tests/regression/R-NW-2E-lifecycle.test.ts",
-    "tests/regression/R-NW-2E-numeric-runs.test.ts",
     "tests/regression/R-NW-2E-packing.test.ts",
-    "tests/regression/R-NW-2E-posting-ownership.test.ts",
     "tests/regression/R-NW-2E-reader-contract.test.ts",
     "tests/regression/R-NW-2E-reader-evaluation.test.ts",
     "tests/regression/R-NW-2E-reader-judge.test.ts",
@@ -775,8 +776,6 @@
     "tests/regression/R-NW-2E-reference-index.test.ts",
     "tests/regression/R-NW-2E-scale-v2.test.ts",
     "tests/regression/R-NW-2E-scale.test.ts",
-    "tests/regression/R-NW-2E-token-digest.test.ts",
-    "tests/regression/R-NW-2E-utf8-token-bytes.test.ts",
     "tests/regression/R-NW-2E-verified-ir.test.ts",
     "tests/regression/R-NW-2E-version-dispatch.test.ts",
     "tests/regression/R-OPEN-WORLD4-player-save-store-integration.test.ts",
@@ -787,7 +786,15 @@
     "tests/regression/R-STORY1-story-intent-projection.test.ts",
     "tests/regression/R-WORLD-D-phase-d-closure.test.ts",
     "tests/setup.ts",
-    "vitest.config.ts"
+    "vitest.config.ts",
+    "tests/regression/R-NW-2E-posting-ownership.test.ts",
+    "tests/regression/R-NW-2E-fused-freeze-hash.test.ts",
+    "tests/regression/R-NW-2E-identity-syntax.test.ts",
+    "tests/regression/R-NW-2E-frozen-reference-binding.test.ts",
+    "tests/regression/R-NW-2E-token-digest.test.ts",
+    "tests/regression/R-NW-2E-byte-sink.test.ts",
+    "tests/regression/R-NW-2E-numeric-runs.test.ts",
+    "tests/regression/R-NW-2E-utf8-token-bytes.test.ts"
   ],
   "splitPolicy": {
     "unit": "complete scenario family",

@@ -51,6 +51,7 @@ import {
   productReleaseIdentityHashV2,
   verifyProductReleaseManifest,
   verifyProductReleaseManifestV1,
+  parseProductRuntimePackageV1,
 } from './runtime-package'
 import { verifyProductBuildRootTerminalReceiptV1 } from './receipts'
 import { verifyStoredProductBuildRootBudgetEvidenceV1 } from './root-budget-evidence-store'
@@ -328,7 +329,7 @@ async function priorReleaseLineageV1(input: {
     .sort((left, right) => right.version - left.version)
   const latest = rows[0]
   if (!latest) return { version: 1, parentRelease: null, sourceManifest: null }
-  const manifest = await verifyProductReleaseManifest(latest.manifestJson)
+  const manifest = await verifyProductReleaseManifest(latest.manifestJson, { ttrpgProtocol: 2 })
   const creatorSource = 'schema' in manifest.sourceContracts
     && manifest.sourceContracts.schema === 'storyforge.text-open-world-creator-release-source-contracts'
   return {
@@ -379,7 +380,7 @@ async function inspectAdoption(scope: WorkspaceScope, productionId: number): Pro
   if (creatorDerived == null && await hashProductProductionValueV2(brief) !== briefRow.briefHash) {
     fail('Brief hash 校验失败')
   }
-  const preview = await verifyProductBuildPreviewManifest(build.previewManifestJson)
+  const preview = await verifyProductBuildPreviewManifest(build.previewManifestJson, { ttrpgProtocol: 2 })
   if (preview.previewHash !== build.previewHash || preview.buildManifestHash !== build.manifestHash
     || preview.packageHash !== build.packageHash || preview.productionKey !== production.productionKey
     || preview.buildNumber !== build.buildNumber || preview.runtimePackage.sourceWorld.contentHash !== brief.source.worldContentHash) {
@@ -557,7 +558,7 @@ async function inspectAdoption(scope: WorkspaceScope, productionId: number): Pro
     )
     if (preview.runtimePackage.version !== 1) fail('Creator Release 必须使用 V1 RuntimePackage')
     const integrationReport = await validateTextOpenWorldIntegrationReportV1({
-      runtimePackage: preview.runtimePackage,
+      runtimePackage: parseProductRuntimePackageV1(preview.runtimePackage),
       report: integrationValue as TextOpenWorldIntegrationReportV1,
       expectedPlanHash: build.planHash,
     })
@@ -708,8 +709,11 @@ async function inspectAdoption(scope: WorkspaceScope, productionId: number): Pro
     fail('RuntimePackage来源Hash与正式来源合同不一致')
   }
   if (!creatorReleaseAuthority && sourcePlan && (
-    sourcePlan.worldReference.localReleaseRecordId !== brief.source.worldReleaseId
+    // The frozen Brief is historical input. Its original local locator is
+    // never rewritten under the Brief hash during a complete project import.
+    sourcePlan.worldReference.localReleaseRecordId !== briefRow.sourceWorldReleaseId
     || sourcePlan.worldReference.releaseHash !== brief.source.worldContentHash
+    || sourcePlan.worldReference.releaseHash !== briefRow.sourceWorldContentHash
   )) {
     fail('WorldReference 来源绑定失败')
   }
@@ -801,6 +805,9 @@ export async function prepareCommunityPrototypeProductReleaseV1(input: {
     || !verified.confirmedBrief || !verified.sourceManifest) {
     fail('社区候选包当前只支持共享WorldRelease来源产品')
   }
+  // Preserve this legacy community format's protocol-1 boundary. Normal
+  // author publication below explicitly reads the current versioned package.
+  const runtimePackage = parseProductRuntimePackageV1(verified.runtimePackage)
   const productionProvenance: NonNullable<ProductReleaseManifestV1['productionProvenance']> = {
     productionKey: verified.intent.productionKey,
     buildNumber: verified.intent.buildNumber,
@@ -815,10 +822,10 @@ export async function prepareCommunityPrototypeProductReleaseV1(input: {
   }
   const identityBody: Omit<ProductReleaseManifestV1, 'releaseIdentityHash' | 'lineage'> = {
     schema: 'storyforge.product-release', version: 1,
-    productType: verified.runtimePackage.productType,
-    sourceWorldRelease: { contentHash: verified.runtimePackage.sourceWorld.contentHash },
-    runtimePackage: verified.runtimePackage,
-    packageHash: await hashProductProductionValueV2(verified.runtimePackage),
+    productType: runtimePackage.productType,
+    sourceWorldRelease: { contentHash: runtimePackage.sourceWorld.contentHash },
+    runtimePackage,
+    packageHash: await hashProductProductionValueV2(runtimePackage),
     productionProvenance,
     sourceContracts,
   }
@@ -854,7 +861,7 @@ export async function prepareCommunityPrototypeProductReleaseV1(input: {
     createdAt: releaseCreatedAt,
   })
   const manifest = await createProductReleaseManifestV1({
-    runtimePackage: verified.runtimePackage,
+    runtimePackage,
     productionProvenance,
     sourceContracts,
     lineage,
@@ -1086,7 +1093,7 @@ export async function publishProductProductionBuild(input: {
         producerReceiptHash: row.producerReceiptHash,
       })),
       releaseAuthorization: creatorAuthorization,
-      runtimePackage: prepared.runtimePackage,
+      runtimePackage: parseProductRuntimePackageV1(prepared.runtimePackage),
     })
   } else {
     if (!prepared.sourcePlan || !prepared.confirmedBrief || !prepared.sourceManifest) {
@@ -1121,7 +1128,7 @@ export async function publishProductProductionBuild(input: {
   }
   const compatibility = {
     status: prepared.compatibilityStatus,
-    protocolVersion: 1,
+    protocolVersion: prepared.runtimePackage.productType === 'ttrpg' && prepared.runtimePackage.ttrpg?.campaign.version === 2 ? 2 : 1,
     evidenceHashes: [prepared.compatibilityHash],
   }
   const lineage = prepared.creatorReleaseAuthority
@@ -1166,7 +1173,7 @@ export async function publishProductProductionBuild(input: {
           sourceManifest: ProductSourceManifest
         },
         lineage: lineage as ProductReleaseLineageV1,
-      })
+      }, { ttrpgProtocol: 2 })
   const manifestJson = canonicalProductProductionJsonV2(releaseManifest)
   const contentHash = await hashProductProductionValueV2(releaseManifest)
   const { assertProductBuildTerminalReadSetUnchangedV1 } = await import('./artifact-store')

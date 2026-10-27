@@ -1,8 +1,10 @@
+import { bindPreparedProductRuntimeBranchLineageV1 } from './runtime-branch-lineage'
 import { normalizeProductRuntimeCheckpointPurposeV1 } from "./runtime-checkpoint-purpose";
 export { normalizeProductRuntimeCheckpointPurposeV1 } from "./runtime-checkpoint-purpose";
 import { assertProductOwnedRuntimeInvariantsV1 } from './runtime-product-adapters'
 /** Product-neutral session, event-log, checkpoint and projection infrastructure. */
 import Dexie from "dexie";
+import { createProductRuntimeHeadParsingV1 } from "./runtime-head-parsing";
 import { assertProductReleaseUnchanged } from "./releases";
 import { cascadeRegisteredReferences } from "../workspace/lifecycle";
 import { db } from "../db/schema";
@@ -26,6 +28,11 @@ import {
   rebaseProductRuntimeStateForBranchV1,
   createProductOwnedBranchOriginV1,
   verifyProductOwnedBranchOriginV1,
+  prepareProductRuntimeStateForBranchV1,
+  consumeProductRuntimeBranchPreparationV1,
+  createProductOwnedRuntimeBranchV1,
+  productRuntimeContentReaderV1,
+  type ProductRuntimePackageForAdaptersV1,
 } from "./runtime-product-adapters";
 export type JsonObject = ProductRuntimeJsonObjectV1;
 export const stableJson = stableProductRuntimeJsonV1;
@@ -1177,7 +1184,10 @@ export async function prepareReleasedProductRuntimeSessionRecordV1(
   input: CreateReleasedProductRuntimeSessionInput,
   branchLineage?: { parentSessionId: number; parentThroughSequence: number },
 ): Promise<ProductRuntimeSession> {
-  const productRelease = await assertProductReleaseUnchanged(input.productReleaseId);
+  const reader = productRuntimeContentReaderV1(input.kind);
+  const productRelease = reader
+    ? await assertProductReleaseUnchanged(input.productReleaseId, reader)
+    : await assertProductReleaseUnchanged(input.productReleaseId);
   if (
     productRelease.projectId !== input.projectId ||
     productRelease.worldId !== input.worldId ||
@@ -1185,8 +1195,9 @@ export async function prepareReleasedProductRuntimeSessionRecordV1(
   ) {
     throw new Error("上层产品的 ProductRelease 绑定无效。");
   }
-  const manifest = await verifyProductReleaseManifest(productRelease.manifestJson);
+  const manifest = await verifyProductReleaseManifest(productRelease.manifestJson, reader);
   const runtimePackage = requirePlayableProductRuntimePackage(manifest.runtimePackage);
+  if (input.origin === 'branch') await consumeProductRuntimeBranchPreparationV1(input.kind, input.initialState, manifest.packageHash);
   const sourceManifest = await runtimeSourceManifestFromReleaseV1(manifest);
   assertFrozenRuntimePackageSessionV1({
     session: input,
@@ -1205,19 +1216,7 @@ export async function prepareReleasedProductRuntimeSessionRecordV1(
     productBuildId: null,
     runtimeSourceHash: manifest.packageHash,
   }, runtimePackage.definition.rulesetVersion);
-  if (branchLineage) {
-    const { parentSessionId, parentThroughSequence } = branchLineage;
-    const parent = Number.isSafeInteger(parentSessionId) && parentSessionId > 0
-      ? await db.productRuntimeSessions.get(parentSessionId) : null;
-    if (input.origin !== "branch" || !parent || parent.projectId !== session.projectId
-      || parent.worldId !== session.worldId || parent.workId !== session.workId || parent.kind !== session.kind
-      || !Number.isSafeInteger(parentThroughSequence) || parentThroughSequence < 0
-      || parentThroughSequence > (parent.runtimeHeadSequence ?? 0)) {
-      throw new Error("正式产品分支的父会话或序列不属于当前作用域。");
-    }
-    session.parentSessionId = parentSessionId;
-    session.parentThroughSequence = parentThroughSequence;
-  }
+  await bindPreparedProductRuntimeBranchLineageV1(session, input.origin, branchLineage);
   await assertProductRuntimeSourceSnapshotV3({ session, manifest: sourceManifest });
   preparedProductRuntimeSessionsV1.set(session, stableJson(session));
   return session;
@@ -1226,6 +1225,7 @@ export async function prepareReleasedProductRuntimeSessionRecordV1(
 /** Prepare a governed Build-preview session before the atomic commit phase. */
 export async function preparePreviewProductRuntimeSessionRecordV1(
   input: CreatePreviewProductRuntimeSessionInput,
+  branchLineage?: { parentSessionId: number; parentThroughSequence: number },
 ): Promise<ProductRuntimeSession> {
   const verified = await verifyProductRuntimeSource({
     scope: {
@@ -1238,10 +1238,12 @@ export async function preparePreviewProductRuntimeSessionRecordV1(
       productBuildId: input.productBuildId,
       expectedPreviewHash: input.expectedPreviewHash,
     },
+    ...productRuntimeContentReaderV1(input.kind),
   });
   if (verified.runtimeSourceHash !== input.runtimeSourceHash) {
     throw new Error("上层产品的 Build Preview 冻结绑定无效。");
   }
+  if (input.origin === 'branch') await consumeProductRuntimeBranchPreparationV1(input.kind, input.initialState, verified.runtimeSourceHash);
   assertFrozenRuntimePackageSessionV1({
     session: input,
     runtimePackage: verified.runtimePackage,
@@ -1259,6 +1261,7 @@ export async function preparePreviewProductRuntimeSessionRecordV1(
     productBuildId: input.productBuildId,
     runtimeSourceHash: verified.runtimeSourceHash,
   }, verified.runtimePackage.definition.rulesetVersion);
+  await bindPreparedProductRuntimeBranchLineageV1(session, input.origin, branchLineage);
   await assertProductRuntimeSourceSnapshotV3({ session, manifest: verified.sourceManifest });
   preparedProductRuntimeSessionsV1.set(session, stableJson(session));
   return session;
@@ -1487,6 +1490,11 @@ async function verifyNativeAvgInitialSnapshot(session: ProductRuntimeSession): P
   return true
 }
 
+const parseRuntimeHead = createProductRuntimeHeadParsingV1(
+  parseProductRuntimeState,
+  cloneState,
+);
+
 export async function readVerifiedProductRuntimeHeadV1(
   session: ProductRuntimeSession,
 ): Promise<ProductRuntimeHeadV1> {
@@ -1502,7 +1510,7 @@ export async function readVerifiedProductRuntimeHeadV1(
     /^[a-f0-9]{64}$/.test(cachedHash)
   ) {
     try {
-      const state = parseProductRuntimeState(cachedJson);
+      const state = parseRuntimeHead(cachedJson);
       if (
         state.lastSequence === latestSequence &&
         (await hashStateJson(cachedJson)) === cachedHash
@@ -1674,7 +1682,7 @@ export async function readProductRuntimeStateVersion(sessionId: number): Promise
 }
 
 export type VerifiedFormalRuntimeSourceV1 = {
-  runtimePackage: AnyProductRuntimePackage;
+  runtimePackage: ProductRuntimePackageForAdaptersV1;
   packageHash: string;
   source:
     | { kind: "release"; release: ProductRelease & { id: number } }
@@ -1712,6 +1720,7 @@ export async function verifyFormalRuntimeSourceV1(
       workId: session.workId,
     },
     session,
+    ...productRuntimeContentReaderV1(session.kind),
   });
   if (
     playable.packageHash !== session.runtimeSourceHash ||
@@ -2243,7 +2252,7 @@ async function branchProductRuntimeSessionInternal(
   if (!parent) throw new Error("父产品运行会话不存在。");
   await verifyProductRuntimeSessionSourceV1({ scope: {
     projectId: parent.projectId, worldId: parent.worldId, workId: parent.workId,
-  }, session: parent });
+  }, session: parent, ...productRuntimeContentReaderV1(parent.kind) });
   await verifyNativeAvgInitialSnapshot(parent);
   const events = await readSessionEvents(parent);
   const latest = events.reduce(
@@ -2256,12 +2265,12 @@ async function branchProductRuntimeSessionInternal(
     input.throughSequence > latest
   )
     throw new Error("分支序号不在父会话事件范围内。");
-  const state = replayProductRuntimeEvents(
+  const cutpoint = replayProductRuntimeEvents(
     parseProductRuntimeState(parent.initialStateJson),
     events,
     input.throughSequence,
   );
-  rebaseProductRuntimeStateForBranchV1(state, input.throughSequence);
+  const state = await prepareProductRuntimeStateForBranchV1({ parent, state: cutpoint, events, throughSequence: input.throughSequence });
   state.lastSequence = 0;
   const childInput: CreateProductRuntimeSessionInput = {
     projectId: parent.projectId,
@@ -2272,6 +2281,8 @@ async function branchProductRuntimeSessionInternal(
     canonSnapshot: await createProductOwnedBranchOriginV1({ parent, state, events, throughSequence: input.throughSequence }),
     initialState: state,
   };
+  const ownedBranch = await createProductOwnedRuntimeBranchV1({ parent, state, childInput, events, throughSequence: input.throughSequence });
+  if (ownedBranch) return ownedBranch;
   let child: ProductRuntimeSession;
   if (parent.productReleaseId != null) {
     child = await createReleasedProductRuntimeSession({

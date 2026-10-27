@@ -28,16 +28,26 @@ import {
   parseTextOpenWorldSessionProjectionV1,
   rebaseTextOpenWorldSessionProjectionForBranchV1,
 } from '../open-world/session-projection'
-import { assertInitialTtrpgProductStateV1 } from '../ttrpg/runtime'
+import { assertInitialTtrpgProductStateV1, assertInitialTtrpgOpenProductStateV1 } from '../ttrpg/runtime'
+import { projectTtrpgRulePackMechanicalCoreV1 } from '../ttrpg/rule-pack-v2'
 import { applyTtrpgRuntimeEventV1 } from '../ttrpg/runtime-event-reducer'
-import { cloneTtrpgRuntimeBranchExtensionsV1 } from '../ttrpg/runtime-branch'
+import { cloneTtrpgRuntimeBranchExtensionsV1, createTtrpgRuntimeOwnedBranchV1 } from '../ttrpg/runtime-branch'
 import { parseTtrpgState } from '../ttrpg/runtime-state'
+import { parseTtrpgRuntimeStateV2 } from '../ttrpg/open-runtime-contract'
+import { TTRPG_RUNTIME_CONTENT_READER_V1, prepareTtrpgRuntimeBranchStateV1,
+  consumeTtrpgRuntimeBranchPreparationV1 } from '../ttrpg/runtime-product-adapter'
+import type { CreateProductRuntimeSessionInput } from './runtime-core'
 import { applyAiTownEventV1, createInitialAiTownStateV1, parseAiTownStateV1, rebaseAiTownStateForBranchV1 } from '../ai-town/runtime'
+import {
+  isTtrpgRuntimeContentV1,
+  isTtrpgRuntimeContentV2,
+} from '../ttrpg/content-version'
 import type {
   ProductRuntimeEvent,
   AnyProductRuntimePackage,
   ProductRuntimeSession,
   ProductRuntimeState,
+  ProductRuntimeKind,
   FrozenNarrativeChoice,
 } from '../types'
 import {
@@ -72,6 +82,13 @@ export async function createProductOwnedBranchOriginV1(input: {
   return { ...canon, avgBranchOrigin }
 }
 
+export type ProductRuntimePackageForAdaptersV1 = AnyProductRuntimePackage
+
+/** Protocol selection belongs to the product composition root, not the runtime core. */
+export function productRuntimeContentReaderV1(kind: ProductRuntimeKind) {
+  return kind === 'ttrpg' ? TTRPG_RUNTIME_CONTENT_READER_V1 : undefined
+}
+
 export function parseProductOwnedRuntimeStateV1(
   value: ProductRuntimeState,
 ): Pick<
@@ -81,7 +98,9 @@ export function parseProductOwnedRuntimeStateV1(
   return {
     ...(Object.prototype.hasOwnProperty.call(value, 'avgReading') ? { avgReading: parseAvgReadingStateV1(value.avgReading) } : {}),
     ...(Object.prototype.hasOwnProperty.call(value, 'avgRules') ? { avgRules: parseAvgRuntimeRulesStateV1(value.avgRules) } : {}),
-    ttrpg: parseTtrpgState(value.ttrpg),
+    ttrpg: value.ttrpg && 'runFormat' in value.ttrpg && value.ttrpg.runFormat === 'open'
+      ? parseTtrpgRuntimeStateV2(value.ttrpg)
+      : parseTtrpgState(value.ttrpg),
     interaction: parseInteractionState(value.interaction),
     adventure: parseAdventureState(value.adventure),
     presentation: parseAvgPresentationState(value.presentation),
@@ -474,9 +493,18 @@ export function assertFrozenProductRuntimeStateV1(input: {
     return
   }
 
+  if (runtimePackage.ttrpg && isTtrpgRuntimeContentV2(runtimePackage.ttrpg)) {
+    assertInitialTtrpgOpenProductStateV1({ state: initial, content: runtimePackage.ttrpg,
+      mechanicalRulePack: projectTtrpgRulePackMechanicalCoreV1(runtimePackage.ttrpg.rulePack.content),
+      allowProgress: input.origin === 'branch' })
+    return
+  }
+  if (!runtimePackage.ttrpg || !isTtrpgRuntimeContentV1(runtimePackage.ttrpg)) {
+    throw new Error('scripted TTRPG 初始状态缺少 protocol-1 内容。')
+  }
   assertInitialTtrpgProductStateV1({
     state: initial,
-    content: runtimePackage.ttrpg!,
+    content: runtimePackage.ttrpg,
     allowProgress: input.origin === 'branch',
   })
 }
@@ -485,6 +513,9 @@ export function rebaseProductRuntimeStateForBranchV1(
   state: ProductRuntimeState,
   throughSequence: number,
 ): ProductRuntimeState {
+  if (state.ttrpg && 'runFormat' in state.ttrpg && state.ttrpg.runFormat === 'open') {
+    throw new Error('[ttrpg] open 分支血缘与来源继承尚未交付，不能按 scripted 静默克隆')
+  }
   if (state.interaction) {
     state.interaction = rebaseInteractionStateForBranch(state.interaction, throughSequence)
   }
@@ -497,6 +528,30 @@ export function rebaseProductRuntimeStateForBranchV1(
     state.textOpenWorld = rebaseTextOpenWorldSessionProjectionForBranchV1(state.textOpenWorld)
   }
   return state
+}
+
+/** Only the branch coordinator supplies actual cutpoint evidence. Legacy product rebases stay synchronous. */
+export async function prepareProductRuntimeStateForBranchV1(input: {
+  parent: ProductRuntimeSession; state: ProductRuntimeState; events: ProductRuntimeEvent[]; throughSequence: number;
+}): Promise<ProductRuntimeState> {
+  if (input.parent.kind === 'ttrpg') {
+    const state = await prepareTtrpgRuntimeBranchStateV1(input)
+    if (state) return state
+  }
+  return rebaseProductRuntimeStateForBranchV1(input.state, input.throughSequence)
+}
+export async function consumeProductRuntimeBranchPreparationV1(
+  kind: ProductRuntimeKind, state: ProductRuntimeState | undefined, runtimeSourceHash: string,
+): Promise<void> {
+  if (kind === 'ttrpg') await consumeTtrpgRuntimeBranchPreparationV1(state, runtimeSourceHash)
+}
+
+/** Product-owned atomic branch strategies; null keeps the original generic path. */
+export async function createProductOwnedRuntimeBranchV1(input: {
+  parent: ProductRuntimeSession; state: ProductRuntimeState; childInput: CreateProductRuntimeSessionInput
+  events: ProductRuntimeEvent[]; throughSequence: number
+}): Promise<ProductRuntimeSession | null> {
+  return input.parent.kind === 'ttrpg' ? createTtrpgRuntimeOwnedBranchV1(input) : null
 }
 
 export function assertProductNarrativeChoiceReadyV1(input: {

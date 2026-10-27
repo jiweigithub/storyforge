@@ -1,3 +1,4 @@
+import { productRuntimeContentReaderV1 } from '../product/runtime-product-adapters'
 import type { ProductBuildArtifactRecordV1, ProductBuildRecordV1, ProductProductionRecordV1,
   AnyProductRuntimePackage } from '../types'
 import { parseProductBuildManifestV1 } from './adoption'
@@ -58,8 +59,8 @@ export async function resolveProductBuildCompatibilityPackageV1(input: {
     || row.producerReceiptHash !== member.producerReceiptHash) {
     fail('历史 package Artifact 与冻结成员或 owner 不一致')
   }
-  // Native AVG V2 and legacy V1 packages retain the same frozen-member proof.
-  const runtimePackage = parseProductRuntimePackage(row.payloadJson)
+  const reader = productRuntimeContentReaderV1(production.productType)
+  const runtimePackage = parseProductRuntimePackage(row.payloadJson, reader)
   if (runtimePackage.productType !== production.productType
     || await hashProductProductionValueV2(runtimePackage) !== build.packageHash) {
     fail('历史 package Artifact 产品或 payload hash 不一致')
