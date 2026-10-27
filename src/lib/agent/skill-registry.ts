@@ -4664,7 +4664,7 @@ export const AGENT_SKILLS = [
     contextCompression: compressionPolicy(['manualText']),
     maxOutputTokens: 16_000,
     writeTargets: [],
-    lastVerifiedAt: '2026-09-11',
+    lastVerifiedAt: '2026-10-27',
     regressionTests: ['R-OPEN-WORLD5-creator-artifact-edit-context-agent'],
   },
   {
@@ -4998,7 +4998,7 @@ export const AGENT_SKILLS = [
     ]),
     maxOutputTokens: 24_000,
     writeTargets: [{ table: 'productBuildArtifacts', fields: ['payloadJson'], adoptionExtension: 'product-production-artifacts' }],
-    lastVerifiedAt: '2026-09-11',
+    lastVerifiedAt: '2026-10-27',
     regressionTests: ['R-TEXTADV3-agent-team'],
   },
   {
