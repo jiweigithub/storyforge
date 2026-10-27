@@ -1214,15 +1214,6 @@ async function applyCommand(input: {
 
   if (command.type === 'save-brief-revision') {
     const brief = command.brief
-    if (brief.avgAudioProcessing && !avgAudioProcessingExecutionReadyV1()) reject('brief-not-authorized', 'AVG 本地声音加工链尚未就绪，请保留原件，稍后再开始')
-    if (brief.avgSoundPlanning && !avgSoundProductionExecutionReadyV1()) reject('brief-not-authorized', 'AVG 声音实际生产、审听和采用闭环尚未接通，不能准备新任务')
-    if (brief.avgVisualPlanning && !(brief.avgVisualPlanning.version===5?avgVisualPlanningExecutionReadyV5():avgVisualPlanningExecutionReadyV4())) reject('brief-not-authorized', 'AVG 专业视觉候选采用和需求消费尚未接通，不能准备新任务')
-    if (brief.avgAssembly?.version === 3 && !avgVoiceProductionEnabledV3()) reject('brief-not-authorized', 'AVG 配音生产的采用、编译与恢复闭环尚未开放，不能准备新任务')
-    if (brief.avgAssembly?.version === 3) await assertVoicePacketForCommand(brief, scope, production.id, production.currentBuildNumber)
-    if (brief.avgAssembly?.version === 2 && !avgMediaProductionEnabledV2()) reject('brief-not-authorized', 'AVG 实验性媒资生产尚未启用，不能准备新任务')
-    if (brief.intent.productType !== production.productType) {
-      reject('production-state-conflict', 'Brief 产品身份与 Production 根记录不一致')
-    }
     const expectedParent = production.currentBriefRevision
     if (command.parentRevision !== expectedParent) reject('production-state-conflict', 'Brief parent revision 已过期')
     const revision = await nextBriefRevision(production.id)
@@ -1248,6 +1239,14 @@ async function applyCommand(input: {
       if (brief.intent.productType !== production.productType) {
         reject('production-state-conflict', 'Brief 产品身份与 Production 根记录不一致')
       }
+      // AVG extensions belong to this legacy Brief. Open TTRPG V3 carries
+      // its own prepared content and deliberately has no legacy Brief.
+      if (brief.avgAudioProcessing && !avgAudioProcessingExecutionReadyV1()) reject('brief-not-authorized', 'AVG 本地声音加工链尚未就绪，请保留原件，稍后再开始')
+      if (brief.avgSoundPlanning && !avgSoundProductionExecutionReadyV1()) reject('brief-not-authorized', 'AVG 声音实际生产、审听和采用闭环尚未接通，不能准备新任务')
+      if (brief.avgVisualPlanning && !(brief.avgVisualPlanning.version===5?avgVisualPlanningExecutionReadyV5():avgVisualPlanningExecutionReadyV4())) reject('brief-not-authorized', 'AVG 专业视觉候选采用和需求消费尚未接通，不能准备新任务')
+      if (brief.avgAssembly?.version === 3 && !avgVoiceProductionEnabledV3()) reject('brief-not-authorized', 'AVG 配音生产的采用、编译与恢复闭环尚未开放，不能准备新任务')
+      if (brief.avgAssembly?.version === 3) await assertVoicePacketForCommand(brief, scope, production.id, production.currentBuildNumber)
+      if (brief.avgAssembly?.version === 2 && !avgMediaProductionEnabledV2()) reject('brief-not-authorized', 'AVG 实验性媒资生产尚未启用，不能准备新任务')
       if (sourcePlan.productInstanceKey !== production.productionKey
         || sourcePlan.productType !== brief.intent.productType
         || sourcePlan.worldReference.localReleaseRecordId !== brief.source.worldReleaseId
@@ -3239,7 +3238,7 @@ async function executeTransaction(input: {
     ...(command.type === 'adopt-avg-artifact' || command.type === 'evolve' && command.base.kind === 'recovery-build' ? [db.avgDraftMedia] : []),
     // Single-line local voice repair proves the adopted parent stage in the
     // same command snapshot; its manually imported companion media stay scoped.
-    ...(command.type === 'save-brief-revision' && command.brief.avgAssembly?.version === 3
+    ...(command.type === 'save-brief-revision' && command.brief?.avgAssembly?.version === 3
       || command.type === 'authorize-start' && input.preparedSourcePlan?.productType === 'avg' ? [db.avgDraftMedia] : []),
     db.agentRuns, db.agentRunEvents, db.agentRunCheckpoints, db.agentRunArtifacts,
     ...(command.type === 'authorize-text-open-world-creator-start'
