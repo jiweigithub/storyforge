@@ -1,0 +1,48 @@
+{
+  "schema": "storyforge.character-chat-three-lane-delivery",
+  "version": 1,
+  "date": "2026-10-26",
+  "implementationCommit": "863188263a586b6bbb34f44547d55a36c6189ffa",
+  "implementationEvidence": "tests/acceptance/character-chat-three-lanes-20261026.json",
+  "implementationEvidenceSha256": "8363bc9473e5489a32a297065170b20e4c1a4868f74fea7d13094e951d8f1154",
+  "ci": {
+    "command": "npm run ci",
+    "exitCode": 0,
+    "testFilesPassed": 1087,
+    "testsPassed": 7637,
+    "testsSkipped": 3,
+    "vitestDurationSeconds": 2924.4,
+    "coveragePercent": {
+      "statements": 89.12,
+      "branches": 76.06,
+      "functions": 88.42,
+      "lines": 89.12
+    },
+    "productionBuild": "passed",
+    "bundleSize": "passed",
+    "logSha256": "77c0495d35661b40df2b0d138f2bcdec373eb5d9c608cf2ae7a3ea14553d5c5a",
+    "coverageScope": "Configured registry, DB, import/export and AI logic scope in vitest.config.ts; not all UI/application source."
+  },
+  "browser": {
+    "finalRelevantJourneysPassed": 3,
+    "implementationMatchesRecordedSourceHashes": true,
+    "scope": [
+      "desktop and mobile",
+      "original provider PNG hashes",
+      "explicit failed-image retry",
+      "device voice fixture",
+      "provider failure without placeholder substitution",
+      "refresh",
+      "isolated export/import"
+    ],
+    "notClaimed": "A complete repository-wide browser suite at this commit, human art/voice approval or continuous real-model stability."
+  },
+  "delivery": {
+    "pullRequest": 172,
+    "branch": "feat/character-chat-optimization-20261006",
+    "status": "draft",
+    "merged": false,
+    "deployed": false,
+    "nextCommitScope": "Delivery receipt and progress checklist only; implementation and tests unchanged."
+  }
+}

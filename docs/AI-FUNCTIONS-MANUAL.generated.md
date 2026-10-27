@@ -80,7 +80,7 @@
 
 ## 二、上下文源清单（CONTEXT_SOURCES · AI 读什么）
 
-共 157 个上下文源。assembleContext({ sourceKeys }) 按 key 装配。
+共 167 个上下文源。assembleContext({ sourceKeys }) 按 key 装配。
 
 | key | 标签 | 作用域 | 层级 | 预算(token) |
 |---|---|---|---|---|
@@ -116,11 +116,18 @@
 | `ttrpg.open.authoring-design` | 开放跑团作者设计的准确草稿与冻结来源 | project | L0 | 24000 |
 | `ai-town.authoring` | AI 小镇 作者方案与会谈 | project | L0 | 16000 |
 | `avg.authoring` | AVG 作者方案与会谈 | project | L0 | 16000 |
+| `chat.runtime-visuals` | 角色聊天已提交事件的画面依据 | project | L0 | 12000 |
 | `chat.authoring` | 角色聊天作者方案与会谈 | project | L0 | 16000 |
+| `chat.consultation` | 角色聊天本轮方案与所选证据 | project | L0 | 20000 |
+| `chat.source-review` | 角色聊天作者选中的原文资料 | project | L0 | 20000 |
+| `chat.source-units` | 角色聊天待整理事实的完整原文 | project | L0 | 20000 |
+| `chat.source-units-review` | 角色聊天事实候选与完整原文复核 | project | L0 | 20000 |
+| `chat.source-unit-confirmation` | 角色聊天事实与权限确认复核 | project | L0 | 20000 |
 | `product-production.brief` | 已授权上层产品生产 Brief | project | L0 | 8000 |
 | `product-production.ttrpg-open-task-brief` | 开放跑团 V3 原授权任务方案投影 | project | L0 | 100000 |
 | `product-production.ttrpg-open-media-inputs` | 开放跑团已采纳的媒资槽位与身份锚点 | project | L0 | 16000 |
 | `product-production.artifact-inputs` | 上层产品生产任务依赖 | project | L1 | 24000 |
+| `product-production.chat-opening-review-inputs` | 角色聊天开场审查来源与引用目录 | project | L1 | 24000 |
 | `product-production.adventure-scene-script-inputs` | 文字冒险单幕分场写作投影 | project | L0 | 15100 |
 | `product-production.adventure-dialogue-inputs` | 文字冒险独立对白审校投影 | project | L0 | 12500 |
 | `product-production.adventure-visual-direction-inputs` | 文字冒险美术定向与完整正文投影 | project | L0 | 52000 |
@@ -174,7 +181,10 @@
 | `adventureRuntime` | 文字冒险玩家视角 | runtime | L0 | 8000 |
 | `textOpenWorldEvolutionRuntime` | 文字开放世界·内部状态演化玩家视角 | runtime | L0 | 8000 |
 | `openWorldRuntime` | 文字开放世界玩家视角 | runtime | L0 | 8000 |
-| `interactionRuntime` | 角色互动单一视角 | runtime | L0 | 8000 |
+| `chatActionRevision` | 未通过回复的受限修订来源 | runtime | L0 | 6000 |
+| `chatMemoryReview` | 记忆正文与实际共同来源 | runtime | L0 | 20000 |
+| `chatActionCandidate` | 待审查的持久化行动候选 | runtime | L0 | 8000 |
+| `chatSituationCandidate` | 待审查的持久化情境候选 | runtime | L0 | 8000 |
 | `aiTownRuntime` | 后日谈 AI 小镇居民单一视角 | runtime | L0 | 8000 |
 | `aiTownDirectorRuntime` | 后日谈 AI 小镇导演公开运行视角 | runtime | L0 | 10000 |
 | `productRuntime` | 冻结运行时状态 | runtime | L0 | 8000 |
@@ -258,6 +268,7 @@ AI 输出只可提议这里登记的规范字段。普通写回经 `adopt({ targ
 | `characterDrivenPlans` | `generatedVolumes` `status` |
 | `characterRelations` | `description` `fromCharacterId` `isBidirectional` `label` `narrativeDependenciesV1` `narrativeEvidenceV1` `narrativeModalityV1` `narrativeRelationV1` `narrativeTimeV1` `narrativeVisibilityV1` `relationType` `toCharacterId` |
 | `characters` | `abilities` `activeChapterRange` `appearance` `arc` `background` `cultivationStageId` `cultivationSystemId` `ending` `exitChapterId` `fears` `firstAppearChapterId` `firstAppearance` `goals` `habits` `homeWorldGroupId` `identity` `importantLocationId` `innerConflict` `isCrossWorld` `keyEvents` `location` `moralAxis` `motivation` `name` `narrativeAliasesV1` `narrativeDependenciesV1` `narrativeEvidenceV1` `narrativeModalityV1` `narrativeStatus` `narrativeTimeV1` `narrativeVisibilityV1` `orderAxis` `personality` `powerLevel` `powerSystemId` `profile` `raceEntryId` `relationships` `roleWeight` `shortDescription` `signatureItem` `speechStyle` `statusEvidenceChapterId` `statusEvidenceStoryArcId` `statusProducerCandidateHash` `statusProducerContractHash` `statusReason` `storyRole` `strengths` `values` `weaknesses` |
+| `chatAuthoringDrafts` | `roleProfilesJson` `settingsJson` `sourceUnitsJson` |
 | `codexCategories` | `builtInKey` `domain` `fieldSchema` `hidden` `icon` `name` `order` `parentId` |
 | `codexEntries` | `categoryId` `cultivationStageId` `cultivationSystemId` `description` `fields` `icon` `importance` `importantLocationId` `name` `narrativeAliasesV1` `narrativeDependenciesV1` `narrativeEvidenceV1` `narrativeModalityV1` `narrativeTimeV1` `narrativeVisibilityV1` `order` `origin` `producerCandidateHash` `producerRunId` `refs` `sourceContentHash` `sourceEvidenceQuotes` `summary` `tags` `worldGroupId` |
 | `comicPagePlans` | `beatKeys` `endReveal` `goal` `pageTurn` |
@@ -320,6 +331,7 @@ AI 输出只可提议这里登记的规范字段。普通写回经 `adopt({ targ
 
 | ID | 目标表 | 领域策略注册表 | 唯一入口 | 复审日期 |
 |---|---|---|---|---|
+| `chat-authoring-draft-lifecycle` | `chatAuthoringDrafts` | `PROJECT_TABLES + WorkspaceScope + draft revision CAS + FIELD_REGISTRY roleProfilesJson/settingsJson/sourceUnitsJson + immutable identity/source/permission guard` | `src/lib/character-interaction/draft-service.ts`<br/>`src/lib/character-interaction/role-profile-store.ts`<br/>`src/lib/character-interaction/consultation-store.ts`<br/>`src/lib/character-interaction/source-unit-store.ts` | 2027-10-01 |
 | `ttrpg-authoring-draft-lifecycle` | `ttrpgAuthoringDrafts` | `parseTtrpgSettings + revision CAS + PROJECT_TABLES + ttrpg-open-authoring-design-v1 adopt writePolicy` | `src/lib/ttrpg/authoring-service.ts` | 2027-04-19 |
 | `ttrpg-human-memory-lifecycle` | `ttrpgNarrativeMemories` | `parseTtrpgOpenMemoryReceipt + verifyTtrpgOpenBriefCandidateProofV1 + verifyTtrpgOpenMemoryReceiptsV1 + E15 + PROJECT_TABLES` | `src/lib/ttrpg/runtime-commands.ts`<br/>`src/lib/ttrpg/runtime-branch.ts` | 2027-08-21 |
 | `extension-record-lifecycle` | `extensionRecords` | `ExtensionRegistrySnapshot + PROJECT_TABLES + bounded DataSchema` | `src/lib/extensions/store.ts` | 2027-01-01 |
@@ -390,8 +402,8 @@ AI 输出只可提议这里登记的规范字段。普通写回经 `adopt({ targ
 
 ## 四、AI 调用点（消耗统计 category · 在哪触发)
 
-共 40 个 category。
-未分类调用: 0 个。动态 category 调用: 37 个。
+共 41 个 category。
+未分类调用: 0 个。动态 category 调用: 39 个。
 
 | category | 触发文件 |
 |---|---|
@@ -427,6 +439,7 @@ AI 输出只可提议这里登记的规范字段。普通写回经 `adopt({ targ
 | `prompt.examples` | `src/components/settings/prompt/PromptExamplesEditor.tsx:108` |
 | `relation.extract` | `src/lib/agent/run/character-relationship-durable.ts:288` |
 | `review.outline-workshop` | `src/lib/outline/workshop.ts:457` |
+| `runtime.character.chat-narrative-action` | `src/lib/character-interaction/action-choice-harness.ts:131` |
 | `runtime.prose.ai-town-director` | `src/lib/ai-town/director-harness.ts:271` |
 | `runtime.ttrpg-gm` | `src/lib/ttrpg/decision-harness.ts:134` |
 | `runtime.ttrpg-player` | `src/lib/ttrpg/player-harness.ts:310` |
@@ -461,7 +474,9 @@ AI 输出只可提议这里登记的规范字段。普通写回经 `adopt({ targ
 - `src/lib/agent/story-core-copilot.ts:557 · chat`
 - `src/lib/agent/storyline-progress-copilot.ts:366 · chat`
 - `src/lib/agent/worldview-field-copilot.ts:903 · chat`
-- `src/lib/character-interaction/harness.ts:404 · chat`
+- `src/lib/character-interaction/harness.ts:888 · chat`
+- `src/lib/character-interaction/memory-review-harness.ts:73 · chat`
+- `src/lib/character-interaction/situation-harness.ts:189 · chat`
 - `src/lib/comic/durable-production.ts:270 · chat`
 - `src/lib/evals/agent-harness/story-arc-main-path-browser.ts:98 · chat`
 - `src/lib/evals/creative-reliability/browser.ts:89 · chat`
@@ -471,17 +486,23 @@ AI 输出只可提议这里登记的规范字段。普通写回经 `adopt({ targ
 - `src/lib/open-world/evolution-harness.ts:246 · chat`
 - `src/lib/open-world/harness.ts:139 · chat`
 - `src/lib/product-production/authoring-consultation.ts:169 · chat`
-- `src/lib/product-production/capabilities.ts:323 · chat`
+- `src/lib/product-production/capabilities.ts:325 · chat`
 - `src/lib/screenplay/durable-production.ts:449 · chat`
 - `src/lib/ttrpg/gm-actor-harness.ts:481 · chat`
 - `src/lib/ttrpg/gm-harness.ts:542 · chat`
 
 ## 五、正式 AI 入口（FormalAIEntryBindingV1）
 
-共 60 个操作级绑定。运行时按 entryId 校验 category 和 Skill；采纳权限不由文字说明决定。显式 outputModality=audio 使用独立冻结音频执行器，文本入口不补默认字段。
+共 66 个操作级绑定。运行时按 entryId 校验 category 和 Skill；采纳权限不由文字说明决定。显式 outputModality=audio 使用独立冻结音频执行器，文本入口不补默认字段。
 
 | entryId | Skill | category | 边界 | 候选 | 采纳目标 | 调用方 |
 |---|---|---|---|---|---|---|
+| `chat.source-unit-confirmation` | `chat.source-unit-confirmation.v1` | `authoring.chat-source-unit-confirmation` | formal / durable-run | `chat-source-unit-confirmation` | `chatAuthoringDrafts` | `src/lib/character-interaction/source-unit-confirmation-harness.ts` |
+| `chat.source-units` | `chat.source-units.v1` | `authoring.chat-source-units` | formal / durable-run | `chat-source-units` | 禁止 | `src/lib/character-interaction/source-units-harness.ts` |
+| `chat.source-units-review` | `chat.source-units-review.v1` | `authoring.chat-source-units-review` | formal / durable-run | `chat-source-units-review` | 禁止 | `src/lib/character-interaction/source-units-harness.ts` |
+| `chat.consultation` | `chat.consult.v2` | `authoring.chat-consultation` | formal / durable-run | `chat-plan` | `chatAuthoringDrafts` | `src/lib/character-interaction/consultation-harness.ts` |
+| `chat.role-profile` | `chat.role-profile.v1` | `authoring.chat-role-profile` | formal / durable-run | `chat-role-profile` | `chatAuthoringDrafts` | `src/lib/character-interaction/role-profile-harness.ts` |
+| `chat.source-review` | `chat.source-review.v1` | `authoring.chat-source-review` | formal / durable-run | `chat-source-review-suggestions` | 禁止 | `src/lib/character-interaction/source-review-harness.ts` |
 | `ttrpg.open.authoring-design` | `ttrpg.open.authoring-design.v1` | `authoring.ttrpg-open-design` | formal / durable-run | `ttrpg-open-authoring-design-creative-artifact` | `ttrpgAuthoringDrafts` | `src/lib/ttrpg/open-authoring-design-harness.ts` |
 | `ttrpg.open.authoring-design.full` | `ttrpg.open.authoring-design.full.v1` | `authoring.ttrpg-open-design` | formal / durable-run | `ttrpg-open-authoring-design-creative-artifact` | `ttrpgAuthoringDrafts` | `src/lib/ttrpg/open-authoring-design-harness.ts` |
 | `ttrpg.open.common-oracle-interpret` | `prose.ttrpg-open-common-oracle-interpret` | `runtime.ttrpg-open.common-oracle-interpret` | formal / product-runtime | `storyforge.ttrpg-open-common-oracle-candidate` | 禁止 | `src/lib/ttrpg/open-intent-harness.ts` |
@@ -557,4 +578,4 @@ AI 输出只可提议这里登记的规范字段。普通写回经 `adopt({ targ
 
 ---
 
-生成时间基准:commit `846838d8e`
+生成时间基准:commit `db64d9cc0`

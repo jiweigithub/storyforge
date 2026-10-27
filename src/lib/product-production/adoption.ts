@@ -1,4 +1,5 @@
 import { db } from '../db/schema'
+import { readProductProductionBuildWorldScopeV1 } from './world-binding'
 import type {
   ConfirmedProductBriefV1,
   ProductMediaAsset,
@@ -632,6 +633,7 @@ async function inspectAdoption(scope: WorkspaceScope, productionId: number): Pro
       releaseQualityReceiptHash: qualityWorkspace.releaseQualityReceipt.receiptHash,
     }
   } else {
+    await readProductProductionBuildWorldScopeV1({scope, productionId: production.id!, buildId: build.id!, brief})
     sourcePlan = await parseProductProductionSourcePlanV1(briefRow)
     confirmedBrief = await parseConfirmedProductBriefV1({ row: briefRow, sourcePlan })
     if (sourcePlan.productType !== brief.intent.productType

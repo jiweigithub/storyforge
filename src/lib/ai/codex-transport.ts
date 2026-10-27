@@ -2,6 +2,7 @@ import { assertGenerationAvailable } from '../showcase/policy'
 import type { ChatMessage } from '../types'
 import type { TokenUsage } from './logger'
 import type { ChatResult } from './client'
+import { CodexTerminalFailureV1Schema } from './codex-terminal-failure'
 import { sha256Text } from './chapter-memory/text-normalization'
 
 export const CODEX_BASE_URL = '/storyforge/local-codex/v1'
@@ -18,6 +19,7 @@ export interface CodexReceipt {
   id: string; model: string; createdAt: number
   status: 'accepted' | 'running' | 'completed' | 'failed' | 'cancelled' | 'unknown'
   text: string; dispatched: boolean; error?: string; usage?: TokenUsage
+  providerTurn?: { threadId: string; turnId: string; status: 'completed' | 'failed' | 'interrupted' }
   requestHash?: string; requestHashAlgorithm?: typeof CODEX_REQUEST_HASH_ALGORITHM_V1
   receiptRetention?: typeof CODEX_DURABLE_RECEIPT_RETENTION_V1; ownerAcknowledgedAt?: number
 }
@@ -86,7 +88,7 @@ export async function acknowledgeBoundCodexReceiptV1(input: {
 export async function* streamCodex(
   messages: ChatMessage[], model: string, signal?: AbortSignal, result?: ChatResult, outputSchema?: Record<string, unknown>, responseFormat?: 'json_object',
 ): AsyncGenerator<string> {
-  if (result) result.requestLifecycle = { phase: 'pre-dispatch', responseStatus: null }
+  if (result) { result.requestLifecycle = { phase: 'pre-dispatch', responseStatus: null }; delete result.terminalFailure }
   if (signal?.aborted) throw new DOMException('请求已取消', 'AbortError')
   const status = await codexRequest<CodexStatus>('/status')
   if (status.state !== 'ready') throw new Error(status.message || '请在设置中连接本机 Codex 的 ChatGPT 登录。')
@@ -116,7 +118,16 @@ export async function* streamCodex(
       if (receipt.usage && result) result.usage = receipt.usage
       if (['failed', 'cancelled', 'unknown'].includes(receipt.status)) {
         terminal = true
-        // Preserve unknown delivery on interrupted turns so durable callers cannot auto-replay.
+        // Only a matching dispatched request with a consistent provider turn is definitive.
+        // Bridge-local errors, old receipts, lost connections and mismatches stay unknown.
+        if (result && receipt.id === id && receipt.model === model && receipt.dispatched === true
+          && (receipt.status === 'failed' && receipt.providerTurn?.status === 'failed'
+            || receipt.status === 'cancelled' && receipt.providerTurn?.status === 'interrupted')) {
+          const failure = CodexTerminalFailureV1Schema.safeParse({version: 1, provider: 'codex', requestId: id, model,
+            providerTurn: {threadId: receipt.providerTurn.threadId, turnId: receipt.providerTurn.turnId, status: receipt.providerTurn.status}})
+          if (failure.success) result.terminalFailure = failure.data
+        }
+        // The dispatched boundary still prevents automatic inference replay, even with a receipt.
         throw new Error(`${receipt.error || 'Codex 生成未完成。'}（请求 ${id}）`)
       }
       if (receipt.status === 'completed') {

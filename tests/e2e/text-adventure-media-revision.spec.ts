@@ -487,10 +487,11 @@ test('文字修订文件创建独立子版本并在刷新后保留原图与来�
     const { db } = await importer('/storyforge/src/lib/db/schema.ts')
     const commands = await db.productProductionCommands.where('productionId').equals(productionId).toArray()
     return commands.filter((row: any) => row.type === 'revise-text-content').map((row: any) => ({
-      status: row.status, errorCode: row.errorCode,
+      status: row.status, errorCode: row.errorCode, completed: row.completedAt != null,
       buildNumber: JSON.parse(row.resultJson || '{}').buildNumber,
     }))
-  }, seeded.productionId)).toEqual([{ status: 'succeeded', errorCode: null, buildNumber: 2 }])
+  }, seeded.productionId)).toEqual([{ status: 'succeeded', errorCode: null, completed: true, buildNumber: 2 }])
+  await expect(page.getByTestId('product-production-studio')).toContainText('#2')
   await page.reload()
   await expect(page.getByTestId('product-production-studio')).toContainText('#2')
   const after = await page.evaluate(async seeded => {

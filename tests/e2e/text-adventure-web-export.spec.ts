@@ -5,8 +5,13 @@ import JSZip from 'jszip'
 import { expect, test, type Locator } from '@playwright/test'
 import { openTextAdventurePage } from './helpers/text-adventure-entry'
 
-async function finish(player: Locator) {
+async function finish(player: Locator, waitForNewResult = false) {
   const next = player.locator('.adventure-narrative-continue')
+  // The command entry is persisted before React begins presenting its result.
+  // Wait for that presentation (or the ending) before draining readable units.
+  if (waitForNewResult) await expect.poll(async () => (
+    await next.count() + await player.getByText('冒险结束', { exact: true }).count()
+  )).toBeGreaterThan(0)
   for (let index = 0; index < 400 && await next.count(); index++) await next.last().click()
   await expect(next).toHaveCount(0)
 }
@@ -19,7 +24,7 @@ async function choose(player: Locator, name: string) {
   const before = await entries.count()
   await button.click()
   await expect.poll(() => entries.count()).toBeGreaterThan(before)
-  await finish(player)
+  await finish(player, true)
 }
 
 test('独立网页 ZIP 在全新浏览器和子目录启动，刷新续玩、存档分支并达到两个结局', async ({ page, browser }, testInfo) => {

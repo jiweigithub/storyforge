@@ -21,7 +21,7 @@
     "edits": 48
   },
   "baseline": {
-    "path": "tests/acceptance/narrative-world/baseline-20261027-pr209-ttrpg-integration-v1.json",
+    "path": "tests/acceptance/narrative-world/baseline-20261027-pr172-post-ttrpg-v2.json",
     "policy": "Preserve this dated receipt. Changed corpus requires a new dataset version; changed implementation requires a reviewed new receipt.",
     "history": [
       {
@@ -468,14 +468,58 @@
         "note": "Preserved before PR208 mainline integration. Separately executed current-tree observations remain identical to both prior branch receipts; original hashes and gaps stay archived."
       },
       {
+        "path": "tests/acceptance/narrative-world/baseline-20261026-chat-visual-flow-v1.json",
+        "workPackage": "CHAT-VISUAL-FLOW",
+        "note": "Preserved initial contextual-media integration receipt before explicit system-configuration task and final production labels; deterministic outcomes are unchanged."
+      },
+      {
+        "path": "tests/acceptance/narrative-world/baseline-20261026-chat-visual-flow-v2.json",
+        "workPackage": "CHAT-VISUAL-FLOW",
+        "note": "Preserved earlier deterministic receipt before final image-card consumer integration. Final v3 is generated after freezing this manifest pointer."
+      },
+      {
+        "path": "tests/acceptance/narrative-world/baseline-20261027-pr208-integration-v3.json",
+        "workPackage": "NW-0B",
+        "note": "Preserve prior main receipt before PR172 integration; this receipt does not validate the integrated tree. [NW-PR209-mainline-integration] Preserved byte-for-byte before the final combined PR209/TTRPG integration; original observations, hashes and known gaps remain available."
+      },
+      {
+        "path": "tests/acceptance/narrative-world/baseline-20261026-chat-visual-flow-v3.json",
+        "workPackage": "NW-0B",
+        "note": "Preserve pre-integration receipt unchanged; superseded for integrated-source verification only."
+      },
+      {
+        "path": "tests/acceptance/narrative-world/baseline-20261027-pr172-integration-v1.json",
+        "workPackage": "NW-0B",
+        "note": "Preserved candidate measured before parent-history reconciliation; full CI detected only manifest fingerprint drift. Superseded by v2 after finalizing the manifest."
+      },
+      {
+        "path": "tests/acceptance/narrative-world/baseline-20261027-pr172-integration-v2.json",
+        "workPackage": "NW-0B",
+        "implementationCommit": "a5d722d6b",
+        "note": "Preserve the passing integrated-tree receipt before the v4 chat source-review compatibility repair; its observations remain the comparison baseline."
+      },
+      {
         "path": "tests/acceptance/narrative-world/baseline-20261026-ttrpg-integration-v1.json",
         "workPackage": "TTRPG-v13-integration",
         "note": "Preserved byte-for-byte before the final combined PR209/TTRPG integration; original observations, hashes and known gaps remain available."
       },
       {
-        "path": "tests/acceptance/narrative-world/baseline-20261027-pr208-integration-v3.json",
-        "workPackage": "NW-PR209-mainline-integration",
-        "note": "Preserved byte-for-byte before the final combined PR209/TTRPG integration; original observations, hashes and known gaps remain available."
+        "path": "tests/acceptance/narrative-world/baseline-20261027-pr172-integration-v3.json",
+        "workPackage": "NW-0B",
+        "implementationCommit": "d077d38382846f658fd2ec9115fc388c0c988a8b",
+        "note": "Preserve the unchanged parent receipt before the combined PR172/TTRPG integration; it does not validate the combined source tree."
+      },
+      {
+        "path": "tests/acceptance/narrative-world/baseline-20261027-pr209-ttrpg-integration-v1.json",
+        "workPackage": "NW-0B",
+        "implementationCommit": "4fb967d75c98b3622f3c900457df1e9f6b73f3a7",
+        "note": "Preserve the unchanged parent receipt before the combined PR172/TTRPG integration; it does not validate the combined source tree."
+      },
+      {
+        "path": "tests/acceptance/narrative-world/baseline-20261027-pr172-post-ttrpg-v1.json",
+        "workPackage": "PR172-post-TTRPG-integration",
+        "implementationCommit": "c0e7b7de28972d5b527fd0fd96ba92253de2c17d",
+        "note": "Preserved pre-repair deterministic world receipt. Full delivery subsequently exposed chat media-plan integration failures; this is not a full delivery acceptance claim."
       }
     ],
     "comparison": "NW-2E checkpoint of the unchanged legacy v3 120-query comparator. Typed v4 query, exact product plans, current impact diagnostics and scale failures have separate receipts; no model or human quality acceptance is inferred."

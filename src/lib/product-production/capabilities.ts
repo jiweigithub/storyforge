@@ -49,7 +49,7 @@ interface CapabilityDependenciesV1 {
     meta: { category: string; projectId: number; maxTokens: number },
     signal?: AbortSignal,
     result?: ChatResult,
-    options?: ChatRequestOptions,
+    requestOptions?: ChatRequestOptions,
   ) => Promise<string>
 }
 
@@ -285,6 +285,7 @@ export async function runConfiguredProductionTextV1(input: {
   signal?: AbortSignal
   result?: ChatResult
   responseFormat?: 'json_object'
+  jsonSchema?: ChatRequestOptions['jsonSchema']
   thinkingMode?: ChatRequestOptions['thinkingMode']
 }, dependencies: CapabilityDependenciesV1 = {}): Promise<{
   output: string
@@ -295,20 +296,21 @@ export async function runConfiguredProductionTextV1(input: {
   }
   const category = normalizeProductProductionTextCategoryV1(input.category)
   const resolved = await resolveConfiguredTextCapabilityV1({ ...input, category }, dependencies)
-  const requestOptions: ChatRequestOptions | undefined = input.responseFormat || input.thinkingMode
-    ? {
-        ...(input.responseFormat ? { responseFormat: input.responseFormat } : {}),
-        ...(input.thinkingMode ? { thinkingMode: input.thinkingMode } : {}),
-      }
+  const outputFormat = input.jsonSchema && ['codex', 'agnes'].includes(resolved.config.provider)
+    ? { jsonSchema: input.jsonSchema }
+    : input.responseFormat ? { responseFormat: input.responseFormat } : undefined
+  const requestOptions: ChatRequestOptions | undefined = outputFormat || input.thinkingMode
+    ? { ...outputFormat, ...(input.thinkingMode ? { thinkingMode: input.thinkingMode } : {}) }
     : undefined
   let output: string
   if (dependencies.runAI) {
     if (input.result) {
       input.result.requestLifecycle = { phase: 'request-dispatched', responseStatus: null }
     }
-    output = await dependencies.runAI(input.messages, resolved.config, {
+    const meta = {
       category, projectId: input.projectId, maxTokens: input.maximumOutputTokens,
-    }, input.signal, input.result, requestOptions)
+    }
+    output = await dependencies.runAI(input.messages, resolved.config, meta, input.signal, input.result, requestOptions)
     if (input.result) {
       input.result.requestLifecycle = { phase: 'response-observed', responseStatus: 200 }
     }

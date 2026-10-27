@@ -10,6 +10,8 @@ import {
 } from '../../src/lib/product-production/media-transport'
 import { sha256MediaData } from '../../src/lib/product-production/media-blob-store'
 import type { AIConfig, ProviderCapabilityRequirementV1 } from '../../src/lib/types'
+import { useAIConfigStore } from '../../src/stores/ai-config'
+import { inspectConfiguredTextCapabilityV1 } from '../../src/lib/product-production/capabilities'
 
 function requirement(mediaClass: 'image' | 'music' | 'sfx'): ProviderCapabilityRequirementV1 {
   return {
@@ -26,6 +28,24 @@ function usageHeader(value: unknown): string {
 }
 
 describe('R-PRODUCTPROD-1E · trusted media relay transport', () => {
+  it('keeps the global Agnes image connection when text creation is routed to Codex', async () => {
+    const state = useAIConfigStore.getState()
+    const spy = vi.spyOn(useAIConfigStore, 'getState').mockReturnValue({
+      ...state,
+      config: {provider: 'agnes', apiKey: 'image-test-key', model: 'agnes-2.5-flash', baseUrl: 'https://images.example.test/v1', temperature: 0.7, maxTokens: 16000},
+      presets: [{id: 'text-codex', name: 'Text only', config: {provider: 'codex', apiKey: '', model: 'gpt-6.1-sol', baseUrl: '/storyforge/local-codex/v1', temperature: 0.2, maxTokens: 16000}}],
+      taskRoutes: {creation: 'text-codex'},
+    })
+    try {
+      expect(inspectConfiguredTextCapabilityV1({projectId: 1, category: 'product-production'})).toMatchObject({ready: true, provider: 'codex'})
+      expect(inspectConfiguredAgnesImageCapabilityV1({projectId: 1})).toMatchObject({ready: true, provider: 'agnes'})
+      const resolved = await resolveConfiguredAgnesImageCapabilityV1({projectId: 1, requirement: requirement('image')})
+      expect(resolved.binding.adapterId).toBe('agnes.image-2.1-flash.v1')
+      expect(resolved.receipt).toMatchObject({provider: 'agnes', endpointOrigin: 'https://images.example.test'})
+      expect(JSON.stringify(resolved.receipt)).not.toContain('image-test-key')
+    } finally {spy.mockRestore()}
+  })
+
   it('作者媒资包只从同源严格清单绑定，并按 artifactKey 无凭据读取冻结图片', async () => {
     const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).buffer
     const contentHash = await sha256MediaData(png)

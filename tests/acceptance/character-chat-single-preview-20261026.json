@@ -1,0 +1,271 @@
+{
+  "schema": "storyforge.character-chat.technical-preview",
+  "version": 1,
+  "date": "2026-10-26",
+  "status": "local-technical-path-verified-full-delivery-pending",
+  "product": "character-interaction",
+  "scope": {
+    "mode": "single",
+    "entry": "Explicit opt-in to V3 technical preview, default off",
+    "flow": [
+      "blank Work",
+      "frozen world and private character",
+      "source visibility confirmation",
+      "author production start",
+      "opening selection",
+      "picture confirmation",
+      "local release",
+      "bounded character/player actions",
+      "device speech controls",
+      "refresh",
+      "independent import"
+    ],
+    "qualityAcceptanceDeferred": true,
+    "newTables": false,
+    "worldWriteback": false
+  },
+  "integration": {
+    "previousLocalHead": "d419524fe772f23a1957e49faf99a2f0a2b07c9b",
+    "main": "dc0f1e3a",
+    "pullRequest": 172,
+    "mergedToMain": false
+  },
+  "checks": {
+    "mergeTargeted": {
+      "passed": 44
+    },
+    "mediaAuthorization": {
+      "passed": 24
+    },
+    "codexRuntime": {
+      "passed": 14
+    },
+    "upgradeContract": {
+      "passed": 9
+    },
+    "finalRecovery": {
+      "passed": 34,
+      "failed": 0
+    },
+    "initialRoleSuite": {
+      "total": 2419,
+      "passed": 2413,
+      "failed": 6,
+      "retained": true,
+      "failures": [
+        "three upgrade cases changed prepared session after validation",
+        "two legacy SourcePlan V1 assertions used current V2 plans",
+        "one five-second timeout during concurrent local work"
+      ],
+      "allAffectedFilesReverifiedInFinalRecovery": true
+    },
+    "browser": {
+      "distinctPathsCovered": 28,
+      "widths": [
+        390,
+        1440
+      ],
+      "finalBatch": {
+        "passed": 27,
+        "failed": 1
+      },
+      "isolatedVoiceRecheck": {
+        "passed": 3,
+        "failed": 0,
+        "codeChanged": false
+      },
+      "retainedFailure": "One reload did not mount the input within five seconds during concurrent local work; isolated three-case voice recheck passed. Earlier authorization, async test read and upgrade failures also retained.",
+      "modelOutputs": "injected engineering fixtures",
+      "speech": "browser adapter fixtures, not microphone or listening certification"
+    },
+    "engineering": [
+      {
+        "name": "typecheck",
+        "exitCode": 0,
+        "seconds": 95.47
+      },
+      {
+        "name": "lint",
+        "exitCode": 0,
+        "seconds": 4.23
+      },
+      {
+        "name": "architecture",
+        "exitCode": 0,
+        "seconds": 15.13
+      },
+      {
+        "name": "required-tables",
+        "exitCode": 0,
+        "seconds": 0.41
+      },
+      {
+        "name": "ai-manual",
+        "exitCode": 0,
+        "seconds": 0.9
+      },
+      {
+        "name": "build",
+        "exitCode": 0,
+        "seconds": 249.62
+      },
+      {
+        "name": "bundle",
+        "exitCode": 0,
+        "seconds": 0.69
+      },
+      {
+        "name": "dependencies",
+        "exitCode": 0,
+        "seconds": 1.77
+      }
+    ],
+    "fullDelivery": {
+      "status": "pending exact committed head",
+      "commands": [
+        "npm run ci",
+        "npm run ci:e2e"
+      ],
+      "history": [
+        {
+          "head": "7dcee8849ce1d83c09fe36e39df8de48c4bca16d",
+          "workflowRun": 40265029926,
+          "result": "failed before tests",
+          "reason": "ARCHITECTURE source-line metrics were two lines behind the final runtime integration fix",
+          "repair": "Official gen:project-metrics; check:project-metrics passed; application source unchanged"
+        },
+        {
+          "head": "d9776fa6b31b38fa5883d079dc0a5714591b5604",
+          "workflowRun": 40265338810,
+          "result": "failed before coverage",
+          "reason": "Bridge test constructed the old error payload instead of the current native error envelope",
+          "repair": "Corrected fixture; full native bridge suite 23 passed; no runtime code change"
+        }
+      ]
+    },
+    "nativeExperiencePackage": {
+      "exported": true,
+      "independentInstallPassed": true,
+      "newModelCalls": 0
+    },
+    "diffCheck": {
+      "featureAgainstIntegratedMain": "passed",
+      "untouchedMainEvidenceWithExistingWhitespace": 3
+    },
+    "codexBridgeComplete": {
+      "passed": 23,
+      "failed": 0
+    },
+    "skillFreshness": {
+      "reverifiedSkillIds": [
+        "text-adventure.dialogue-pass.v1",
+        "text-adventure.production-quality-review.v1"
+      ],
+      "registeredRegressionFiles": [
+        "R-TEXTADV2-production.test.tsx",
+        "R-TEXTADV3-agent-team.test.ts",
+        "R-TEXTADV3-production-artifacts.test.ts"
+      ],
+      "passed": 23,
+      "failed": 0,
+      "lastVerifiedAt": "2026-10-26",
+      "contractAndThresholdUnchanged": true,
+      "realModelAcceptance": false
+    },
+    "additionalPreflight": {
+      "passed": 12,
+      "freshnessInitiallyBlocked": 2,
+      "freshnessRepair": "Registered regressions rerun before changing only the corresponding verification dates",
+      "finalFreshnessPassed": true
+    },
+    "handoff": [
+      {
+        "name": "types",
+        "exitCode": 0,
+        "seconds": 69.55
+      },
+      {
+        "name": "lint",
+        "exitCode": 1,
+        "seconds": 2.04
+      },
+      {
+        "name": "build",
+        "exitCode": 0,
+        "seconds": 128.45
+      },
+      {
+        "name": "bundle",
+        "exitCode": 0,
+        "seconds": 0.75
+      },
+      {
+        "name": "metrics",
+        "exitCode": 0,
+        "seconds": 0.94
+      },
+      {
+        "name": "docs",
+        "exitCode": 0,
+        "seconds": 0.93
+      },
+      {
+        "name": "roadmap",
+        "exitCode": 0,
+        "seconds": 0.25
+      },
+      {
+        "name": "freshness",
+        "exitCode": 0,
+        "seconds": 1.23
+      }
+    ],
+    "handoffLintCorrection": {
+      "initialIssue": "The explicit lint command selected a .mjs test that repository ESLint deliberately ignores; zero source errors but one ignored-file warning.",
+      "checks": [
+        {
+          "name": "registry-lint",
+          "exitCode": 0
+        },
+        {
+          "name": "bridge-test-syntax",
+          "exitCode": 0
+        }
+      ]
+    }
+  },
+  "nativeCodex": {
+    "model": "gpt-6.1-sol",
+    "successfulProviderCalls": 8,
+    "productionCalls": 2,
+    "runtimeCalls": 6,
+    "openingProductionAndReview": true,
+    "authorConfirmedPicturesAndPublished": true,
+    "characterOpeningCompleted": true,
+    "playerFollowupCompleted": false,
+    "stopReason": "Validation collector admitted at most eight total native calls; next runtime expression was blocked before dispatch. No provider resend or semantic repair.",
+    "collectorCorrections": [
+      "Scoped observation to runtime session rather than prior author-gate records",
+      "Restored empty session uses explicit character-opening action"
+    ],
+    "initialCollectorFailuresRetained": true,
+    "automaticProviderRetries": 0,
+    "formalM1": false
+  },
+  "media": {
+    "pictures": "two built-in SVG preview assets confirmed by author; external image requirements retained for higher quality profiles",
+    "voice": "device transcription confirmation, narration, pause/resume/stop, fallback to text"
+  },
+  "limits": [
+    "Not a formal M1 pass",
+    "Not an Agnes/Codex semantic comparison",
+    "Not human or commercial acceptance",
+    "Not deployed to production"
+  ],
+  "applicationSourceDigest": "25870611aab77a9ce2c20f93a7566277d1c2cfa1edb647cc9571b3dffb78a36e",
+  "handoffSourceDigest": "609939fb43abb3233e01fcaf23b51bb02ddfb80f71d77a52fd62719fad1e4345",
+  "handoffChangesFromInitialValidation": [
+    "Two unrelated text-adventure Skill verification dates updated only after their 23 registered regressions passed",
+    "One bridge test fixture uses the current native error envelope; complete 23-test bridge suite passed"
+  ]
+}

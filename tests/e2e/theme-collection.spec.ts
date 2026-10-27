@@ -17,7 +17,9 @@ function contrast(foreground: string, background: string, backdrop?: string) {
 }
 
 test('all fourteen themes persist, preserve prose and keep editor and dialog actions readable', async ({ page }) => {
-  test.setTimeout(180_000)
+  // Keep all four page loads per theme and the shared manuscript assertions;
+  // shared CI runners can reach the final theme after the local three-minute budget.
+  test.setTimeout(process.env.CI ? 300_000 : 180_000)
   await createLongform(page, '全部主题验收')
   await page.getByRole('navigation', { name: '长篇工作台二级导航' }).getByRole('button', { name: '大纲与章纲', exact: true }).click()
   await page.getByRole('button', { name: '添加卷', exact: true }).click()

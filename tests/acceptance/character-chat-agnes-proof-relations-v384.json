@@ -1,0 +1,102 @@
+{
+  "version": 384,
+  "recordedAt": "2026-10-24T06:46:44.849305+00:00",
+  "status": "wire-and-parser-accepted-semantic-audit-still-failed",
+  "sourceHead": "8e8986ccd65ba51618f927ae123534318f0dbab9",
+  "producer": "chat-opening-review-v14",
+  "provider": "agnes",
+  "model": "agnes-2.5-flash",
+  "requests": 1,
+  "automaticRetries": 0,
+  "primaryProfileChanged": false,
+  "httpStatus": 200,
+  "finishReason": "stop",
+  "durationMs": 51891,
+  "usage": {
+    "completion_tokens": 5258,
+    "prompt_tokens": 13898,
+    "total_tokens": 19156,
+    "completion_tokens_details": {
+      "reasoning_tokens": 3475,
+      "text_tokens": 1783
+    },
+    "prompt_tokens_details": {
+      "cached_tokens": 256
+    }
+  },
+  "sourceUnchanged": true,
+  "productWrites": 0,
+  "validation": {
+    "productJsonParserAccepted": true,
+    "nativeWireSchemaAccepted": true,
+    "canonicalV3ParserAccepted": true,
+    "modelDeclaredEligibleOptions": 2,
+    "modelEligibleOptionsAreNotQualityAcceptance": true
+  },
+  "operatorSemanticAudit": {
+    "independentHumanEvaluation": false,
+    "passed": false,
+    "findings": [
+      {
+        "optionKey": "opening-2",
+        "issue": "The reviewer explicitly treats the player clarifying participation as the first step, but marks both autonomous-role agency and development as passed. The selected direction is assigned to the role while addressing that same named role from the player perspective."
+      },
+      {
+        "optionKey": "opening-3",
+        "issue": "Several reasons stop at incomplete fragments, so a completed JSON object and finish_reason=stop do not prove a complete or correct semantic explanation."
+      }
+    ],
+    "next": "Strengthen and independently recheck actor/action attribution before treating opening review as stable or dispatching a new formal M1 cohort. Do not replace semantic acceptance with the two model-declared passing options."
+  },
+  "engineering": {
+    "files": 191,
+    "testsPassed": 2375,
+    "failed": 0,
+    "tsAndTsxIncluded": true,
+    "browserCasesPassed": 32,
+    "browserFailed": 0,
+    "browserRetries": 0,
+    "tsc": true,
+    "lint": true,
+    "governanceChecksPassed": 9,
+    "build": true,
+    "bundleSize": true,
+    "fullRemoteDelivery": "in-progress for this application head; not passed"
+  },
+  "preparedNextCohort": {
+    "registered": false,
+    "dispatched": false,
+    "collectorTestsPassed": 48,
+    "note": "Only collector scripts prepared. Uses corrected Agnes session-only credential setup and observed usage helper; no configuration request or new credential needed."
+  },
+  "evidenceHashes": {
+    "candidates.json": "417d0502b25496c211c2bbf7b86bdd26c8399a9155fcd937df19215c52d7cf69",
+    "input.json": "1de1e99132071068d03025c115e2753ffd519d7cc4aad85003f70928f88b90d2",
+    "native-schema/dispatch.json": "65b3681c702645a98fd06a1b64b28c8af12ca24cd0a033e70f2ae0ed4e157ff3",
+    "native-schema/receipt.json": "5ce174b111b404e8025cc98763171dc1b6fa0a099a6e0c664bdc38a315318286",
+    "native-schema/request.json": "510fba99e428e1122374571c870582dc136af8de363d2f593630e438caac5cac",
+    "native-schema/response.json": "182fb7c97fb4a7b79731a7063d504d42d87ece02940a46938fa2213c5bfb9270",
+    "native-schema/validation.json": "7eed3245d720c54926c4223c1dd014a98e4b1c4e4684d4c083a1ce0c684d3b5c",
+    "preregistration.json": "7fcbb0e977a3b8ddac8e0f449c45f85301f2fe84513a0d0af6146d60e4147ce2",
+    "source-manifest.json": "337bfc987a2bdb989394879ce291ea49c10c3cbc17f7d7d44ce2640947fcd3d5",
+    "source.json": "4a1ae55cd856b9bc05b3c22ca3a7b19aa20210c03fd31439567bc9f225a3c2f3",
+    "summary.json": "80467805d28c23728215263ac6f5a954ad3dc21151e7dd9d5be90dbe9f7d72db"
+  },
+  "engineeringEvidenceHashes": {
+    "tested-source-manifest.json": "8c49d6a9f9c825186b84a1a057f0972c4f1975e67d3246ba5814abd01f1e3a7b",
+    "role-file-list.json": "f8bff92ef3d6d840458ae2b1cabb5cd64499712cf3cd4f53a7df9b414bea8016",
+    "role-full.json": "c32c6500e75a0db94e6abe579d756eb5b4dde4ca9ff2002e24b523d26cfc5145",
+    "role-full-exit.json": "47eb247937b0b3dfe428317dbe42959c5785bece87f6b86152a175c8e4064fb1",
+    "browser-complete.json": "75659be8d715c8aad58d244713e516a20daf10feb2d1104f50932ab62a7641c1",
+    "targeted-complete.json": "e5161b38fd19e3b296aede98432b47d78b871ac42564efe5c939ee913f444ad7",
+    "governance-release.json": "344bc6fd5ae6f8a9957aff67101a66c19a1d2a76a48a78172d20eaa61d02c015",
+    "build-release.log": "59789ab77dcebe5e60711143931c4820446ca358815ab2796d8a34cb667bcc8b"
+  },
+  "claims": {
+    "providerQuotaErrorObserved": false,
+    "formalM1Credit": false,
+    "m1Passed": false,
+    "commercialReady": false,
+    "released": false
+  }
+}
