@@ -523,3 +523,5 @@ IR lexical 为 47 正确、2 部分正确、71 合理拒答；原文 lexical 为
 [回执](./reader-profile-20261015-v1.json)与[发现材料](./reader-profile-findings-20261015-v1.md)保留 138 项检查、110 项 v26 基线回读、217 个输入摘要、包装计数修复与首批 8 次真实模型调用。正常 CI 包装内的 20 项 Node 反例不重复累计。继续批次在一次 `httpConnectionFailed` 后退出 1：累计 41 次派发、40 份成功、1 份失败、61 条成功条件观察，420 个未调用。失败没有正文或用量，没有自动重试；费用和底层 HTTP 状态保持未知。原模型材料和未派发的 v5 输入保持，[工程检查点 v19](./engineering-checkpoint-20261015-v19.json)仅结算局部工程与实际失败证据。
 
 PR208/mainline integration receipt: `baseline-20261027-pr208-integration-v3.json`; all deterministic observations match the preserved browser-helper-v2 and PR134 integration receipts. No model, performance or human acceptance upgrade.
+
+2026-10-27 PR209/TTRPG 集成保留双方全部既有回执与历史记录；活动基线使用独立新回执，须逐项确认观测结果与双方原件一致。该工程取证不代表模型质量、真人或商业验收。

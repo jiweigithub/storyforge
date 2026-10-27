@@ -1,3 +1,4 @@
+import { isTtrpgRuntimeContentV2 } from '../ttrpg/content-version'
 /**
  * 注册表派生的项目导出引擎(AUDIT-1)
  *
@@ -19,7 +20,8 @@ import { resolveWorkspaceOwnership } from '../workspace/ownership'
 import { portableizeAgentRunLedgerExportV1 } from '../agent/run/ledger-portability'
 import { assertAgentRunArtifactRecordIntegrityV1 } from '../memory/artifact-record'
 import { readVerifiedMediaBlobObjectData } from '../product-production/media-blob-store'
-import type { ProductReleaseManifestV1, ProductRuntimeEvent } from '../types'
+import type { ProductReleaseManifestWithTtrpgV2 } from '../ttrpg/content-version'
+import type { ProductRuntimeEvent } from '../types'
 import { remapNarrativeDomainFieldV1 } from '../narrative-domain/references'
 import { assertNarrativeDomainReferenceRowsV1 } from '../narrative-domain/integrity'
 import { assertNarrativeLineageRowsV1 } from '../world-engine/narrative-lineage-lifecycle'
@@ -29,7 +31,7 @@ import { canonicalNarrativeJsonV1, compareUnicodeCodePointsV1 } from '../narrati
 import { isPortableResourceUidV1 } from '../context-gateway/resource-uid'
 
 /** 当前完整便携备份契约。 */
-export const CURRENT_EXPORT_VERSION = 16
+export const CURRENT_EXPORT_VERSION = 17
 
 export interface StrictProjectExportSnapshot {
   data: ProjectExportData
@@ -160,7 +162,7 @@ async function assertProductRuntimeExportIntegrityV1(
   const checkpoints = rowsByTable.get('productRuntimeCheckpoints') ?? []
   const releases = rowsByTable.get('productReleases') ?? []
   const releasesById = new Map<number, any>()
-  const releaseManifestsById = new Map<number, ProductReleaseManifestV1>()
+  const releaseManifestsById = new Map<number, ProductReleaseManifestWithTtrpgV2>()
   const buildsById = new Map<number, any>()
   for (const build of builds) {
     if (!Number.isSafeInteger(build.id) || build.id < 1 || buildsById.has(build.id)) {
@@ -194,7 +196,7 @@ async function assertProductRuntimeExportIntegrityV1(
         throw new Error('[deriveExport] ProductRelease 本地主键无效')
       }
       try {
-        const manifest = await runtimePackage.verifyProductReleaseManifestV1(release.manifestJson)
+        const manifest = await runtimePackage.verifyProductReleaseManifestV1(release.manifestJson,{ ttrpgProtocol: 2 })
         if (await productionHash.hashProductProductionValueV2(manifest) !== release.contentHash
           || release.productType !== manifest.productType
           || release.productionKey !== manifest.productionProvenance.productionKey
@@ -272,8 +274,13 @@ async function assertProductRuntimeExportIntegrityV1(
     if (upgradeReceipt) {
       const childManifest = releaseManifestsById.get(session.productReleaseId)
       if (!childManifest) throw new Error('[deriveExport] 角色聊天升级副本缺少冻结版本')
+      if (childManifest.version !== 1 || childManifest.productType !== 'character-interaction') {
+        throw new Error('[deriveExport] 角色聊天升级副本的发布协议或产品类型不匹配')
+      }
       const contract = await import('../character-interaction/release-upgrade-branch')
-      await contract.verifyChatReleaseUpgradeReceiptV1({childSession: session, childManifest, receipt: upgradeReceipt})
+      const {parseProductReleaseManifestV1} = await import('../product-production/runtime-package')
+
+      await contract.verifyChatReleaseUpgradeReceiptV1({childSession: session, childManifest: parseProductReleaseManifestV1(childManifest), receipt: upgradeReceipt})
     }
     if (!hasParent) continue
     const parent = sessionsById.get(session.parentSessionId)
@@ -303,14 +310,32 @@ async function assertProductRuntimeExportIntegrityV1(
     if (!parentRelease || !childRelease || !parentManifest || !childManifest) {
       throw new Error('[deriveExport] ProductRuntimeSession 迁移Release缺失')
     }
+    if (parent.kind === 'ttrpg' && JSON.parse(session.initialStateJson).ttrpg?.openRun?.releaseContinuation) {
+      const { assertTtrpgOpenContinuationParentV1 } = await import('../ttrpg/open-release-continuation-backup')
+      const parentContent = parentManifest.runtimePackage.ttrpg, targetContent = childManifest.runtimePackage.ttrpg
+      if (!parentContent || !targetContent || !isTtrpgRuntimeContentV2(parentContent) || !isTtrpgRuntimeContentV2(targetContent)
+        || parent.runtimeSourceHash !== parentManifest.packageHash || session.runtimeSourceHash !== childManifest.packageHash) {
+        throw new Error('[deriveExport] open 续团发布或冻结来源不一致')
+      }
+      await assertTtrpgOpenContinuationParentV1({ parent, child: session, parentEvents: eventsBySession.get(parent.id) ?? [],
+        throughSequence: session.parentThroughSequence, parentContent, targetContent, targetRuntimePackage: childManifest.runtimePackage })
+      continue
+    }
     try {
       if (session.kind === 'character-interaction') {
+        if (parentManifest.version !== 1 || childManifest.version !== 1
+          || parentManifest.productType !== 'character-interaction' || childManifest.productType !== 'character-interaction') {
+          throw new Error('[deriveExport] 角色聊天升级分支的发布协议或产品类型不匹配')
+        }
         const contract = await import('../character-interaction/release-upgrade-branch')
-        await contract.verifyChatReleaseUpgradeBranchV1({parentSession: parent, childSession: session, parentManifest, childManifest,
+        const {parseProductReleaseManifestV1} = await import('../product-production/runtime-package')
+
+        await contract.verifyChatReleaseUpgradeBranchV1({parentSession: parent, childSession: session, parentManifest: parseProductReleaseManifestV1(parentManifest), childManifest: parseProductReleaseManifestV1(childManifest),
           parentEvents: eventsBySession.get(parent.id) ?? [], childEvents: eventsBySession.get(session.id) ?? []})
         continue
       }
       migrationContract ??= await import('../open-world/player-save-migration-contract')
+      const { parseProductReleaseManifestV1 } = await import('../product-production/runtime-package')
       const sourceStateHash = await migrationContract.replayTextOpenWorldMigrationSourceStateHashV1({
         session: parent,
         events: eventsBySession.get(parent.id) ?? [],
@@ -321,8 +346,8 @@ async function assertProductRuntimeExportIntegrityV1(
         childSession: session,
         parentRelease,
         childRelease,
-        parentManifest,
-        childManifest,
+        parentManifest: parseProductReleaseManifestV1(parentManifest),
+        childManifest: parseProductReleaseManifestV1(childManifest),
         sourceStateHash,
       })
     } catch (error) {
@@ -706,14 +731,14 @@ async function captureProjectExport(projectId: number, version: number, strictOw
   return captured
 }
 
-async function portableizeSnapshot(snapshot: CapturedProjectExportSnapshot): Promise<StrictProjectExportSnapshot> {
+async function portableizeSnapshot(snapshot: CapturedProjectExportSnapshot, options: { freezeContextEvidence?: boolean } = {}): Promise<StrictProjectExportSnapshot> {
   if (PROJECT_TABLES.some(spec => spec.portableData?.kind === 'product-build-root-budget')) {
     await prepareProductBuildRootBudgetEvidenceExportV1({
       data: snapshot.data, originalRows: snapshot.integrityRows, exportIds: snapshot.exportIds,
     })
   }
   if (PROJECT_TABLES.some(spec => spec.portableData?.kind === 'agent-run-root')) {
-    const portableLedger = portableizeAgentRunLedgerExportV1(snapshot.data, snapshot.exportIds)
+    const portableLedger = portableizeAgentRunLedgerExportV1(snapshot.data, snapshot.exportIds, options)
     if (Dexie.currentTransaction) await Dexie.waitFor(portableLedger)
     else await portableLedger
   }
@@ -829,7 +854,7 @@ export async function deriveStrictExportProjectSnapshotInCurrentTransaction(
   // context while waitFor keeps the caller's snapshot alive.
   // Passing an already-running promise would let inner hash/blob keepalives
   // join the same wait chain and prevent it from completing.
-  const snapshot = await Dexie.waitFor(Dexie.ignoreTransaction(() => portableizeSnapshot(captured)))
+  const snapshot = await Dexie.waitFor(Dexie.ignoreTransaction(() => portableizeSnapshot(captured, { freezeContextEvidence: false })))
   const worldExportId = snapshot.exportIds.get('worlds')?.get(ownership.worldId)
   const workExportId = snapshot.exportIds.get('works')?.get(ownership.workId)
   if (worldExportId == null || workExportId == null) {

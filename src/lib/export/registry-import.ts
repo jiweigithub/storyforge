@@ -1,4 +1,5 @@
 import {validateImportedChatNarrativeEvidenceStateV1, validateImportedChatNarrativeEvidenceEventV1} from '../character-interaction/narrative-evidence-import'
+import { isTtrpgRuntimeContentV2 } from '../ttrpg/content-version'
 import { validateExtensionBackup } from '../extensions/portable'
 import {parseChatComposerDraftV1} from '../character-interaction/composer-draft-contract'
 import {parseProductRuntimeState} from '../product/runtime-core'
@@ -21,6 +22,7 @@ import { transactionTablesFor } from '../registry/lifecycle'
 import type { ExportRefRemap, TableSpec } from '../registry/types'
 import type { ProjectExportData, ProjectImportOptionsV1 } from './json-export'
 import { CURRENT_BACKUP_VERSION, normalizeProjectBackup } from './backup-trust'
+import { assertTtrpgNarrativeMemoryBackupV1 } from '../ttrpg/narrative-memory-backup'
 import { remapNarrativeDomainFieldV1 } from '../narrative-domain/references'
 import { assertNarrativeLineageRowsV1 } from '../world-engine/narrative-lineage-lifecycle'
 import { rebindPortableAgentRunContractV1 } from '../agent/run/contract-portability'
@@ -59,7 +61,6 @@ import type {
   ComicMediaAsset,
   CreationReleaseV1,
   ProductQualityGateReceiptRecordV1,
-  ProductReleaseManifestV1,
   ProductRuntimeEvent,
   ScreenplayBlock,
   Work,
@@ -91,7 +92,8 @@ import {
 } from '../open-world/source-pin'
 import { hashProductProductionValueV2 } from '../product-production/hash'
 import { verifyProductQualityGateReceiptRecordV1 } from '../product-production/quality-receipts'
-import { verifyProductReleaseManifestV1 } from '../product-production/runtime-package'
+import { verifyProductReleaseManifestV1, parseProductReleaseManifestV1 } from '../product-production/runtime-package'
+import type { ProductReleaseManifestWithTtrpgV2 } from '../ttrpg/content-version'
 import {
   replayTextOpenWorldMigrationSourceStateHashV1,
   verifyTextOpenWorldSaveMigrationBranchV1,
@@ -471,13 +473,13 @@ async function validateProductArchitectureBackup(value: Record<string, any>): Pr
     }
   }
   await validateTextOpenWorldSourcePinArtifactsV10({ artifacts, builds, productions })
-  const releaseManifests = new Map<number, ProductReleaseManifestV1>()
+  const releaseManifests = new Map<number, ProductReleaseManifestWithTtrpgV2>()
   for (const release of releases.values()) {
     if (!productKinds.has(release.productType) || !/^[a-f0-9]{64}$/.test(String(release.contentHash ?? ''))) {
       throw new Error('[deriveImport] v12 ProductRelease 身份或 hash 无效')
     }
     try {
-      const manifest = await verifyProductReleaseManifestV1(String(release.manifestJson ?? ''))
+      const manifest = await verifyProductReleaseManifestV1(String(release.manifestJson ?? ''),{ ttrpgProtocol: 2 })
       if (await hashProductProductionValueV2(manifest) !== release.contentHash
         || manifest.productType !== release.productType
         || manifest.productionProvenance.productionKey !== release.productionKey
@@ -595,8 +597,13 @@ async function validateProductArchitectureBackup(value: Record<string, any>): Pr
     if (upgradeReceipt) {
       const childManifest = releaseManifests.get(session._productReleaseExportId)
       if (!childManifest) throw new Error('[deriveImport] 角色聊天升级副本缺少冻结版本')
+      if (childManifest.version !== 1 || childManifest.productType !== 'character-interaction') {
+        throw new Error('[deriveImport] 角色聊天升级副本的发布协议或产品类型不匹配')
+      }
       const contract = await import('../character-interaction/release-upgrade-branch')
-      await contract.verifyChatReleaseUpgradeReceiptV1({childSession: session as unknown as import('../types').ProductRuntimeSession, childManifest, receipt: upgradeReceipt})
+      const {parseProductReleaseManifestV1} = await import('../product-production/runtime-package')
+
+      await contract.verifyChatReleaseUpgradeReceiptV1({childSession: session as unknown as import('../types').ProductRuntimeSession, childManifest: parseProductReleaseManifestV1(childManifest), receipt: upgradeReceipt})
     }
     if (!hasParent) continue
     const parent = runtimeSessionById.get(parentExportId)
@@ -624,11 +631,29 @@ async function validateProductArchitectureBackup(value: Record<string, any>): Pr
     if (!parentRelease || !childRelease || !parentManifest || !childManifest) {
       throw new Error('[deriveImport] v10 ProductRuntime 迁移Release缺失')
     }
+    if (parent.kind === 'ttrpg' && JSON.parse(session.initialStateJson).ttrpg?.openRun?.releaseContinuation) {
+      const { assertTtrpgOpenContinuationParentV1 } = await import('../ttrpg/open-release-continuation-backup')
+      const parentContent = parentManifest.runtimePackage.ttrpg, targetContent = childManifest.runtimePackage.ttrpg
+      if (!parentContent || !targetContent || !isTtrpgRuntimeContentV2(parentContent) || !isTtrpgRuntimeContentV2(targetContent)
+        || parent.runtimeSourceHash !== parentManifest.packageHash || session.runtimeSourceHash !== childManifest.packageHash) {
+        throw new Error('[deriveImport] open 续团发布或冻结来源不一致')
+      }
+      await assertTtrpgOpenContinuationParentV1({ parent: parent as unknown as import('../types').ProductRuntimeSession,
+        child: session as unknown as import('../types').ProductRuntimeSession,
+        parentEvents: runtimeEventsBySession.get(parent._exportId) ?? [], throughSequence: parentThroughSequence, parentContent, targetContent, targetRuntimePackage: childManifest.runtimePackage })
+      continue
+    }
     try {
       if (session.kind === 'character-interaction') {
+        if (parentManifest.version !== 1 || childManifest.version !== 1
+          || parentManifest.productType !== 'character-interaction' || childManifest.productType !== 'character-interaction') {
+          throw new Error('[deriveImport] 角色聊天升级分支的发布协议或产品类型不匹配')
+        }
         const contract = await import('../character-interaction/release-upgrade-branch')
+        const {parseProductReleaseManifestV1} = await import('../product-production/runtime-package')
+
         await contract.verifyChatReleaseUpgradeBranchV1({parentSession: parent as unknown as import('../types').ProductRuntimeSession,
-          childSession: session as unknown as import('../types').ProductRuntimeSession, parentManifest, childManifest,
+          childSession: session as unknown as import('../types').ProductRuntimeSession, parentManifest: parseProductReleaseManifestV1(parentManifest), childManifest: parseProductReleaseManifestV1(childManifest),
           parentEvents: runtimeEventsBySession.get(parent._exportId) ?? [], childEvents: runtimeEventsBySession.get(session._exportId) ?? []})
         continue
       }
@@ -642,8 +667,8 @@ async function validateProductArchitectureBackup(value: Record<string, any>): Pr
         childSession: session as unknown as import('../types').ProductRuntimeSession,
         parentRelease: parentRelease as unknown as import('../types').ProductRelease,
         childRelease: childRelease as unknown as import('../types').ProductRelease,
-        parentManifest,
-        childManifest,
+        parentManifest: parseProductReleaseManifestV1(parentManifest),
+        childManifest: parseProductReleaseManifestV1(childManifest),
         sourceStateHash,
       })
     } catch (error) {
@@ -917,6 +942,9 @@ async function validateCurrentBackup(data: ProjectExportData): Promise<void> {
   validateComicMediaBackup(value)
   await validateMotionDramaBackup(value)
   await validateProductArchitectureBackup(value)
+  await assertTtrpgNarrativeMemoryBackupV1(value)
+  await (await import('../ttrpg/stage-opening-backup')).assertTtrpgStageOpeningBackupV1(value)
+  await (await import('../ttrpg/open-release-continuation-backup')).assertTtrpgOpenContinuationBackupV1(value)
   if (PROJECT_TABLES.some(spec => spec.portableData?.kind === 'product-build-root-budget')) {
     const { verifyPortableProductBuildRootBudgetEvidenceV1 } = await import('../product-production/root-budget-evidence-portability')
     await verifyPortableProductBuildRootBudgetEvidenceV1(value as unknown as ProjectExportData)
