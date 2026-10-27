@@ -5,7 +5,7 @@
 import { create } from 'zustand'
 import { db } from '../lib/db/schema'
 import type { StoryArc } from '../lib/types'
-import { parseStages, stringifyStages, type StoryStage } from '../lib/types/story-arc'
+import { inspectStages, parseStages, stringifyStages, type StoryStage } from '../lib/types/story-arc'
 import { deleteStoryArcLifecycle, updateStoryArcStagesLifecycle } from '../lib/storyline/lifecycle'
 import {
   readStoryCoreIntentSnapshotV1,
@@ -35,7 +35,7 @@ interface StoryArcStore {
   /** 获取当前活跃故事线的阶段列表 */
   getActiveStages: () => StoryStage[]
   /** 更新某条故事线的阶段 */
-  updateStages: (arcId: number, stages: StoryStage[]) => Promise<void>
+  updateStages: (arcId: number, stages: StoryStage[], expectedStagesJson?: string) => Promise<void>
 
   /** 构建用于 AI 注入的故事线上下文 */
   buildStoryArcContext: (currentChapterOrder?: number) => string
@@ -107,14 +107,21 @@ export const useStoryArcStore = create<StoryArcStore>((set, get) => ({
     return parseStages(arc.stages)
   },
 
-  updateStages: async (arcId, stages) => {
-    const current = get().arcs.find(a => a.id === arcId) ?? await db.storyArcs.get(arcId)
-    if (!current || !await assertRecordInScope(await resolveScopeLike(current.projectId), 'storyArcs', current, { owner: 'work' })) return
+  updateStages: async (arcId, stages, expectedStagesJson) => {
+    const current = await db.storyArcs.get(arcId)
+    if (!current || !await assertRecordInScope(await resolveScopeLike(current.projectId), 'storyArcs', current, { owner: 'work' })) {
+      if (expectedStagesJson !== undefined) throw new Error('故事线已不存在或不属于当前作品，修复尚未保存。')
+      return
+    }
+    if (!inspectStages(current.stages).valid && expectedStagesJson === undefined) {
+      throw new Error('原阶段数据格式异常，请先检查原始数据并显式保存修复。')
+    }
     const stagesJson = stringifyStages(stages)
     await updateStoryArcStagesLifecycle({
       arcId,
       stages: stagesJson,
       validStageIds: stages.map(stage => stage.id),
+      expectedStagesJson: expectedStagesJson ?? current.stages,
     })
     set({
       arcs: get().arcs.map(arc => arc.id === arcId
@@ -130,7 +137,12 @@ export const useStoryArcStore = create<StoryArcStore>((set, get) => ({
     const parts: string[] = ['【全局故事线】']
 
     for (const arc of arcs) {
-      const stages = parseStages(arc.stages)
+      const inspected = inspectStages(arc.stages)
+      if (!inspected.valid) {
+        parts.push(`\n故事线「${arc.name}」阶段数据格式异常，原始数据已保留，请先在故事线页面检查并修复。`)
+        continue
+      }
+      const stages = inspected.stages
       if (!stages.length) continue
 
       const typeLabel = arc.type === 'main' ? '主线' : '支线'
