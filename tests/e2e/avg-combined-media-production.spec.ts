@@ -11,10 +11,10 @@ import { assertCombinedAudio, assertCombinedImageConsumers, assertCombinedToolba
 test.skip(!process.env.AVG_COMBINED_RELEASE_BACKUP_FILE, 'Dedicated same-Work nine-media producer/export dependency; never substitute old single-line exports')
 
 test('native same-Work five images, original Sound and local fixed voice publish nine exact consumers and retain the earlier five-image Release', async ({ page }, info) => {
-  // This is a new four-Build composed case, including two separately confirmed
-  // publications and real 24s music audition. The original V5 420s case,
-  // all its assertions and the old retry policy remain byte-for-byte intact.
-  test.setTimeout(600_000)
+  // Four Builds include two publications, real 24s audition and portable proof
+  // recovery. Hosted runs already reach the second Release near the local
+  // ten-minute ceiling; bound that complete path separately on shared runners.
+  test.setTimeout(process.env.CI ? 1_200_000 : 600_000)
   for (const flag of ['VITE_STORYFORGE_AVG_MEDIA_PRODUCTION', 'VITE_STORYFORGE_AVG_VISUAL_PLANNING',
     'VITE_STORYFORGE_AVG_VOICE_PRODUCTION', 'VITE_STORYFORGE_AVG_SOUND_PREPARATION', 'VITE_STORYFORGE_AVG_SOUND_PRODUCTION']) expect(process.env[flag]).toBe('1')
   await observeCombinedNativeAudio(page)

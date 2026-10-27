@@ -78,6 +78,7 @@ export async function finishCombinedRoute(page: Page, scenes: Array<{ text: stri
 }
 
 export async function publishCombinedPreview(page: Page, scope: Owner) {
+  const publicationWaitMs = process.env.CI ? 180_000 : 60_000
   await page.goto(combinedProductionUrl(scope))
   await page.getByRole('button', { name: '制作与试玩', exact: true }).click()
   const panel = page.getByRole('region', { name: '本地原型版本验收', exact: true })
@@ -87,11 +88,11 @@ export async function publishCombinedPreview(page: Page, scope: Owner) {
   await panel.getByRole('button', { name: '验证全部冻结媒资', exact: true }).click()
   await expect(panel.getByRole('status').filter({ hasText: '全部冻结媒资已实际解码' })).toBeVisible({ timeout: 60_000 })
   await panel.getByRole('button', { name: '准备本地原型版本', exact: true }).click()
-  await expect(panel.getByRole('status').filter({ hasText: '本地原型版本已准备' })).toBeVisible({ timeout: 60_000 })
+  await expect(panel.getByRole('status').filter({ hasText: '本地原型版本已准备' })).toBeVisible({ timeout: publicationWaitMs })
   await expect(panel.getByRole('button', { name: '确认保存本地原型版本', exact: true })).toBeDisabled()
   await panel.getByRole('checkbox', { name: '我已核对版本，将它保存为本地原型', exact: true }).check()
   await panel.getByRole('button', { name: '确认保存本地原型版本', exact: true }).click()
-  await expect(panel.getByText('此版本已冻结；后续修改请创建新 Build。', { exact: true })).toBeVisible({ timeout: 60_000 })
+  await expect(panel.getByText('此版本已冻结；后续修改请创建新 Build。', { exact: true })).toBeVisible({ timeout: publicationWaitMs })
   return panel
 }
 
