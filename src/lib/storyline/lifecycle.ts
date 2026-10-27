@@ -1,6 +1,7 @@
 import { transactionTablesForReferenceCascade } from '../registry/lifecycle'
 import { cascadeRegisteredReferences } from '../workspace/lifecycle'
 import { db } from '../db/schema'
+import { inspectStages } from '../types/story-arc'
 
 /** 删章时保留作者确认的数据和冗余章名，只断开可能悬空的 FK。 */
 export async function detachStorylineForDeletedChapters(
@@ -41,14 +42,26 @@ export async function updateStoryArcStagesLifecycle(args: {
   arcId: number
   stages: string
   validStageIds: readonly string[]
+  /** Explicit repair (and store edits) compare the exact original JSON inside the transaction. */
+  expectedStagesJson?: string
 }): Promise<void> {
+  const inspected = inspectStages(args.stages)
+  if (!inspected.valid) throw new Error(inspected.error)
   await db.transaction('rw', db.storyArcs, db.storylineProgress, async () => {
+    const current = await db.storyArcs.get(args.arcId)
+    if (!current) throw new Error('故事线已不存在，请重新载入。')
+    if (args.expectedStagesJson !== undefined && current.stages !== args.expectedStagesJson) {
+      throw new Error('故事线阶段已变化，请刷新页面后检查，当前修复尚未保存。')
+    }
+    if (!inspectStages(current.stages).valid && args.expectedStagesJson === undefined) {
+      throw new Error('原阶段数据格式异常，请先检查原始数据并显式保存修复。')
+    }
     await db.storyArcs.update(args.arcId, { stages: args.stages, updatedAt: Date.now() })
     const progress = await db.storylineProgress.where('arcId').equals(args.arcId).first()
     if (
       progress?.id != null
       && progress.currentStageId != null
-      && !args.validStageIds.includes(progress.currentStageId)
+      && !inspected.stages.some(stage => stage.id === progress.currentStageId)
     ) {
       await db.storylineProgress.update(progress.id, {
         currentStageId: null,

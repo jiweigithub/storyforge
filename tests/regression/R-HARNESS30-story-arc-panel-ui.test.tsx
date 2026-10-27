@@ -188,6 +188,48 @@ afterEach(async () => {
 })
 
 describe('R-HARNESS30 · 故事线面板统一进入主 Agent Harness', () => {
+  it.each([undefined, null])('缺失或 null 关键事件不击穿面板，原数据保留并显式提示修复：%s', async keyEvents => {
+    const stages = JSON.stringify([{ id: 'kept-stage', title: '作者阶段', description: '保留描述', keyEvents }])
+    mocks.storyArcStore.arcs = [{ id: 9, projectId: project.id, name: '原故事线', type: 'main', stages }]
+    mocks.storyArcStore.activeArcId = 9
+    const host = await renderPanel()
+    expect(host.textContent).toContain('阶段数据格式异常')
+    expect(host.textContent).toContain('原始数据已保留')
+    expect(host.textContent).not.toContain('暂无阶段')
+    expect(host.textContent).not.toContain('添加阶段')
+    expect(mocks.storyArcStore.updateStages).not.toHaveBeenCalled()
+    expect(mocks.storyArcStore.arcs[0].stages).toBe(stages)
+    const transform = Array.from(host.querySelectorAll('button')).find(button => button.textContent === '扩写')!
+    expect(transform.disabled).toBe(true)
+  })
+
+  it('阶段修复先校验，保存失败保留编辑稿并可重试，携带原始 JSON 作并发检查', async () => {
+    const raw = '[{"id":"keep","title":"作者阶段","description":"原描述","extra":"保留"}]'
+    mocks.storyArcStore.arcs = [{ id: 9, projectId: project.id, name: '原故事线', type: 'main', stages: raw }]
+    mocks.storyArcStore.activeArcId = 9
+    const host = await renderPanel()
+    const button = (text: string) => Array.from(host.querySelectorAll('button')).find(item => item.textContent === text)!
+    await act(async () => button('检查并修复阶段数据').click())
+    const editor = host.querySelector<HTMLTextAreaElement>('textarea[aria-label="修复故事线阶段数据"]')!
+    expect(editor.value).toBe(raw)
+    await act(async () => button('确认保存阶段修复').click())
+    expect(mocks.storyArcStore.updateStages).not.toHaveBeenCalled()
+    const repaired = [{ ...JSON.parse(raw)[0], keyEvents: [] }]
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(editor, JSON.stringify(repaired))
+      editor.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    mocks.storyArcStore.updateStages.mockRejectedValueOnce(new Error('隔离保存失败'))
+    await act(async () => button('确认保存阶段修复').click())
+    expect(host.textContent).toContain('隔离保存失败')
+    expect(JSON.parse(editor.value)).toEqual(repaired)
+    expect(mocks.storyArcStore.arcs[0].stages).toBe(raw)
+    await act(async () => button('确认保存阶段修复').click())
+    expect(mocks.storyArcStore.updateStages).toHaveBeenLastCalledWith(9, repaired, raw)
+    expect(mocks.copilot.submitRequest).not.toHaveBeenCalled()
+    expect(mocks.copilot.submitTargetedRequest).not.toHaveBeenCalled()
+  })
+
   it('AI 生成提交 outline.story-arcs 请求，人工新增主线仍保持可用', async () => {
     const host = await renderPanel()
     const buttons = Array.from(host.querySelectorAll('button'))
