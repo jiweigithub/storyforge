@@ -4,17 +4,32 @@ import type {
   TextOpenWorldParsedModulesV1,
 } from '../types'
 
+import { textOpenWorldActionCompletesObjectiveV1, uniqueTextOpenWorldObjectiveInteractionLocationV1 } from './objective-scene-location'
+
 export type TextOpenWorldAuthoredSceneV2 = TextOpenWorldNarrativeModuleV2['scenes'][number]
 
 export function effectiveTextOpenWorldSceneLocationKeyV1(
   scene: TextOpenWorldAuthoredSceneV2,
   actors: readonly { key: string; homeLocationKey: string }[],
+  actions?: TextOpenWorldParsedModulesV1['actions'],
 ): string {
   if ((scene.sourceKind === 'quest-offer' || scene.sourceKind === 'quest-resolution') && scene.actorKey) {
     // Early P9 v2 packages placed actor-owned quest endpoints at the quest's
     // first stage while still requiring the owner as a participant. Normalize
     // those indistinguishable frozen packages to the owner's authored home.
     return actors.find(actor => actor.key === scene.actorKey)?.homeLocationKey ?? scene.locationKey
+  }
+  if (scene.sourceKind === 'quest-objective' && scene.objectiveKey && scene.sourceKey === scene.objectiveKey && actions) {
+    const support = scene.actionKeys.map(key => actions.actions.find(action => action.key === key))
+    const completions = support.filter(action => action && textOpenWorldActionCompletesObjectiveV1(action, scene.objectiveKey!, actions))
+    const completion = completions.length === 1 ? completions[0] : undefined
+    // Only the old compiler's first optional combat location may be repaired;
+    // valid authored scenes and ambiguous/corrupt proof graphs remain untouched.
+    if (support[0]?.category === 'start-combat' && support[0].locationKeys[0] === scene.locationKey
+      && completion?.locationKeys.length && !completion.locationKeys.includes(scene.locationKey)) {
+      return uniqueTextOpenWorldObjectiveInteractionLocationV1({ objectiveKey: scene.objectiveKey,
+        completionActionKey: completion.key, supportActionKeys: scene.actionKeys, graph: actions }) ?? scene.locationKey
+    }
   }
   return scene.locationKey
 }
@@ -39,6 +54,7 @@ export function effectiveTextOpenWorldSceneParticipantKeysV1(
   scene: TextOpenWorldAuthoredSceneV2,
   actors: readonly { key: string; homeLocationKey: string }[],
   scenes: readonly TextOpenWorldAuthoredSceneV2[],
+  locationKey = scene.locationKey,
 ): string[] {
   if (scene.sourceKind !== 'quest-objective') return scene.participantKeys
   // P9 Context v1 added every quest owner to every Objective. Older v2/v15
@@ -53,7 +69,7 @@ export function effectiveTextOpenWorldSceneParticipantKeysV1(
       .filter(candidate => candidate.sourceKind === 'actor-dialogue' && candidate.actorKey === actorKey)
       .flatMap(candidate => candidate.actionKeys))
     return scene.actionKeys.some(actionKey => actorActionKeys.has(actionKey))
-      && actors.find(actor => actor.key === actorKey)?.homeLocationKey === scene.locationKey
+      && actors.find(actor => actor.key === actorKey)?.homeLocationKey === locationKey
   })
 }
 
@@ -122,7 +138,8 @@ export function textOpenWorldSceneEligibleV1(input: {
 }): boolean {
   const { scene, modules, context } = input
   if (scene.sourceKind === 'random-event') return false
-  if (effectiveTextOpenWorldSceneLocationKeyV1(scene, modules.actors.actors) !== context.currentLocationKey) return false
+  const locationKey = effectiveTextOpenWorldSceneLocationKeyV1(scene, modules.actors.actors, modules.actions)
+  if (locationKey !== context.currentLocationKey) return false
   const conditionKeys = effectiveTextOpenWorldSceneConditionKeysV1(scene, modules.actions.actions)
   if (!conditionKeys.every(conditionKey => context.conditionResults[conditionKey]?.satisfied === true)) {
     return false
@@ -132,6 +149,7 @@ export function textOpenWorldSceneEligibleV1(input: {
     scene,
     modules.actors.actors,
     modules.narrative.scenes,
+    locationKey,
   )
   if (!participantKeys.every(actorKey => presentActorKeys.has(actorKey))) return false
   return questLifecycleAllows(scene, context, modules.actions)

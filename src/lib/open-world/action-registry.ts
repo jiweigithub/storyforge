@@ -12,7 +12,7 @@ import { parseTextOpenWorldModulesV1 } from './modules'
 import { parseTextOpenWorldCommandEnvelopeV1 } from './command-contract'
 import { createTextOpenWorldConditionCatalogV1 } from './condition-dsl'
 import { createTextOpenWorldEffectCatalogV1 } from './effect-dsl'
-import { planTextOpenWorldRouteV1 } from './map-topology'
+import { planTextOpenWorldRouteFromModulesV1 } from './map-topology'
 import {
   textOpenWorldSceneQuestInstanceKeysV1,
   textOpenWorldSceneEligibleV1,
@@ -244,6 +244,12 @@ export function createTextOpenWorldActionRegistryV1(value: TextOpenWorldRuntimeP
       const action = entry.action
       const unavailableReasons: TextOpenWorldActionAvailabilityV1['unavailableReasons'] = []
       const removableQuantity = (itemKey: string) => context.removableInventoryQuantities?.[itemKey] ?? 0
+      if (modules.actions.version >= 20) for (const effectKey of action.costEffectKeys) {
+        const cost = effectByKey.get(effectKey)
+        if (cost?.operation === 'remove-item' && cost.payload.reason === 'fulfillment'
+          && modules.items.items.find(item => item.key === cost.payload.itemKey)?.stackPolicy === 'instanced'
+          && removableQuantity(cost.payload.itemKey) < cost.payload.quantity) unavailableReasons.push({ code: 'item-unavailable', message: '交付前需卸下所需装备，并保留足够的可交付实例。', conditionKey: null })
+      }
       const defeated = context.playerHealth === 0 || context.combatStatus === 'defeat'
       const modernCombatAction = modules.actions.version >= 10
         && ['combat-basic-attack', 'combat-skill', 'combat-item', 'escape'].includes(action.category)
@@ -408,8 +414,8 @@ export function createTextOpenWorldActionRegistryV1(value: TextOpenWorldRuntimeP
           .map(point => point.locationKey)
           .filter(locationKey => locationKey !== context.currentLocationKey))
         const eligibleTargetKeys = validTargetKeys.filter(locationKey => unlockedLocationKeys.has(locationKey))
-        validTargetKeys = eligibleTargetKeys.filter(locationKey => planTextOpenWorldRouteV1({
-          runtimePackage: value,
+        validTargetKeys = eligibleTargetKeys.filter(locationKey => planTextOpenWorldRouteFromModulesV1({
+          modules,
           fromLocationKey: context.currentLocationKey,
           destinationLocationKey: locationKey,
           openEdgeKeys: context.openEdgeKeys,

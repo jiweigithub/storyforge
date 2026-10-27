@@ -2,6 +2,23 @@
 
 本页按用户可感知的变化整理功能更新、修复和操作改进。版本信息见[版本与兼容说明](/updates/compatibility)。
 
+
+## 2026-10-26 · 开放世界制作与返修整合
+
+制作工作台按游戏内容、产品系统配置、媒资生产检查进度与阻塞；逐张查看并确认图片后再过发布质量门。局部返修生成子 Build，保留旧发布版和存档；玩家可从“更多 → 读取本地体验记录”查看并主动导出本地反馈。操作见[开放世界指南](/features/interactive/open-world#三线制作、图片确认与局部返修)。依据：[PR #134](https://github.com/yuanbw2025/storyforge/pull/134)。通用生产的独立模型校准与真人双结局验收仍待完成。
+
+## 2026-10-26 · 角色候选编辑与知识库核对
+
+角色补全或状态候选的修改无效、未保存时显示原因并禁用采纳；修正后可继续原候选。原生故障上报避免把同一次历史故障反复排队，新发生的故障仍独立保留。见[角色候选编辑](/features/longform/character-driven#角色候选修改后不能采纳)与[故障排查](/guides/troubleshooting)。依据：[PR #201](https://github.com/yuanbw2025/storyforge/pull/201)。[开发记录](/updates/development-status)同步全部本地分支与工作区的状态和去重结论。
+
+## 2026-10-25 · 叙事世界工程预览
+
+本地实验预览增加叙事注释、可恢复的编译封存、按时间与角色视角查询原文，以及修改影响检查清单。增强入口默认隐藏，查询缺口与待复核项明确保留；修改影响语义质量、规模性能和真人改稿收益仍待验收。入口与操作见[世界引擎](/features/world-engine#叙事世界的本地实验预览)。依据：[PR #197](https://github.com/yuanbw2025/storyforge/pull/197)。
+
+## 2026-10-24 · 模块加载失败后的重试
+
+模块或 CSS 资源加载失败时，错误页“重试”先保存编辑再重新加载；保存失败会保留当前页面并提示处理，不直接刷新。见[恢复步骤](/guides/troubleshooting#模块加载失败时怎样重试)。依据：[PR #195](https://github.com/yuanbw2025/storyforge/pull/195)。
+
 ## 2026-10-23 · 大型运行合同的保存与恢复
 
 运行资料较多时，合法的运行合同可完整保存、修订，并在刷新或完整备份恢复后继续读取，不再被较小的事件记录限制误拒绝。超出记录容量仍会明确拒绝；不会截断上下文快照，也不改变模型调用预算、候选采纳、权限或过期检查。遇到容量错误时保留原作品与备份，不手工删除合同字段。依据：[PR #185](https://github.com/yuanbw2025/storyforge/pull/185)；操作见[备份与恢复](/guides/backup-restore)。
@@ -93,6 +110,12 @@
 - 已签发且满足既有真人验收与候选资格的作品可“导出独立网页游戏”，生成静态 ZIP；玩家无需安装 StoryForge 或配置 AI。导出不会自动上传公开，未发布试玩不能绕过资格门。
 
 操作见[文字冒险](/features/interactive/text-adventure)、[备份与恢复](/guides/backup-restore)和[版本与兼容](/updates/compatibility)。技术用例与代码交付不代表《潮钟群岛》等具体作品已完成真人验收或公开发布。
+
+## 2026-10-13 · 文字开放世界产品化分支预览
+
+开发分支增加三线制作总览、缺件与费用定位、新版组装来源快照、逐图人工确认，以及玩家本地体验记录和分类反馈导出。详情见[功能说明](/features/interactive/open-world)和[待合并记录](/updates/development-status)。
+
+施工基线 `45c541e9`，W0 审计提交 `351bb52f`；实现提交 [614fe1ca](https://github.com/yuanbw2025/storyforge/commit/614fe1ca)、[3216158f](https://github.com/yuanbw2025/storyforge/commit/3216158f)、[ae1b3f3a](https://github.com/yuanbw2025/storyforge/commit/ae1b3f3a)、[2505ef9d](https://github.com/yuanbw2025/storyforge/commit/2505ef9d)、[404f5cf0](https://github.com/yuanbw2025/storyforge/commit/404f5cf0)。本条是分支开发记录，不代表已合并、上线或完成真实模型/真人验收。
 
 ## 2026-10-13 · v4.0.0 本地便携版
 

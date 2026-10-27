@@ -1,7 +1,7 @@
 ---
 productId: world-engine
 status: released
-lastVerified: 2026-10-06
+lastVerified: 2026-10-26
 ---
 # World engine
 
@@ -35,6 +35,17 @@ The separate Power system navigation item has been removed; old links open the p
 Seal the world first. Then enter the specific TTRPG, character-chat, AI-town, or text-game product, select a version, complete direction settings, and explicitly start production. A world page does not turn a draft directly into a formal game.
 
 Each product reads the world content it needs, then owns its separate production data, media, releases, and saves.
+
+## Local experimental narrative-world preview
+
+Narrative annotations, compilation, perspective queries, and change-impact tools are merged into main. Enhanced entries appear only in local development mode with an explicit `?narrative-preview=1`; production builds hide them by default. Use an isolated test work and backups.
+
+1. In the fact library, choose Narrative annotations (experimental) (叙事注释（实验）). Check the record, original evidence, time, visibility, and whether it represents a fact, a character's belief, or an author plan. Model suggestions become saved candidates for review and confirmation, without directly overwriting prose.
+2. In Versions and sealing, select semantic scope, optionally include confirmed prose and narrative from the current workspace's work, then choose Capture and compile selected content (捕获并编译所选内容). This checks a snapshot without a model call or automatic publication. Return to a saved task to continue after leaving; review changed sources when prompted.
+3. Confirm and freeze completed compilation, then publish a world version. In the experimental Data export interface query, choose an entity, story thread, time, or character perspective. Index summaries help locate material; choose View complete original evidence (查看完整原文证据) to check frozen prose. Unknown time and unannotated prose retain coverage gaps: an empty query does not prove absence from the story.
+4. When compiling after edits, choose an existing revision as a comparison baseline. Inspect directly changed items, dependencies awaiting revalidation, and items requiring author review. This checklist does not rewrite prose, locked content, or older world versions.
+
+Semantic impact accuracy, formal scale performance, reader completeness, and author revision time savings still require acceptance. Do not treat the list as complete causal proof. The world supplies semantic content; each product still owns its images, publishing, and sessions. Source: [PR #197](https://github.com/yuanbw2025/storyforge/pull/197).
 
 ## Why versions matter
 
