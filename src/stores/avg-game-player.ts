@@ -179,7 +179,25 @@ export const useAvgGamePlayerStore = create<AvgGamePlayerState>((set, get) => {
     },
     reachBeat: async beatKey => act(async context => { const id = get().selectedSessionId; if (id == null) throw new Error('[avg] 请先开始游戏'); const nodeKey = get().runtimeState.narrative?.currentNodeKey ?? 'unknown'; const visit = get().runtimeState.narrative?.visitedNodeKeys.filter(key => key === nodeKey).length ?? 0; await assertSession(context.scope, id); const base = await readProductRuntimeStateVersion(id); await reachAvgPresentationBeat({ sessionId: id, beatKey, commandId: `avg:beat:${id}:${nodeKey}:${visit}:${beatKey}`, baseSequence: base.sequence, baseStateHash: base.stateHash, snapshotKey: `node:${nodeKey}:visit:${visit}` }); await details(id,context) }),
     choose: async choiceKey => act(async context => { const id = get().selectedSessionId; if (id == null) throw new Error('[avg] 请先开始游戏'); await assertSession(context.scope, id); const base = await readProductRuntimeStateVersion(id); await commitNarrativeChoice({ sessionId: id, choiceKey, commandId: `avg:choice:${id}:${crypto.randomUUID()}`, baseSequence: base.sequence, baseStateHash: base.stateHash }); await ensureAutomaticCheckpoint(id); await details(id,context) }),
-    voiceCommand: async input => { let generation = ''; const {expectedSessionId,...command}=input; if(expectedSessionId!==undefined&&expectedSessionId!==get().selectedSessionId)throw new Error('[avg] 声音回调不属于当前存档'); await transportAct(expectedSessionId ?? get().selectedSessionId!, async context => { const id = get().selectedSessionId; if (id == null) throw new Error('[avg] 请先开始游戏'); if(expectedSessionId!==undefined&&expectedSessionId!==id)throw new Error('[avg] 声音回调不属于当前存档'); await assertSession(context.scope, id); const base = await readProductRuntimeStateVersion(id); const event = await commitAvgVoiceCommandV1({ ...command, sessionId: id, commandId: `avg:voice:${crypto.randomUUID()}`, baseSequence: base.sequence, baseStateHash: base.stateHash }); generation = JSON.parse(event.payloadJson).generation as string; await details(id,context) }); return generation },
+    voiceCommand: async input => {
+      let generation = ''
+      const { expectedSessionId, ...command } = input
+      if (expectedSessionId !== undefined && expectedSessionId !== get().selectedSessionId) throw new Error('[avg] 声音回调不属于当前存档')
+      await transportAct(expectedSessionId ?? get().selectedSessionId!, async context => {
+        const id = get().selectedSessionId
+        if (id == null) throw new Error('[avg] 请先开始游戏')
+        if (expectedSessionId !== undefined && expectedSessionId !== id) throw new Error('[avg] 声音回调不属于当前存档')
+        await assertSession(context.scope, id)
+        const base = await readProductRuntimeStateVersion(id)
+        const event = await commitAvgVoiceCommandV1({ ...command, sessionId: id, commandId: `avg:voice:${crypto.randomUUID()}`, baseSequence: base.sequence, baseStateHash: base.stateHash })
+        generation = JSON.parse(event.payloadJson).generation as string
+        await details(id, context)
+      })
+      // Release playback only after the already queued channel admissions have
+      // settled. Short SFX must not finish while another due channel is writing.
+      if (command.type === 'start') await transportTail
+      return generation
+    },
     onceAudioCommand: async input => {
       let generation = 0
       const { expectedSessionId, ...command } = input
@@ -191,6 +209,7 @@ export const useAvgGamePlayerStore = create<AvgGamePlayerState>((set, get) => {
         generation = JSON.parse(event.payloadJson).generation as number
         await details(expectedSessionId, context)
       })
+      if (command.type === 'start') await transportTail
       return generation
     },
     actOnItem: async (actionKey, target) => act(async context => { const id = get().selectedSessionId; if (id == null) throw new Error('[avg] 请先开始游戏'); await assertSession(context.scope, id); const base = await readProductRuntimeStateVersion(id); await commitAvgInventoryActionV1({ sessionId: id, actionKey, target, commandId: `avg:item:${id}:${crypto.randomUUID()}`, baseSequence: base.sequence, baseStateHash: base.stateHash }); await details(id,context) }),

@@ -137,8 +137,19 @@ export async function assertCombinedImageConsumers(page: Page, templates: any[],
 }
 
 export async function assertCombinedAudio(page: Page, sessionId: number, info: TestInfo) {
-  await expect.poll(() => page.evaluate(() => (window as any).__avgCombinedAudio.some((r: any) =>
-    ['bgm', 'sfx', 'ambience', 'voice'].every(channel => r.active.includes(channel)))), { timeout: 10_000 }).toBe(true)
+  try {
+    await expect.poll(() => page.evaluate(() => (window as any).__avgCombinedAudio.some((r: any) =>
+      ['bgm', 'sfx', 'ambience', 'voice'].every(channel => r.active.includes(channel)))), { timeout: 10_000 }).toBe(true)
+  } catch (error) {
+    await info.attach('combined-native-playback-failure', { body: JSON.stringify(await page.evaluate(() => ({
+      witness: (window as any).__avgCombinedAudio,
+      elements: Array.from(document.querySelectorAll<HTMLAudioElement>('audio[data-channel]')).map(a => ({
+        channel: a.dataset.channel, paused: a.paused, ended: a.ended, currentTime: a.currentTime,
+        duration: a.duration, readyState: a.readyState, muted: a.muted, volume: a.volume,
+      })),
+    }))), contentType: 'application/json' })
+    throw error
+  }
   await expect(page.locator('.avg-text-cursor')).toHaveClass(/is-complete/)
   const readLine = () => page.evaluate(async id => {
     const load = new Function('p', 'return import(p)') as (p: string) => Promise<any>
