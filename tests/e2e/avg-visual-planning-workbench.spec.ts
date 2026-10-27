@@ -637,10 +637,10 @@ test('fresh V5 native family form preserves reference content policies and start
 
 for(const [visualVersion,noKeyBeforeProcessing,reservedForeground,boundaryUnmix] of [[4,false,false,false],[5,false,false,false],[5,true,false,false],[5,false,true,false],[5,false,true,true]] as const)test(boundaryUnmix?'V5 native boundary-unmix2 family preserves originals and clean edges through producer, Stage, Release, reference and portable restore':reservedForeground?'V5 native declared foreground family removes both opaque backdrops through actual producer, Preview, reference provenance and portable restore':noKeyBeforeProcessing?'V5 native received images resume local processing after key removal and refresh without any new request':visualVersion===4?'professional family images use exact references, alpha and five consumers through native Preview and portable restore':'V5 native family images preserve policy2, local derivatives and five consumers through Source5/6 Preview and portable restore',async({page},info)=>{
   let publishedV5Backup: Record<string, unknown> | undefined
-  // Hosted trace: full portable proof alone took 132.7s, with all assertions
-  // still passing. Keep the existing 30s UI phase bounds and allow the whole
-  // five-image author/preview/restore/delete slice to finish on that runner.
-  test.setTimeout(420_000)
+  // Hosted CI reached the final retained-preview read at the old 420s ceiling.
+  // Only the three full V5 publication scenarios need CI execution headroom;
+  // local limits and every source/pixel/lineage/adoption assertion stay intact.
+  test.setTimeout(process.env.CI && visualVersion===5 && !noKeyBeforeProcessing ? 900_000 : 420_000)
   test.skip(process.env.VITE_STORYFORGE_AVG_MEDIA_PRODUCTION!=='1'||process.env.VITE_STORYFORGE_AVG_VISUAL_PLANNING!=='1','Both default-off visual experiments must be explicit')
   const {source,panel,calls}=await prepareProfessionalFamily(page,{propReference:true,version:visualVersion,processing:visualVersion===5,reservedForeground,boundaryUnmix,...(noKeyBeforeProcessing?{processingTargetIndex:4}:{})})
   const fixture=await page.evaluate(async({scope,reservedForeground})=>{
@@ -916,7 +916,7 @@ for(const [visualVersion,noKeyBeforeProcessing,reservedForeground,boundaryUnmix]
     await release.getByRole('button',{name:'验证全部冻结媒资',exact:true}).click()
     await expect(release.getByRole('status').filter({hasText:'全部冻结媒资已实际解码'})).toBeVisible({timeout:60_000})
     await release.getByRole('button',{name:'准备本地原型版本',exact:true}).click()
-    await expect(release.getByRole('status').filter({hasText:'本地原型版本已准备，请核对后保存。'})).toBeVisible({timeout:60_000})
+    await expect(release.getByRole('status').filter({hasText:'本地原型版本已准备，请核对后保存。'})).toBeVisible({timeout:process.env.CI ? 180_000 : 60_000})
     await expect(release.getByRole('button',{name:'确认保存本地原型版本',exact:true})).toBeDisabled()
     await release.getByRole('checkbox',{name:'我已核对版本，将它保存为本地原型',exact:true}).check()
     await release.getByRole('button',{name:'确认保存本地原型版本',exact:true}).click()

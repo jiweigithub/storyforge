@@ -151,10 +151,10 @@
       "newTestsAdded": 0
     },
     "baselineObservationsUnchanged": true,
-    "finalFullCI": "Retained ba785 full report completed with four deadline roots; corrected four-file V8 batch13 cases passed. Latest CI-only deadline candidate pending full hosted engineering/core-E2E and AVG terminal; no additional full local CI.",
+    "finalFullCI": "Exact1a282 canonical full CI passed:1104 files,7430 tests+3 skipped; original coverage gates and build passed. Whole verify job success includes3 proxy smokes and398 core browser passes+64 skips. Separate AVG job100 passed/3 failed; final corrected source CI/E2E still pending.",
     "serialIsolatedE2E": {
       "avgMediaStatus": "passed existing isolated remaining AVG recipe plus corrected original sound closed-read; no new cases or paid models",
-      "wholeProjectHostedStatus": "pending existing full-engineering/core-E2E workflows",
+      "wholeProjectHostedStatus": "Exact1a282 full verify passed, including398 core browser cases+64 conditional skips and3 proxy cases. Hosted AVG100 passed/3 execution-limit failures; earlier local103+closure remains separate.",
       "counts": {
         "allAvgPassed": 103,
         "allAvgConditionalSkipped": 17,
@@ -1056,6 +1056,127 @@
       "soundClosedReader": "passed corrected explicit-replay path; advanced to all AVG native paths",
       "applicationSourceUnchangedFrom": "ba785f0d6be5cbe99b930c7e1dea5b8136fe88b5",
       "status": "superseded after concrete retained full-CI deadline failures and corrected four-file covered batch13 passed; latest fixed candidate authoritative"
+    },
+    "hostedAttempt1a282": {
+      "head": "1a28200fe169e7910a4fe6ef35440626a833013c",
+      "tree": "84976bac12fb6a03e368e4f5581025ee2aefcfa3",
+      "runId": 40410246773,
+      "fullEngineering": {
+        "head": "1a28200fe169e7910a4fe6ef35440626a833013c",
+        "runId": 40410246773,
+        "jobId": 121878833761,
+        "jobConclusion": "success",
+        "completedAt": "2026-10-27T01:41:27Z",
+        "unitTests": {
+          "filesPassed": 1104,
+          "passed": 7430,
+          "skipped": 3,
+          "failed": 0,
+          "total": 7433,
+          "seconds": 6785.34
+        },
+        "coveragePercent": {
+          "statements": 89.06,
+          "branches": 76.38,
+          "functions": 88.19,
+          "lines": 89.06
+        },
+        "productionProxySmoke": {
+          "passed": 3,
+          "seconds": 12.1
+        },
+        "coreBrowser": {
+          "passed": 398,
+          "skipped": 64,
+          "failed": 0,
+          "reportedDuration": "1.4h"
+        },
+        "log": {
+          "filename": "ci-1a282-verify-job.log",
+          "bytes": 1183196,
+          "sha256": "e5f07e037aaef2b43e3eb8c0ea84a64da600d96ac7ea7d8d36b9dc7ecebc69af"
+        },
+        "scope": "Canonical full CI and core browser job passed at1a; separate AVG job failed3 V5 execution limits. Does not sign the pending corrected candidate."
+      },
+      "avg": {
+        "jobId": 121878834112,
+        "conclusion": "failure",
+        "all": {
+          "passed": 100,
+          "failed": 3,
+          "skipped": 17,
+          "flaky": 0,
+          "durationSeconds": 4837.301791
+        },
+        "roots": [
+          {
+            "case": "V5 policy2 five-image publication and retained version",
+            "attemptsMs": [
+              422445,
+              422245
+            ],
+            "failure": "Whole420s deadline at final earlier-image preview read"
+          },
+          {
+            "case": "V5 declared foreground",
+            "attemptsMs": [
+              242664,
+              245510
+            ],
+            "failure": "60s publication readiness expired; page still preparing; no alert"
+          },
+          {
+            "case": "V5 boundary unmix2",
+            "attemptsMs": [
+              247753,
+              246561
+            ],
+            "failure": "60s publication readiness expired; page still preparing; no alert"
+          }
+        ],
+        "cascade": "No successful visual backup; closed visual read fails. Combined production skipped after preceding failure; combined closed lacks backup. Original sound modes and report guard passed.",
+        "artifact": {
+          "id": 12696489452,
+          "bytes": 256113126,
+          "sha256": "15d6b97d1fd2913899c2aeb575128009c9f6f6bb1e1c0b0e4b013665e2f2289f"
+        },
+        "originalSoundStages": "all original processing, preparation, production, closed-reader and existing sound report guard passed"
+      },
+      "pendingRepair": {
+        "scope": "Only three V5 publication scenarios: CI whole-case900s and CI publication readiness180s; local420s/60s and all assertions intact",
+        "applicationSourceChanged": false,
+        "newLocalBrowserRuns": 0,
+        "reasonNoLocalRepeat": "Same application and stricter old bounds already passed all103 and closed/combined locally. New failures are hosted execution headroom; final hosted result is authoritative.",
+        "staticValidation": "ESLint, Playwright compilation/list of19 cases, and diff check passed; not an executed E2E pass"
+      },
+      "clientJobs": {
+        "runId": 40410246757,
+        "status": "completed",
+        "conclusion": "success",
+        "jobs": [
+          {
+            "link": "https://github.com/yuanbw2025/storyforge/actions/runs/40410246757/job/121878833904",
+            "name": "windows",
+            "state": "SUCCESS"
+          },
+          {
+            "link": "https://github.com/yuanbw2025/storyforge/actions/runs/40410246757/job/121878833880",
+            "name": "android",
+            "state": "SUCCESS"
+          },
+          {
+            "link": "https://github.com/yuanbw2025/storyforge/actions/runs/40410246757/job/121878833862",
+            "name": "macos (macos-15, arm64, mac-arm64)",
+            "state": "SUCCESS"
+          },
+          {
+            "link": "https://github.com/yuanbw2025/storyforge/actions/runs/40410246757/job/121878834116",
+            "name": "macos (macos-15-intel, x64, mac)",
+            "state": "SUCCESS"
+          }
+        ]
+      },
+      "status": "General full CI/core browser and all4 clients passed. Only3 hosted AVG V5 execution-limit roots remain; freeze scoped CI-only correction, then collect corrected-source CI/E2E terminal."
     }
   },
   "limitations": [
