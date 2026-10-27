@@ -4,6 +4,12 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { confirmEngineeringVisualReview } from '../helpers/avg-visual-review-playwright'
 
+async function readyRuntime(page:Page){
+  // Navigation reloads the uncached module graph before the actual runtime
+  // assertions below can inspect restored pixels or dialogue.
+  await expect(page.locator('.avg-stage')).toBeVisible({timeout:30_000})
+}
+
 async function adoptSource(page:Page,label:string,waitForCompletion=false){
   const card=page.getByRole('article',{name:`作者确认：${label}`,exact:true})
   await card.getByRole('button',{name:`保存候选：${label}`,exact:true}).click()
@@ -298,7 +304,9 @@ for(const variant of [false,true,'held-pending'] as const)test(`professional vis
   await page.getByRole('button',{name:'试玩此预览',exact:true}).click()
   await expect.poll(()=>page.locator('.avg-stage img').evaluateAll((imgs:HTMLImageElement[])=>imgs.some(i=>i.complete&&i.naturalWidth===576))).toBe(true)
   const originalUrl=page.url()
-  await page.reload();await expect(page.locator('.avg-dialogue p')).toContainText(source.text)
+  await page.reload();await readyRuntime(page)
+  await expect(page.locator('.avg-text-cursor')).toHaveClass(/is-complete/,{timeout:10_000})
+  await expect(page.locator('.avg-dialogue p')).toContainText(source.text)
   const history=await historicalDesignEvidence(page,source.scope)
   expect(history.unchanged).toBe(true);expect(history.designs).toHaveLength(2)
   expect(history.designs.every(d=>d.edited)).toBe(true)
@@ -315,12 +323,12 @@ for(const variant of [false,true,'held-pending'] as const)test(`professional vis
     return {scope:importedScope,sessionId:session.sessionId}
   },source.scope)
   const url=new URL(originalUrl);url.searchParams.set('project',String(restored.scope.projectId));url.searchParams.set('work',String(restored.scope.workId));url.searchParams.set('session',String(restored.sessionId))
-  await page.goto(url.toString());await expect.poll(()=>page.locator('.avg-stage img').evaluateAll((imgs:HTMLImageElement[])=>imgs.some(i=>i.complete&&i.naturalWidth===576))).toBe(true)
+  await page.goto(url.toString());await readyRuntime(page);await expect.poll(()=>page.locator('.avg-stage img').evaluateAll((imgs:HTMLImageElement[])=>imgs.some(i=>i.complete&&i.naturalWidth===576))).toBe(true)
   const importedHistory=await historicalDesignEvidence(page,restored.scope)
   expect(importedHistory.unchanged).toBe(true);expect(importedHistory.designs).toEqual(history.designs)
   await page.screenshot({path:info.outputPath('avg-v4-professional-restored-preview.png')})
   await page.evaluate(async workId=>{const load=new Function('p','return import(p)') as (p:string)=>Promise<any>;await(await load('/storyforge/src/lib/workspace/lifecycle.ts')).deleteWork(workId)},restored.scope.workId)
-  await page.goto(originalUrl);await expect.poll(()=>page.locator('.avg-stage img').evaluateAll((imgs:HTMLImageElement[])=>imgs.some(i=>i.complete&&i.naturalWidth===576))).toBe(true)
+  await page.goto(originalUrl);await readyRuntime(page);await expect.poll(()=>page.locator('.avg-stage img').evaluateAll((imgs:HTMLImageElement[])=>imgs.some(i=>i.complete&&i.naturalWidth===576))).toBe(true)
   expect(models).toHaveLength(2);expect(images).toHaveLength(2)
   if(legacyHold){
     const preserved=await page.evaluate(async saved=>{
@@ -407,10 +415,10 @@ test('chosen Image 2.5 continues into a new offline author stage with exact orig
     return {scope:importedScope,sessionId:session.sessionId}
   },source.scope)
   const importedUrl=new URL(originalUrl);importedUrl.searchParams.set('project',String(restored.scope.projectId));importedUrl.searchParams.set('work',String(restored.scope.workId));importedUrl.searchParams.set('session',String(restored.sessionId))
-  await page.goto(importedUrl.toString());await expect.poll(decoded).toBe(true)
+  await page.goto(importedUrl.toString());await readyRuntime(page);await expect.poll(decoded).toBe(true)
   await page.screenshot({path:info.outputPath('avg-v4-chosen-image-offline-stage-continuation.png')})
   await page.evaluate(async workId=>{const load=new Function('p','return import(p)');await(await load('/storyforge/src/lib/workspace/lifecycle.ts')).deleteWork(workId)},restored.scope.workId)
-  await page.goto(originalUrl);await expect.poll(decoded).toBe(true)
+  await page.goto(originalUrl);await readyRuntime(page);await expect.poll(decoded).toBe(true)
   expect(models).toHaveLength(2);expect(images).toHaveLength(1);expect(images[0].model).toBe('agnes-image-2.5-flash')
 })
 
@@ -888,7 +896,7 @@ for(const [visualVersion,noKeyBeforeProcessing,reservedForeground,boundaryUnmix]
   await expect(page.locator('.avg-actor img')).toHaveAttribute('alt',expression.altText)
   const nextBounds=await page.locator('.avg-actor img').boundingBox();expect(nextBounds).not.toBeNull();expect(bounds).not.toBeNull()
   expect(Math.abs(nextBounds!.width-bounds!.width)).toBeLessThan(1);expect(Math.abs(nextBounds!.height-bounds!.height)).toBeLessThan(1)
-  await page.reload();await expect(page.locator('.avg-actor img')).toHaveAttribute('alt',expression.altText)
+  await page.reload();await readyRuntime(page);await expect(page.locator('.avg-actor img')).toHaveAttribute('alt',expression.altText)
   await expect(page.locator('.avg-dialogue p')).toHaveText(source.scenes[1].text)
   await page.screenshot({path:info.outputPath(`avg-v${visualVersion}-family-expression.png`),fullPage:true})
   if(visualVersion===5&&!noKeyBeforeProcessing){
@@ -919,8 +927,14 @@ for(const [visualVersion,noKeyBeforeProcessing,reservedForeground,boundaryUnmix]
     await expect(release.getByRole('status').filter({hasText:'本地原型版本已准备，请核对后保存。'})).toBeVisible({timeout:process.env.CI ? 180_000 : 60_000})
     await expect(release.getByRole('button',{name:'确认保存本地原型版本',exact:true})).toBeDisabled()
     await release.getByRole('checkbox',{name:'我已核对版本，将它保存为本地原型',exact:true}).check()
+    const publicationStarted=Date.now(),publicationWaitMs=process.env.CI ? 180_000 : 60_000
     await release.getByRole('button',{name:'确认保存本地原型版本',exact:true}).click()
-    await expect(release.getByText('此版本已冻结；后续修改请创建新 Build。',{exact:true})).toBeVisible({timeout:60_000})
+    // Publication revalidates the same five-image proof set as preparation;
+    // retain its existing constrained-runner budget and actual elapsed time.
+    await expect(release.getByText('此版本已冻结；后续修改请创建新 Build。',{exact:true})).toBeVisible({timeout:publicationWaitMs})
+    const publicationDurationPath=info.outputPath('five-image-publication-duration.json')
+    await writeFile(publicationDurationPath,JSON.stringify({elapsedMs:Date.now()-publicationStarted,maximumWaitMs:publicationWaitMs}))
+    await info.attach('five-image-publication-duration',{path:publicationDurationPath,contentType:'application/json'})
     publishedV5Backup=await page.evaluate(async({scope,backgroundKey,poseKey,expressionKey,iconKey,detailKey})=>{
       const load=new Function('p','return import(p)') as (p:string)=>Promise<any>
       const [{db},files,pkg,module,config]=await Promise.all([load('/storyforge/src/lib/db/schema.ts'),load('/storyforge/src/lib/export/json-export.ts'),
@@ -941,6 +955,7 @@ for(const [visualVersion,noKeyBeforeProcessing,reservedForeground,boundaryUnmix]
     expect(binding.productBuildId).toBeNull();expect(binding.productReleaseId).toBe((publishedV5Backup.expected as any).releaseId)
     await page.screenshot({path:info.outputPath('avg-v5-original-release-playing.png')})
     await page.goto(originalUrl)
+    await readyRuntime(page)
     await expect(page.locator('.avg-actor img')).toHaveAttribute('alt',expression.altText)
     expect(models).toHaveLength(4);expect(images).toHaveLength(5);expect(calls).toEqual([])
   }
@@ -958,10 +973,10 @@ for(const [visualVersion,noKeyBeforeProcessing,reservedForeground,boundaryUnmix]
   await writeFile(restoreTiming,JSON.stringify({elapsedMs:Date.now()-restoreStarted,totalTestLimitMs:420_000}))
   await info.attach('five-image-portable-proof-duration',{path:restoreTiming,contentType:'application/json'})
   const importedUrl=new URL(originalUrl);importedUrl.searchParams.set('project',String(restored.scope.projectId));importedUrl.searchParams.set('work',String(restored.scope.workId));importedUrl.searchParams.set('session',String(restored.sessionId))
-  await page.goto(importedUrl.toString());await expect.poll(()=>page.locator('.avg-actor img').evaluate((i:HTMLImageElement)=>i.complete?i.naturalWidth:0)).toBe(pose.width)
+  await page.goto(importedUrl.toString());await readyRuntime(page);await expect.poll(()=>page.locator('.avg-actor img').evaluate((i:HTMLImageElement)=>i.complete?i.naturalWidth:0)).toBe(pose.width)
   await page.getByRole('button',{name:'物品与证据',exact:true}).click();await expect.poll(()=>page.getByRole('dialog',{name:'物品与证据',exact:true}).locator('.avg-inventory-detail-image').evaluate((i:HTMLImageElement)=>i.complete?i.naturalWidth:0)).toBe(detail.width)
   await page.evaluate(async workId=>{const load=new Function('p','return import(p)') as (p:string)=>Promise<any>;await(await load('/storyforge/src/lib/workspace/lifecycle.ts')).deleteWork(workId)},restored.scope.workId)
-  await page.goto(originalUrl);await expect(page.locator('.avg-actor img')).toHaveAttribute('alt',expression.altText)
+  await page.goto(originalUrl);await readyRuntime(page);await expect(page.locator('.avg-actor img')).toHaveAttribute('alt',expression.altText)
   expect(models).toHaveLength(4);expect(images).toHaveLength(5);expect(calls).toEqual([])
   await page.goto(`./avg/production?project=${source.scope.projectId}&work=${source.scope.workId}`)
   if(visualVersion===5){
@@ -1249,10 +1264,10 @@ test('unselected original is revalidated offline into current review and Preview
   },source.scope)
   expect(restored.localBuild).toBe(2);expect(restored.originalBuild).toBe(1);expect(restored.latestBuild).toBe(3)
   const importedUrl=new URL(originalUrl);importedUrl.searchParams.set('project',String(restored.scope.projectId));importedUrl.searchParams.set('work',String(restored.scope.workId));importedUrl.searchParams.set('session',String(restored.sessionId))
-  await page.goto(importedUrl.toString());await expect.poll(decoded).toBe(true)
+  await page.goto(importedUrl.toString());await readyRuntime(page);await expect.poll(decoded).toBe(true)
   await page.screenshot({path:info.outputPath('avg-v4-unselected-source3-offline-native-preview.png')})
   await page.evaluate(async workId=>{const load=new Function('p','return import(p)');await(await load('/storyforge/src/lib/workspace/lifecycle.ts')).deleteWork(workId)},restored.scope.workId)
-  await page.goto(originalUrl);await expect.poll(decoded).toBe(true)
+  await page.goto(originalUrl);await readyRuntime(page);await expect.poll(decoded).toBe(true)
   expect(models).toHaveLength(2);expect(images).toHaveLength(1)
 })
 

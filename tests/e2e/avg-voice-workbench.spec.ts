@@ -17,7 +17,7 @@ async function openVoiceDraft(page: Page) {
   await page.route('http://127.0.0.1:5297/**', async route => { requests++; await route.abort() })
   await page.goto(`./avg/production?project=${seed.scope.projectId}&work=${seed.scope.workId}`)
   // A saved editor draft opens its actual workbench automatically.
-  await expect(page.getByRole('region', { name: '系统与效果组装（实验）', exact: true })).toBeVisible()
+  await expect(page.getByRole('region', { name: '系统与效果组装（实验）', exact: true })).toBeVisible({ timeout: 30_000 })
   await page.getByRole('button', { name: '素材', exact: true }).click()
   const panel = page.getByRole('region', { name: '逐句配音需求草稿', exact: true })
   await expect(panel.getByText(/本机免费配音/)).toBeVisible()

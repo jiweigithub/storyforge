@@ -107,6 +107,7 @@ test("AVG pages are open without a world; settings and confirmed conversation su
     "灯塔档案员",
   );
   await page.reload();
+  await expect(page.getByLabel("玩家身份 / 主角", { exact: true })).toBeVisible({ timeout: 30_000 });
   await expect(page.getByLabel("玩家身份 / 主角", { exact: true })).toHaveValue(
     "灯塔档案员",
   );
