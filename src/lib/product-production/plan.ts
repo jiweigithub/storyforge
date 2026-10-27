@@ -1349,8 +1349,12 @@ export async function createProductProductionPlanV3(input: {
   const mediaDependencies: string[] = []
   if (!textAdventure) {
     const mediaTasks = createCommonProductMediaBundleTasksV3({ brief, dependsOn: ['media.requirements'],
-      inputArtifactKeys: ['media.requirements'], visualArtifactKeys, audioArtifactKeys,
+      inputArtifactKeys: ['media.requirements', ...chatDesignInputs], visualArtifactKeys, audioArtifactKeys,
       durationMs: perDuration, storageBytes: mediaStorage, maximumCostUsd: perCost })
+      .map(task => chatVisual && task.kind === 'image-bundle' ? productionTask({
+        ...task, dependsOn: [...task.dependsOn, ...chatDesignInputs],
+        maxAttempts: chatDesignedVisual ? 1 : task.maxAttempts, failurePolicy: 'pause',
+      }) : task)
     tasks.push(...mediaTasks); mediaDependencies.push(...mediaTasks.map(task => task.taskKey))
   }
   if (textAdventure && activeVisual) {

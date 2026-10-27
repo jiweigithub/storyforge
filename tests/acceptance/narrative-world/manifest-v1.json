@@ -21,7 +21,7 @@
     "edits": 48
   },
   "baseline": {
-    "path": "tests/acceptance/narrative-world/baseline-20261027-pr172-post-ttrpg-v1.json",
+    "path": "tests/acceptance/narrative-world/baseline-20261027-pr172-post-ttrpg-v2.json",
     "policy": "Preserve this dated receipt. Changed corpus requires a new dataset version; changed implementation requires a reviewed new receipt.",
     "history": [
       {
@@ -514,6 +514,12 @@
         "workPackage": "NW-0B",
         "implementationCommit": "4fb967d75c98b3622f3c900457df1e9f6b73f3a7",
         "note": "Preserve the unchanged parent receipt before the combined PR172/TTRPG integration; it does not validate the combined source tree."
+      },
+      {
+        "path": "tests/acceptance/narrative-world/baseline-20261027-pr172-post-ttrpg-v1.json",
+        "workPackage": "PR172-post-TTRPG-integration",
+        "implementationCommit": "c0e7b7de28972d5b527fd0fd96ba92253de2c17d",
+        "note": "Preserved pre-repair deterministic world receipt. Full delivery subsequently exposed chat media-plan integration failures; this is not a full delivery acceptance claim."
       }
     ],
     "comparison": "NW-2E checkpoint of the unchanged legacy v3 120-query comparator. Typed v4 query, exact product plans, current impact diagnostics and scale failures have separate receipts; no model or human quality acceptance is inferred."

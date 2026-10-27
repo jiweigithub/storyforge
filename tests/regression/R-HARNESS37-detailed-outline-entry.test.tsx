@@ -140,7 +140,10 @@ const mounted: Array<{ host: HTMLDivElement; root: ReturnType<typeof createRoot>
 const validSceneOutput = mocks.sceneOutput
 
 async function waitUntil(predicate: () => boolean | Promise<boolean>): Promise<void> {
-  for (let attempt = 0; attempt < 80; attempt += 1) {
+  // This synchronizes React and IndexedDB, not a product latency budget.
+  // Coverage and shared-runner scheduling must not turn 80 short ticks into a false failure.
+  const deadline = Date.now() + 5_000
+  while (Date.now() < deadline) {
     let matched = false
     await act(async () => {
       matched = await predicate()
@@ -148,7 +151,7 @@ async function waitUntil(predicate: () => boolean | Promise<boolean>): Promise<v
     })
     if (matched) return
   }
-  throw new Error('等待 UI/IndexedDB 状态超时')
+  throw new Error(`等待 UI/IndexedDB 状态超时：${predicate.toString()}`)
 }
 
 async function unmountLatest(): Promise<void> {
