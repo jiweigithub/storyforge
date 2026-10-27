@@ -1,7 +1,7 @@
 {
   "schema": "storyforge.avg.final-integration-acceptance",
   "version": 1,
-  "status": "in-progress",
+  "status": "complete",
   "scope": "AVG product development and S3 integration; story design deferred; no main merge/deployment",
   "integrationBase": "f9deb5e3d81e32346c30ad632902d15270652960",
   "newModelOrMediaRequests": 0,
@@ -151,10 +151,10 @@
       "newTestsAdded": 0
     },
     "baselineObservationsUnchanged": true,
-    "finalFullCI": "Exact1a282 canonical full CI passed:1104 files,7430 tests+3 skipped; original coverage gates and build passed. Whole verify job success includes3 proxy smokes and398 core browser passes+64 skips. Separate AVG job100 passed/3 failed; final corrected source CI/E2E still pending. Actual remote main advanced toF9 and caused a generated-metrics merge conflict before c989 workflows could start. Integrating only that real blocker; no frozen baseline input changes. Final merged-source CI/E2E pending.",
+    "finalFullCI": "Exact714297 canonical complete verify SUCCESS:1106 files,7454 tests+3 skips; unchanged coverage/build gates passed. Proxy browser3 and core browser404+64 conditional skips passed. Final-source AVG/client/packaging jobs also terminal success; records-only closure does not claim a new full run on its own documentation commit.",
     "serialIsolatedE2E": {
       "avgMediaStatus": "passed existing isolated remaining AVG recipe plus corrected original sound closed-read; no new cases or paid models",
-      "wholeProjectHostedStatus": "Exact1a282 full verify passed, including398 core browser cases+64 conditional skips and3 proxy cases. Hosted AVG100 passed/3 execution-limit failures; earlier local103+closure remains separate.",
+      "wholeProjectHostedStatus": "Exact714297 full verify/404core+3proxy SUCCESS; exact714297 complete9-mode AVG SUCCESS, all103+17conditional skips and visual/nine-media same-backup closed-read stages passed. Controlled engineering provider responses; no new real-model/art/hearing claim.",
       "counts": {
         "allAvgPassed": 103,
         "allAvgConditionalSkipped": 17,
@@ -166,7 +166,8 @@
         "flaky": 0
       },
       "guards": "existing visual and combined actual-report validators passed; combined closed consumer matched exact current successful export SHA256",
-      "applicationSourceUnchangedFrom": "ba785f0d6be5cbe99b930c7e1dea5b8136fe88b5"
+      "applicationSourceUnchangedFrom": "ba785f0d6be5cbe99b930c7e1dea5b8136fe88b5",
+      "currentHostedProof": "validation.finalHosted714297.avg"
     },
     "documentPreflightFailure": {
       "session": 8618,
@@ -1324,7 +1325,7 @@
         }
       ],
       "hostedRunsForC989": 0,
-      "status": "All required precommit engineering checks and provider49 passed; commit/push integrated candidate, then collect exact-source hosted CI/E2E.",
+      "status": "Integrated and pushed714297; complete exact-source CI/core/AVG/client/packaging terminal success. Prior49/provider checks and preserved freshness failure retain their original scope.",
       "providerRegression": {
         "files": 3,
         "passed": 49,
@@ -1364,17 +1365,700 @@
         "unchangedLimitKiB": 600,
         "entryKiB": 6.8
       }
+    },
+    "finalHosted714297": {
+      "general": {
+        "head": "71429772d1fa6feb60f299c432d301c8fe7c9b37",
+        "runId": 40438087014,
+        "jobId": 121971549993,
+        "jobConclusion": "success",
+        "workflowConclusion": "success",
+        "completedAt": "2026-10-27T05:53:01Z",
+        "unitTests": {
+          "filesPassed": 1106,
+          "passed": 7454,
+          "skipped": 3,
+          "failed": 0,
+          "total": 7457,
+          "seconds": 6854.19
+        },
+        "coveragePercent": {
+          "statements": 89.08,
+          "branches": 76.37,
+          "functions": 88.24,
+          "lines": 89.08
+        },
+        "productionProxySmoke": {
+          "passed": 3,
+          "seconds": 10.8
+        },
+        "coreBrowser": {
+          "passed": 404,
+          "skipped": 64,
+          "failed": 0,
+          "reportedDuration": "1.4h"
+        },
+        "log": {
+          "filename": "ci-714297-verify-job.log",
+          "bytes": 1183818,
+          "sha256": "96e8f62c442e6ab80b0b2bd2156cd98a1cd28492e3777a9debf28750abc73196"
+        },
+        "url": "https://github.com/yuanbw2025/storyforge/actions/runs/40438087014/job/121971549993",
+        "scope": "Canonical fullCI and complete proxy/core browser job passed at exact714297; distinct from commercial art, independent hearing or deployment."
+      },
+      "avg": {
+        "head": "71429772d1fa6feb60f299c432d301c8fe7c9b37",
+        "runId": 40438087014,
+        "jobId": 121971549806,
+        "conclusion": "success",
+        "artifact": {
+          "id": 12707876284,
+          "bytes": 48583113,
+          "sha256": "901fe0a8cced5ce79c55a6ffa05ea7c927a52557de75eeacacfeb2ff04df6560"
+        },
+        "phases": {
+          "all": {
+            "passed": 103,
+            "skipped": 17,
+            "failed": 0,
+            "flaky": 0,
+            "seconds": 3149.22233
+          },
+          "audio-processing": {
+            "passed": 4,
+            "skipped": 0,
+            "failed": 0,
+            "flaky": 0,
+            "seconds": 49.748256
+          },
+          "combined-frozen": {
+            "passed": 1,
+            "skipped": 0,
+            "failed": 0,
+            "flaky": 0,
+            "seconds": 36.238304
+          },
+          "combined-production": {
+            "passed": 1,
+            "skipped": 0,
+            "failed": 0,
+            "flaky": 0,
+            "seconds": 392.388015
+          },
+          "sound-closed": {
+            "passed": 1,
+            "skipped": 3,
+            "failed": 0,
+            "flaky": 0,
+            "seconds": 19.106085
+          },
+          "sound-frozen": {
+            "passed": 2,
+            "skipped": 0,
+            "failed": 0,
+            "flaky": 0,
+            "seconds": 32.92359
+          },
+          "sound-preparation": {
+            "passed": 3,
+            "skipped": 1,
+            "failed": 0,
+            "flaky": 0,
+            "seconds": 41.939442
+          },
+          "sound-production": {
+            "passed": 6,
+            "skipped": 0,
+            "failed": 0,
+            "flaky": 0,
+            "seconds": 256.50767
+          },
+          "visual-frozen": {
+            "passed": 1,
+            "skipped": 0,
+            "failed": 0,
+            "flaky": 0,
+            "seconds": 24.325103
+          }
+        },
+        "correctedV5Cases": [
+          {
+            "title": "V5 native family images preserve policy2, local derivatives and five consumers through Source5/6 Preview and portable restore",
+            "status": "expected",
+            "results": [
+              {
+                "durationMs": 293032,
+                "retry": 0,
+                "status": "passed"
+              }
+            ]
+          },
+          {
+            "title": "V5 native declared foreground family removes both opaque backdrops through actual producer, Preview, reference provenance and portable restore",
+            "status": "expected",
+            "results": [
+              {
+                "durationMs": 360177,
+                "retry": 0,
+                "status": "passed"
+              }
+            ]
+          },
+          {
+            "title": "V5 native boundary-unmix2 family preserves originals and clean edges through producer, Stage, Release, reference and portable restore",
+            "status": "expected",
+            "results": [
+              {
+                "durationMs": 352254,
+                "retry": 0,
+                "status": "passed"
+              }
+            ]
+          }
+        ],
+        "exports": {
+          "visual-release.json": {
+            "bytes": 3036952,
+            "sha256": "dd693839def340009bf8252172801e4adc614cc913b9dc291bdd176ac8d37716",
+            "keys": [
+              "schema",
+              "version",
+              "backup",
+              "expected",
+              "backupSHA256"
+            ],
+            "backupSha256": "295c10774d4de2c783ab26da2461f367d284099cebcbd98d6a931d7d9b28efce"
+          },
+          "combined-release.json": {
+            "bytes": 13743326,
+            "sha256": "d820985c972d115429747089b152f9a66e8f90c4712148a1f96dbaf4e1219ef1",
+            "keys": [
+              "schema",
+              "version",
+              "backup",
+              "expected",
+              "originalFive",
+              "templates",
+              "scenes",
+              "providerCounts",
+              "backupSHA256"
+            ],
+            "backupSha256": "0a0c188523ffcb6c4740ea1d2c607632288d96728e0f1011c8c78a646a5465c4"
+          }
+        },
+        "combinedConsumed": {
+          "schema": "storyforge.avg.combined-closed-export-read",
+          "version": 1,
+          "sourceFileSHA256": "d820985c972d115429747089b152f9a66e8f90c4712148a1f96dbaf4e1219ef1",
+          "backupSHA256": "0a0c188523ffcb6c4740ea1d2c607632288d96728e0f1011c8c78a646a5465c4",
+          "releaseUid": "PR-avg-avg.assembly.0720cf02-829b-4fb1-82e6-7080dba54759-v2-f88349dfa7d83601a537befc",
+          "originalFiveReleaseUid": "PR-avg-avg.assembly.0720cf02-829b-4fb1-82e6-7080dba54759-v1-1ed5ccb9e0c222d852beabf2",
+          "assetCount": 9,
+          "originalFiveAssetCount": 5,
+          "allFactoriesClosed": true,
+          "ownerRemapped": true,
+          "releaseOnlySave": true,
+          "newProviderRequests": 0,
+          "productionAuthorityCountsUnchanged": true,
+          "artOrListeningAccepted": false
+        },
+        "scope": "Exact-source existing hosted AVG engineering/native-browser recipe; no new real-model/art/hearing/commercial acceptance. Whole general CI/core job remains pending."
+      },
+      "clients": {
+        "head": "71429772d1fa6feb60f299c432d301c8fe7c9b37",
+        "runId": 40438087013,
+        "status": "completed",
+        "conclusion": "success",
+        "jobs": [
+          {
+            "id": 121971549755,
+            "name": "consent",
+            "status": "completed",
+            "conclusion": "success",
+            "verificationSteps": [
+              {
+                "name": "Verify unified packaged startup agreement",
+                "conclusion": "success"
+              }
+            ]
+          },
+          {
+            "id": 121971550053,
+            "name": "windows",
+            "status": "completed",
+            "conclusion": "success",
+            "verificationSteps": [
+              {
+                "name": "Build the previous Windows client for a real installer upgrade",
+                "conclusion": "success"
+              },
+              {
+                "name": "Verify Windows installer replacement and production backup restore",
+                "conclusion": "success"
+              }
+            ]
+          },
+          {
+            "id": 121971550152,
+            "name": "android",
+            "status": "completed",
+            "conclusion": "success",
+            "verificationSteps": [
+              {
+                "name": "Verify the actual Android WebView and stable storage",
+                "conclusion": "success"
+              }
+            ]
+          },
+          {
+            "id": 121971550623,
+            "name": "macos (macos-15, arm64, mac-arm64)",
+            "status": "completed",
+            "conclusion": "success",
+            "verificationSteps": [
+              {
+                "name": "Build a previous-version Mac application with the same storage identity",
+                "conclusion": "success"
+              },
+              {
+                "name": "Verify DMG replacement and production backup restore",
+                "conclusion": "success"
+              }
+            ]
+          },
+          {
+            "id": 121971550696,
+            "name": "macos (macos-15-intel, x64, mac)",
+            "status": "completed",
+            "conclusion": "success",
+            "verificationSteps": [
+              {
+                "name": "Build a previous-version Mac application with the same storage identity",
+                "conclusion": "success"
+              },
+              {
+                "name": "Verify DMG replacement and production backup restore",
+                "conclusion": "success"
+              }
+            ]
+          }
+        ],
+        "scope": "All existing Windows/Android/Mac arm64/Mac x64 complete client jobs and packaged startup consent passed at exact714297. Does not claim human acceptance or main deployment.",
+        "at": 1793069135.024367
+      },
+      "packaging": {
+        "head": "71429772d1fa6feb60f299c432d301c8fe7c9b37",
+        "runId": 40438087120,
+        "status": "completed",
+        "conclusion": "success",
+        "jobs": [
+          {
+            "id": 121971549943,
+            "name": "build",
+            "conclusion": "success"
+          },
+          {
+            "id": 121971551579,
+            "name": "clients",
+            "conclusion": "skipped"
+          },
+          {
+            "id": 121971552047,
+            "name": "signed-upgrade",
+            "conclusion": "skipped"
+          },
+          {
+            "id": 121972636065,
+            "name": "package (macos-15, macos-arm64)",
+            "conclusion": "success"
+          },
+          {
+            "id": 121972636066,
+            "name": "package (macos-15-intel, macos-x64)",
+            "conclusion": "success"
+          },
+          {
+            "id": 121972636111,
+            "name": "package (ubuntu-latest, linux-x64)",
+            "conclusion": "success"
+          },
+          {
+            "id": 121972636230,
+            "name": "package (windows-latest, windows-x64)",
+            "conclusion": "success"
+          },
+          {
+            "id": 121973563824,
+            "name": "publish",
+            "conclusion": "skipped"
+          }
+        ],
+        "publish": "skipped; no deployment",
+        "at": 1793068224.954609
+      }
     }
   },
   "limitations": [
     "original failed/unknown provider requests and cost gaps retained",
-    "no independent human hearing or commercial art acceptance",
-    "final CI/E2E and commit/push remain open"
+    "independent human hearing, complete generated character-family continuity and commercial art/ranking remain unknown",
+    "professional story design deferred; no main merge or deployment",
+    "v1 demo-delivery fullCI=running is an immutable historical creation snapshot; current terminal signoff is this validatedSource record",
+    "closing commit changes only four status/acceptance documents; all other tracked inputs must match the validated714297 source, and no new fullCI execution is claimed for that record-only SHA"
   ],
   "previousIntegrationBase": "ddd673ebb417a95074ddfde0dc555e665bdd84d7",
   "integrationBaseHistory": [
     "63af1fba36e55d9a4205a4350416a46ffd361c3f",
     "69e2a928a3685ed7849d9a45d74395c6a6b38b18",
     "ddd673ebb417a95074ddfde0dc555e665bdd84d7"
-  ]
+  ],
+  "completionScope": "AVG-FINAL-01 engineering integration, inspectable existing-media demo and complete restore delivery; independent commercial art/hearing and professional story design are not signed.",
+  "validatedSource": {
+    "head": "71429772d1fa6feb60f299c432d301c8fe7c9b37",
+    "tree": "1fe1d81c11b687c4e60063985683c63e70a01954",
+    "integrationBase": "f9deb5e3d81e32346c30ad632902d15270652960",
+    "mergeCommit": "1db42e42b0a4829e97e81f10a933b8317bcd1aaa",
+    "mergeTreeEqualsCandidate": true,
+    "generalCI": {
+      "head": "71429772d1fa6feb60f299c432d301c8fe7c9b37",
+      "runId": 40438087014,
+      "jobId": 121971549993,
+      "jobConclusion": "success",
+      "workflowConclusion": "success",
+      "completedAt": "2026-10-27T05:53:01Z",
+      "unitTests": {
+        "filesPassed": 1106,
+        "passed": 7454,
+        "skipped": 3,
+        "failed": 0,
+        "total": 7457,
+        "seconds": 6854.19
+      },
+      "coveragePercent": {
+        "statements": 89.08,
+        "branches": 76.37,
+        "functions": 88.24,
+        "lines": 89.08
+      },
+      "productionProxySmoke": {
+        "passed": 3,
+        "seconds": 10.8
+      },
+      "coreBrowser": {
+        "passed": 404,
+        "skipped": 64,
+        "failed": 0,
+        "reportedDuration": "1.4h"
+      },
+      "log": {
+        "filename": "ci-714297-verify-job.log",
+        "bytes": 1183818,
+        "sha256": "96e8f62c442e6ab80b0b2bd2156cd98a1cd28492e3777a9debf28750abc73196"
+      },
+      "url": "https://github.com/yuanbw2025/storyforge/actions/runs/40438087014/job/121971549993",
+      "scope": "Canonical fullCI and complete proxy/core browser job passed at exact714297; distinct from commercial art, independent hearing or deployment."
+    },
+    "avgE2E": {
+      "head": "71429772d1fa6feb60f299c432d301c8fe7c9b37",
+      "runId": 40438087014,
+      "jobId": 121971549806,
+      "conclusion": "success",
+      "artifact": {
+        "id": 12707876284,
+        "bytes": 48583113,
+        "sha256": "901fe0a8cced5ce79c55a6ffa05ea7c927a52557de75eeacacfeb2ff04df6560"
+      },
+      "phases": {
+        "all": {
+          "passed": 103,
+          "skipped": 17,
+          "failed": 0,
+          "flaky": 0,
+          "seconds": 3149.22233
+        },
+        "audio-processing": {
+          "passed": 4,
+          "skipped": 0,
+          "failed": 0,
+          "flaky": 0,
+          "seconds": 49.748256
+        },
+        "combined-frozen": {
+          "passed": 1,
+          "skipped": 0,
+          "failed": 0,
+          "flaky": 0,
+          "seconds": 36.238304
+        },
+        "combined-production": {
+          "passed": 1,
+          "skipped": 0,
+          "failed": 0,
+          "flaky": 0,
+          "seconds": 392.388015
+        },
+        "sound-closed": {
+          "passed": 1,
+          "skipped": 3,
+          "failed": 0,
+          "flaky": 0,
+          "seconds": 19.106085
+        },
+        "sound-frozen": {
+          "passed": 2,
+          "skipped": 0,
+          "failed": 0,
+          "flaky": 0,
+          "seconds": 32.92359
+        },
+        "sound-preparation": {
+          "passed": 3,
+          "skipped": 1,
+          "failed": 0,
+          "flaky": 0,
+          "seconds": 41.939442
+        },
+        "sound-production": {
+          "passed": 6,
+          "skipped": 0,
+          "failed": 0,
+          "flaky": 0,
+          "seconds": 256.50767
+        },
+        "visual-frozen": {
+          "passed": 1,
+          "skipped": 0,
+          "failed": 0,
+          "flaky": 0,
+          "seconds": 24.325103
+        }
+      },
+      "correctedV5Cases": [
+        {
+          "title": "V5 native family images preserve policy2, local derivatives and five consumers through Source5/6 Preview and portable restore",
+          "status": "expected",
+          "results": [
+            {
+              "durationMs": 293032,
+              "retry": 0,
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "title": "V5 native declared foreground family removes both opaque backdrops through actual producer, Preview, reference provenance and portable restore",
+          "status": "expected",
+          "results": [
+            {
+              "durationMs": 360177,
+              "retry": 0,
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "title": "V5 native boundary-unmix2 family preserves originals and clean edges through producer, Stage, Release, reference and portable restore",
+          "status": "expected",
+          "results": [
+            {
+              "durationMs": 352254,
+              "retry": 0,
+              "status": "passed"
+            }
+          ]
+        }
+      ],
+      "exports": {
+        "visual-release.json": {
+          "bytes": 3036952,
+          "sha256": "dd693839def340009bf8252172801e4adc614cc913b9dc291bdd176ac8d37716",
+          "keys": [
+            "schema",
+            "version",
+            "backup",
+            "expected",
+            "backupSHA256"
+          ],
+          "backupSha256": "295c10774d4de2c783ab26da2461f367d284099cebcbd98d6a931d7d9b28efce"
+        },
+        "combined-release.json": {
+          "bytes": 13743326,
+          "sha256": "d820985c972d115429747089b152f9a66e8f90c4712148a1f96dbaf4e1219ef1",
+          "keys": [
+            "schema",
+            "version",
+            "backup",
+            "expected",
+            "originalFive",
+            "templates",
+            "scenes",
+            "providerCounts",
+            "backupSHA256"
+          ],
+          "backupSha256": "0a0c188523ffcb6c4740ea1d2c607632288d96728e0f1011c8c78a646a5465c4"
+        }
+      },
+      "combinedConsumed": {
+        "schema": "storyforge.avg.combined-closed-export-read",
+        "version": 1,
+        "sourceFileSHA256": "d820985c972d115429747089b152f9a66e8f90c4712148a1f96dbaf4e1219ef1",
+        "backupSHA256": "0a0c188523ffcb6c4740ea1d2c607632288d96728e0f1011c8c78a646a5465c4",
+        "releaseUid": "PR-avg-avg.assembly.0720cf02-829b-4fb1-82e6-7080dba54759-v2-f88349dfa7d83601a537befc",
+        "originalFiveReleaseUid": "PR-avg-avg.assembly.0720cf02-829b-4fb1-82e6-7080dba54759-v1-1ed5ccb9e0c222d852beabf2",
+        "assetCount": 9,
+        "originalFiveAssetCount": 5,
+        "allFactoriesClosed": true,
+        "ownerRemapped": true,
+        "releaseOnlySave": true,
+        "newProviderRequests": 0,
+        "productionAuthorityCountsUnchanged": true,
+        "artOrListeningAccepted": false
+      },
+      "scope": "Exact-source existing hosted AVG engineering/native-browser recipe; no new real-model/art/hearing/commercial acceptance. Whole general CI/core job remains pending."
+    },
+    "clientJobs": {
+      "head": "71429772d1fa6feb60f299c432d301c8fe7c9b37",
+      "runId": 40438087013,
+      "status": "completed",
+      "conclusion": "success",
+      "jobs": [
+        {
+          "id": 121971549755,
+          "name": "consent",
+          "status": "completed",
+          "conclusion": "success",
+          "verificationSteps": [
+            {
+              "name": "Verify unified packaged startup agreement",
+              "conclusion": "success"
+            }
+          ]
+        },
+        {
+          "id": 121971550053,
+          "name": "windows",
+          "status": "completed",
+          "conclusion": "success",
+          "verificationSteps": [
+            {
+              "name": "Build the previous Windows client for a real installer upgrade",
+              "conclusion": "success"
+            },
+            {
+              "name": "Verify Windows installer replacement and production backup restore",
+              "conclusion": "success"
+            }
+          ]
+        },
+        {
+          "id": 121971550152,
+          "name": "android",
+          "status": "completed",
+          "conclusion": "success",
+          "verificationSteps": [
+            {
+              "name": "Verify the actual Android WebView and stable storage",
+              "conclusion": "success"
+            }
+          ]
+        },
+        {
+          "id": 121971550623,
+          "name": "macos (macos-15, arm64, mac-arm64)",
+          "status": "completed",
+          "conclusion": "success",
+          "verificationSteps": [
+            {
+              "name": "Build a previous-version Mac application with the same storage identity",
+              "conclusion": "success"
+            },
+            {
+              "name": "Verify DMG replacement and production backup restore",
+              "conclusion": "success"
+            }
+          ]
+        },
+        {
+          "id": 121971550696,
+          "name": "macos (macos-15-intel, x64, mac)",
+          "status": "completed",
+          "conclusion": "success",
+          "verificationSteps": [
+            {
+              "name": "Build a previous-version Mac application with the same storage identity",
+              "conclusion": "success"
+            },
+            {
+              "name": "Verify DMG replacement and production backup restore",
+              "conclusion": "success"
+            }
+          ]
+        }
+      ],
+      "scope": "All existing Windows/Android/Mac arm64/Mac x64 complete client jobs and packaged startup consent passed at exact714297. Does not claim human acceptance or main deployment.",
+      "at": 1793069135.024367
+    },
+    "packaging": {
+      "head": "71429772d1fa6feb60f299c432d301c8fe7c9b37",
+      "runId": 40438087120,
+      "status": "completed",
+      "conclusion": "success",
+      "jobs": [
+        {
+          "id": 121971549943,
+          "name": "build",
+          "conclusion": "success"
+        },
+        {
+          "id": 121971551579,
+          "name": "clients",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 121971552047,
+          "name": "signed-upgrade",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 121972636065,
+          "name": "package (macos-15, macos-arm64)",
+          "conclusion": "success"
+        },
+        {
+          "id": 121972636066,
+          "name": "package (macos-15-intel, macos-x64)",
+          "conclusion": "success"
+        },
+        {
+          "id": 121972636111,
+          "name": "package (ubuntu-latest, linux-x64)",
+          "conclusion": "success"
+        },
+        {
+          "id": 121972636230,
+          "name": "package (windows-latest, windows-x64)",
+          "conclusion": "success"
+        },
+        {
+          "id": 121973563824,
+          "name": "publish",
+          "conclusion": "skipped"
+        }
+      ],
+      "publish": "skipped; no deployment",
+      "at": 1793068224.954609
+    },
+    "recordOnlyClosure": {
+      "validatedSourceHead": "71429772d1fa6feb60f299c432d301c8fe7c9b37",
+      "excludedOnlyRecordFiles": [
+        "docs/audits/evidence/avg-final-acceptance-20261026/acceptance-receipt.json",
+        "docs/products/avg-production/README.md",
+        "docs/roadmap/AVG-IMPLEMENTATION-PLAN.md",
+        "docs/roadmap/AVG-WORK-PACKAGE-CARDS.md"
+      ],
+      "allOtherTrackedFileCount": 15701,
+      "allOtherTrackedGitEntriesSHA256": "40d928dd30d14dd7415981bb09540da8066a0f2ffc8ab62542226a990def2cfa",
+      "purpose": "Final docs-only closure; never claim its new metadata SHA executed full CI. All other tracked inputs, code, tests, workflows, prompts and artifacts must stay byte-identical."
+    }
+  },
+  "historicalStatusBoundary": "All earlier per-head pending/running/failure text is retained historical evidence. Current completion is validatedSource714297 and validation.finalHosted714297; closing metadata does not rewrite old failures or imply its own fullCI run."
 }
