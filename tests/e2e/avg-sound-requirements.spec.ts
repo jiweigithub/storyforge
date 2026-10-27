@@ -5,6 +5,13 @@ test.skip(process.env.VITE_STORYFORGE_AVG_SOUND_PRODUCTION === '1', 'This suite 
 
 /** Uses actual Work/source/draft APIs in a fresh isolated browser context.
  * No Build, Run, model response, audio, hearing or adoption is seeded. */
+async function readySoundRequirements(page: Page) {
+  const panel = page.getByRole('region', { name: '音乐环境与音效需求（实验）', exact: true })
+  // Navigation can finish before the lazy workbench module is ready.
+  await expect(panel).toBeVisible({ timeout: 30_000 })
+  return panel
+}
+
 async function open(page: Page, saveBeforeOpening = false) {
   await page.addInitScript(() => localStorage.setItem('storyforge_guide_completed', 'e2e'))
   await page.goto('./avg/library')
@@ -38,8 +45,7 @@ async function open(page: Page, saveBeforeOpening = false) {
     return { scope: owner.scope, originalJson: saved.editorJson }
   }, saveBeforeOpening)
   await page.goto(`./avg/media-all?project=${state.scope.projectId}&work=${state.scope.workId}&assembly=1`)
-  const panel = page.getByRole('region', { name: '音乐环境与音效需求（实验）', exact: true })
-  await expect(panel).toBeVisible({ timeout: 30_000 })
+  const panel = await readySoundRequirements(page)
   return { ...state, panel, calls }
 }
 async function savedSounds(page: Page) {
@@ -74,6 +80,7 @@ test('native sound requirements preserve exact author content across save and re
   expect(workspace.soundProduction.scope.templates[0].cue.loop).toBe(true)
   expect(workspace.soundProduction.scope.librarySources[0].memberPath).toBe('Audio/click_001.ogg')
   await page.reload()
+  await readySoundRequirements(page)
   await expect(s.panel.getByRole('group', { name: '声音需求 1', exact: true }).getByRole('textbox', { name: '声音用途', exact: true })).toHaveValue('原创安静钢琴氛围，为对白留白')
   expect((await read(page, s.scope)).json).toBe(before.json)
   expect(before.builds).toBe(0); expect(before.runs).toBe(0); expect(before.blobs).toBe(0); expect(s.calls).toEqual([])
@@ -102,6 +109,7 @@ test('native requirement backup remaps owner and clears only the restored draft 
   }, s.scope.projectId)
   expect(copy.projectId).not.toBe(s.scope.projectId); expect(copy.workId).not.toBe(s.scope.workId)
   await page.goto(`./avg/media-all?project=${copy.projectId}&work=${copy.workId}&assembly=1`)
+  await readySoundRequirements(page)
   await expect(s.panel.getByRole('group', { name: '声音需求 2', exact: true }).getByRole('textbox', { name: '声音用途', exact: true })).toHaveValue('操作确认的轻点击声')
   await s.panel.getByRole('button', { name: '清除未使用声音需求', exact: true }).click()
   await expect(page.getByRole('status').filter({ hasText: '未进入演出的声音需求已清除' })).toBeVisible()
@@ -123,6 +131,7 @@ test('native source edits leave the frozen requirement hash stale until the auth
     return (await editor.saveAvgAuthorWorkspaceV1(scope, draft.revision, workspace)).editorJson
   }, s.scope)
   await page.reload()
+  await readySoundRequirements(page)
   await expect(s.panel.getByRole('status').filter({ hasText: '规则、对白或画幅已变化' })).toBeVisible()
   expect(JSON.parse(edited).soundProduction.scope.sourceInputHash).toBe(old.soundProduction.scope.sourceInputHash)
   await s.panel.getByRole('button', { name: '保存声音需求', exact: true }).click()
